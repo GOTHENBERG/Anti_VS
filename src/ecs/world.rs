@@ -165,7 +165,7 @@ pub struct World {
 impl World {
     pub fn new() -> Self {
         Self {
-            boss_pos: Vec2::new(640.0, 360.0),
+            boss_pos: Vec2::new(crate::core::MAP_WIDTH * 0.5, crate::core::MAP_HEIGHT * 0.5),
             boss_vel: Vec2::ZERO,
             boss_health: Health::new(1200.0),
             boss_resistances: Resistances {
@@ -183,7 +183,7 @@ impl World {
             blade_storm_angle: 0.0,
             divine_shield_angle: 0.0,
             death_ray_active: None,
-            spatial_grid: SpatialGrid::new(1280.0, 720.0),
+            spatial_grid: SpatialGrid::new(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT),
             mobs: Vec::with_capacity(3000),
             projectiles: Vec::with_capacity(1500),
             gems: Vec::with_capacity(3000),

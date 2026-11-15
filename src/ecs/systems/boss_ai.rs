@@ -47,25 +47,25 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     }
     total_force += gem_pull;
 
-    // 3. Потенциальные поля: Резкое отталкивание от границ экрана ближе чем на 80 пикселей
-    let screen_w = screen_width();
-    let screen_h = screen_height();
+    // 3. Потенциальные поля: Резкое отталкивание от границ карты ближе чем на 80 пикселей
+    let map_w = crate::core::MAP_WIDTH;
+    let map_h = crate::core::MAP_HEIGHT;
     let wall_margin = 80.0;
     let wall_push = 550.0;
 
     if boss_pos.x < wall_margin {
         let factor = 1.0 - (boss_pos.x / wall_margin).clamp(0.0, 1.0);
         total_force.x += wall_push * factor * factor;
-    } else if boss_pos.x > screen_w - wall_margin {
-        let factor = 1.0 - ((screen_w - boss_pos.x) / wall_margin).clamp(0.0, 1.0);
+    } else if boss_pos.x > map_w - wall_margin {
+        let factor = 1.0 - ((map_w - boss_pos.x) / wall_margin).clamp(0.0, 1.0);
         total_force.x -= wall_push * factor * factor;
     }
 
     if boss_pos.y < wall_margin {
         let factor = 1.0 - (boss_pos.y / wall_margin).clamp(0.0, 1.0);
         total_force.y += wall_push * factor * factor;
-    } else if boss_pos.y > screen_h - wall_margin {
-        let factor = 1.0 - ((screen_h - boss_pos.y) / wall_margin).clamp(0.0, 1.0);
+    } else if boss_pos.y > map_h - wall_margin {
+        let factor = 1.0 - ((map_h - boss_pos.y) / wall_margin).clamp(0.0, 1.0);
         total_force.y -= wall_push * factor * factor;
     }
 
@@ -99,10 +99,10 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
 
             // Штраф, если луч ведет в стену
             let mut wall_penalty = 0.0;
-            if target_point.x < 50.0 || target_point.x > screen_w - 50.0 {
+            if target_point.x < 50.0 || target_point.x > map_w - 50.0 {
                 wall_penalty += 100.0;
             }
-            if target_point.y < 50.0 || target_point.y > screen_h - 50.0 {
+            if target_point.y < 50.0 || target_point.y > map_h - 50.0 {
                 wall_penalty += 100.0;
             }
 
@@ -128,7 +128,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         // Мгновенный рывок на 180 пикселей с неуязвимостью на 0.25 сек!
         let old_pos = world.boss_pos;
         let dash_target = (boss_pos + best_dir * 180.0)
-            .clamp(Vec2::new(40.0, 40.0), Vec2::new(screen_w - 40.0, screen_h - 40.0));
+            .clamp(Vec2::new(40.0, 40.0), Vec2::new(map_w - 40.0, map_h - 40.0));
 
         world.boss_pos = dash_target;
         world.boss_invulnerable_timer = 0.25;
@@ -152,9 +152,9 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         world.boss_pos += world.boss_vel * dt;
     }
 
-    // Координаты ограничены экраном
-    world.boss_pos.x = world.boss_pos.x.clamp(25.0, screen_w - 25.0);
-    world.boss_pos.y = world.boss_pos.y.clamp(25.0, screen_h - 25.0);
+    // Координаты ограничены картой
+    world.boss_pos.x = world.boss_pos.x.clamp(35.0, map_w - 35.0);
+    world.boss_pos.y = world.boss_pos.y.clamp(35.0, map_h - 35.0);
 }
 
 /// Адаптивный выбор из 3 карт при Level-Up босса

@@ -62,25 +62,29 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
     }
 }
 
-/// Спавн отряда мобов кольцом по всему внешнему периметру экрана
+/// Спавн отряда мобов кольцом вокруг босса на границе видимости
 pub fn spawn_squad_perimeter(world: &mut World, tier: u8) {
     let config = get_squad_config(tier);
-    let screen_w = screen_width();
-    let screen_h = screen_height();
+    let boss_pos = world.boss_pos;
+    let map_w = crate::core::MAP_WIDTH;
+    let map_h = crate::core::MAP_HEIGHT;
 
     // Случайный сдвиг угла, чтобы отряды распределялись органично по кольцу
     let base_angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
+    let ring_radius = 820.0; // Вне стандартного поля зрения камеры
 
     for i in 0..config.count {
         let id = world.alloc_id();
 
-        // Спавн кольцом на расстоянии 80-120px за видимыми пределами экрана
+        // Спавн кольцом вокруг босса
         let angle = base_angle + (i as f32) * std::f32::consts::PI * 2.0 / (config.count as f32);
-        let center = Vec2::new(screen_w * 0.5, screen_h * 0.5);
-        let radius_x = screen_w * 0.55 + 80.0;
-        let radius_y = screen_h * 0.55 + 80.0;
+        let offset = Vec2::new(angle.cos() * ring_radius, angle.sin() * ring_radius);
+        let raw_spawn_pos = boss_pos + offset;
 
-        let spawn_pos = center + Vec2::new(angle.cos() * radius_x, angle.sin() * radius_y);
+        let spawn_pos = Vec2::new(
+            raw_spawn_pos.x.clamp(20.0, map_w - 20.0),
+            raw_spawn_pos.y.clamp(20.0, map_h - 20.0),
+        );
 
         let (hp, speed, dmg, radius, flat_armor, phys_res, ice_res, fire_res, is_undead, knockback_immune) = match tier {
             1 => (32.0, 105.0, 7.0, 10.0, 0.0, 0.05, 0.0, 0.0, true, false), // Скелет

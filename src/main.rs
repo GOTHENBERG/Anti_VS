@@ -12,6 +12,7 @@ mod render;
 use crate::content::mobs::{get_squad_config, spawn_squad_perimeter};
 use crate::content::structures::{spawn_blood_altar, BLOOD_ALTAR_COST};
 use crate::core::time::GameClock;
+use crate::core::{MAP_HEIGHT, MAP_WIDTH};
 use crate::ecs::systems::{
     boss_ai::update_boss_ai,
     combat::update_combat,
@@ -23,6 +24,7 @@ use crate::ecs::systems::{
 use crate::ecs::world::World;
 use crate::network::driver::{LocalDriver, NetworkDriver};
 use crate::protocol::commands::Command;
+use crate::render::font::GameFonts;
 use crate::render::{renderer::render_world, ui::render_ui};
 
 fn window_conf() -> Conf {
@@ -40,16 +42,22 @@ async fn main() {
     let mut world = World::new();
     let mut clock = GameClock::new();
     let mut net_driver = LocalDriver::new();
+    let fonts = GameFonts::load();
     let mut is_paused = false;
 
-    // Начальный разрушаемый алтарь игрока-директора
-    spawn_blood_altar(&mut world, Vec2::new(320.0, 360.0));
+    // Камера свободной навигации по большой карте
+    let mut cam_pos = world.boss_pos;
+    let mut cam_zoom: f32 = 0.95;
+    let mut follow_boss = true;
+
+    // Начальный разрушаемый алтарь игрока
+    spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
 
     loop {
         let dt = get_frame_time().min(0.05);
 
-        // Пауза по пробелу или P
-        if is_key_pressed(KeyCode::Space) || is_key_pressed(KeyCode::P) {
+        // Пауза по P
+        if is_key_pressed(KeyCode::P) {
             is_paused = !is_paused;
         }
 
@@ -58,23 +66,36 @@ async fn main() {
         if is_key_pressed(KeyCode::R) {
             world = World::new();
             clock = GameClock::new();
-            spawn_blood_altar(&mut world, Vec2::new(320.0, 360.0));
+            cam_pos = world.boss_pos;
+            follow_boss = true;
+            spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
             is_paused = false;
         }
 
-        // 1. Сбор ввода игрока-директора -> генерация Команд
+        // 1. Управление камерой на большой карте: WASD + колесо мыши + центрирование по C / Space
+        handle_camera_input(&mut cam_pos, &mut cam_zoom, &mut follow_boss, world.boss_pos, dt);
+
+        let screen_w = screen_width();
+        let screen_h = screen_height();
+        let world_cam = Camera2D {
+            target: cam_pos,
+            zoom: Vec2::new(cam_zoom / (screen_w / 2.0), -cam_zoom / (screen_h / 2.0)),
+            ..Default::default()
+        };
+
+        // 2. Сбор ввода игрока-директора -> генерация Команд
         if !is_game_over && !is_paused {
             clock.tick(dt);
-            handle_player_input(&world, &mut net_driver);
+            handle_player_input(&world, &mut net_driver, &world_cam);
         }
 
-        // 2. Исполнение сетевых/локальных команд (Command Pattern)
+        // 3. Исполнение сетевых/локальных команд (Command Pattern)
         let commands = net_driver.poll_commands();
         for cmd in commands {
             execute_command(&mut world, cmd);
         }
 
-        // 3. Обновление систем мира
+        // 4. Обновление систем мира
         if !is_game_over && !is_paused {
             update_director(&mut world, dt);
             update_boss_ai(&mut world, dt);
@@ -84,23 +105,77 @@ async fn main() {
             update_combat(&mut world, dt);
         }
 
-        // 4. Отрисовка мира и интерфейса
-        render_world(&world);
-        render_ui(&world, &clock);
+        // 5. Отрисовка мира через камеру
+        set_camera(&world_cam);
+        render_world(&world, &fonts);
 
-        // 5. Отрисовка экрана паузы или завершения игры
+        // 6. Отрисовка интерфейса на экране (screen-space)
+        set_default_camera();
+        render_ui(&world, &clock, &fonts, cam_pos, cam_zoom);
+
+        // 7. Отрисовка экрана паузы или завершения игры
         if is_paused && !is_game_over {
-            draw_pause_screen();
+            draw_pause_screen(&fonts);
         } else if is_game_over {
             let victory = !world.boss_health.is_alive();
-            draw_game_over(&world, &clock, victory);
+            draw_game_over(&world, &clock, victory, &fonts);
         }
 
         next_frame().await;
     }
 }
 
-fn handle_player_input(world: &World, driver: &mut impl NetworkDriver) {
+fn handle_camera_input(
+    cam_pos: &mut Vec2,
+    cam_zoom: &mut f32,
+    follow_boss: &mut bool,
+    boss_pos: Vec2,
+    dt: f32,
+) {
+    let mut move_dir = Vec2::ZERO;
+
+    if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
+        move_dir.y -= 1.0;
+    }
+    if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
+        move_dir.y += 1.0;
+    }
+    if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
+        move_dir.x -= 1.0;
+    }
+    if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) {
+        move_dir.x += 1.0;
+    }
+
+    if move_dir.length_squared() > 0.0 {
+        *follow_boss = false;
+        let speed = if is_key_down(KeyCode::LeftShift) { 1600.0 } else { 850.0 };
+        *cam_pos += move_dir.normalize() * (speed * dt / *cam_zoom);
+    }
+
+    // Центрирование камеры на боссе по клавише C или Space
+    if is_key_pressed(KeyCode::C) || is_key_pressed(KeyCode::Space) {
+        *follow_boss = true;
+    }
+
+    if *follow_boss {
+        *cam_pos = cam_pos.lerp(boss_pos, (dt * 7.0).min(1.0));
+    }
+
+    // Масштабирование колесиком мыши
+    let wheel = mouse_wheel().1;
+    if wheel > 0.0 {
+        *cam_zoom = (*cam_zoom * 1.15).min(2.0);
+    } else if wheel < 0.0 {
+        *cam_zoom = (*cam_zoom / 1.15).max(0.4);
+    }
+
+    // Ограничение камеры размерами карты
+    cam_pos.x = cam_pos.x.clamp(200.0, MAP_WIDTH - 200.0);
+    cam_pos.y = cam_pos.y.clamp(200.0, MAP_HEIGHT - 200.0);
+}
+
+fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam: &Camera2D) {
     if let Some(director) = world.directors.first() {
         let screen_w = screen_width();
         let screen_h = screen_height();
@@ -116,8 +191,8 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver) {
         // 2. Клик левой кнопкой мыши по кнопкам на панели призыва
         if is_mouse_button_pressed(MouseButton::Left) {
             let (mx, my) = mouse_position();
-            let btn_width = 175.0;
-            let btn_height = 68.0;
+            let btn_width = 185.0;
+            let btn_height = 70.0;
             let total_w = 5.0 * btn_width + 4.0 * 12.0;
             let start_x = (screen_w - total_w) / 2.0;
             let btn_y = screen_h - 85.0;
@@ -130,14 +205,15 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver) {
             }
         }
 
-        // 3. Клик правой кнопкой мыши — построить разрушаемый Алтарь Крови
+        // 3. Клик правой кнопкой мыши — построить разрушаемый Алтарь Крови в координатах мира!
         if is_mouse_button_pressed(MouseButton::Right) {
             if director.points >= BLOOD_ALTAR_COST {
                 let (mx, my) = mouse_position();
+                let world_click = world_cam.screen_to_world(Vec2::new(mx, my));
                 driver.send_command(Command::PlaceStructure {
                     director_id: director.id,
                     structure_type: 1,
-                    pos: Vec2::new(mx, my).into(),
+                    pos: world_click.into(),
                 });
             }
         }
@@ -179,33 +255,33 @@ fn execute_command(world: &mut World, cmd: Command) {
     }
 }
 
-fn draw_pause_screen() {
+fn draw_pause_screen(fonts: &GameFonts) {
     let screen_w = screen_width();
     let screen_h = screen_height();
 
     draw_rectangle(0.0, 0.0, screen_w, screen_h, Color::new(0.0, 0.0, 0.0, 0.65));
-    let text = "ПАУЗА (НАЖМИТЕ ПРОБЕЛ)";
-    let font_size = 40.0;
-    let tw = measure_text(text, None, font_size as u16, 1.0).width;
-    draw_text(text, (screen_w - tw) / 2.0, screen_h / 2.0, font_size, YELLOW);
+    let text = "ПАУЗА (НАЖМИТЕ P ДЛЯ ПРОДОЛЖЕНИЯ)";
+    let font_size = 36.0;
+    let tw = fonts.measure_text(text, font_size).width;
+    fonts.draw_text(text, (screen_w - tw) / 2.0, screen_h / 2.0, font_size, YELLOW);
 }
 
-fn draw_game_over(world: &World, clock: &GameClock, victory: bool) {
+fn draw_game_over(world: &World, clock: &GameClock, victory: bool, fonts: &GameFonts) {
     let screen_w = screen_width();
     let screen_h = screen_height();
 
     // Затемнение фона
-    draw_rectangle(0.0, 0.0, screen_w, screen_h, Color::new(0.0, 0.0, 0.0, 0.82));
+    draw_rectangle(0.0, 0.0, screen_w, screen_h, Color::new(0.0, 0.0, 0.0, 0.85));
 
     let title = if victory {
-        "ПОБЕДА ДИРЕКТОРА ЗЛА!"
+        "ПОБЕДА ДИРЕКТОРА ЗЛА! БОСС УНИЧТОЖЕН!"
     } else {
         "ПОРАЖЕНИЕ! БОСС ВЫЖИЛ 30 МИНУТ!"
     };
     let title_color = if victory { GREEN } else { RED };
-    let title_font_size = 48.0;
-    let tw = measure_text(title, None, title_font_size as u16, 1.0).width;
-    draw_text(title, (screen_w - tw) / 2.0, screen_h * 0.28, title_font_size, title_color);
+    let title_font_size = 44.0;
+    let tw = fonts.measure_text(title, title_font_size).width;
+    fonts.draw_text(title, (screen_w - tw) / 2.0, screen_h * 0.25, title_font_size, title_color);
 
     // Статистика сражения
     let director = world.directors.first();
@@ -222,14 +298,14 @@ fn draw_game_over(world: &World, clock: &GameClock, victory: bool) {
         format!("Финальный доход: +{:.1} каждые 2 сек", final_income),
     ];
 
-    let start_y = screen_h * 0.38;
+    let start_y = screen_h * 0.36;
     for (i, stat) in stats.iter().enumerate() {
-        let sw = measure_text(stat, None, 20, 1.0).width;
-        draw_text(stat, (screen_w - sw) / 2.0, start_y + (i as f32) * 32.0, 20.0, WHITE);
+        let sw = fonts.measure_text(stat, 20.0).width;
+        fonts.draw_text(stat, (screen_w - sw) / 2.0, start_y + (i as f32) * 34.0, 20.0, WHITE);
     }
 
     // Подсказка перезапуска
     let restart_prompt = "Нажмите [ R ] для перезапуска сражения";
-    let rw = measure_text(restart_prompt, None, 26, 1.0).width;
-    draw_text(restart_prompt, (screen_w - rw) / 2.0, screen_h * 0.78, 26.0, GOLD);
+    let rw = fonts.measure_text(restart_prompt, 26.0).width;
+    fonts.draw_text(restart_prompt, (screen_w - rw) / 2.0, screen_h * 0.78, 26.0, GOLD);
 }
