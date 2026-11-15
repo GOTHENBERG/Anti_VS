@@ -24,6 +24,7 @@ use crate::ecs::systems::{
 use crate::ecs::world::World;
 use crate::network::driver::{LocalDriver, NetworkDriver};
 use crate::protocol::commands::Command;
+use crate::render::codex::draw_codex;
 use crate::render::font::GameFonts;
 use crate::render::textures::GameTextures;
 use crate::render::{renderer::render_world, ui::render_ui};
@@ -51,12 +52,14 @@ async fn main() {
     let mut cam_pos = world.boss_pos;
     let mut cam_zoom: f32 = 0.95;
     let mut follow_boss = true;
+    let auto_screenshot = std::env::args().any(|a| a == "--screenshot");
+    let auto_codex = std::env::args().any(|a| a == "--codex");
+    let mut show_codex = auto_codex;
+    let mut codex_tab: usize = 0;
+    let mut frame_count = 0;
 
     // Начальный разрушаемый алтарь игрока
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
-
-    let auto_screenshot = std::env::args().any(|a| a == "--screenshot");
-    let mut frame_count = 0;
 
     loop {
         let dt = get_frame_time().min(0.05);
@@ -69,6 +72,14 @@ async fn main() {
         // Пауза по P
         if is_key_pressed(KeyCode::P) {
             is_paused = !is_paused;
+        }
+
+        // Инфернальный кодекс по I или Esc
+        if is_key_pressed(KeyCode::I) {
+            show_codex = !show_codex;
+        }
+        if is_key_pressed(KeyCode::Escape) && show_codex {
+            show_codex = false;
         }
 
         // Скриншот по F12
@@ -85,6 +96,7 @@ async fn main() {
             follow_boss = true;
             spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
             is_paused = false;
+            show_codex = false;
         }
 
         // 1. Управление камерой на большой карте: WASD + колесо мыши + центрирование по C / Space
@@ -94,12 +106,14 @@ async fn main() {
         let screen_h = screen_height();
         let world_cam = Camera2D {
             target: cam_pos,
-            zoom: Vec2::new(cam_zoom / (screen_w / 2.0), -cam_zoom / (screen_h / 2.0)),
+            zoom: Vec2::new(cam_zoom / (screen_w / 2.0), cam_zoom / (screen_h / 2.0)),
             ..Default::default()
         };
 
+        let is_running = !is_game_over && !is_paused && !show_codex;
+
         // 2. Сбор ввода игрока-директора -> генерация Команд
-        if !is_game_over && !is_paused {
+        if is_running {
             clock.tick(dt);
             handle_player_input(&world, &mut net_driver, &world_cam);
         }
@@ -111,7 +125,7 @@ async fn main() {
         }
 
         // 4. Обновление систем мира
-        if !is_game_over && !is_paused {
+        if is_running {
             update_director(&mut world, dt);
             update_boss_ai(&mut world, dt);
             update_meditation(&mut world, dt);
@@ -128,8 +142,10 @@ async fn main() {
         set_default_camera();
         render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures);
 
-        // 7. Отрисовка экрана паузы или завершения игры
-        if is_paused && !is_game_over {
+        // 7. Отрисовка экрана паузы, кодекса или завершения игры
+        if show_codex {
+            draw_codex(&mut codex_tab, &fonts, &textures);
+        } else if is_paused && !is_game_over {
             draw_pause_screen(&fonts);
         } else if is_game_over {
             let victory = !world.boss_health.is_alive();
@@ -243,11 +259,11 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam
 }
 
 fn try_summon_squad(director: &crate::ecs::world::DirectorState, tier: u8, driver: &mut impl NetworkDriver) {
-    let idx = (tier - 1) as usize;
     let config = get_squad_config(tier);
     let is_unlocked = director.total_points_spent >= config.unlock_spent_threshold;
 
-    if is_unlocked && director.squad_cooldowns[idx] <= 0.0 && director.points >= config.cost {
+    // Кулдаун снят: при наличии очков душ призывать можно непрерывно!
+    if is_unlocked && director.points >= config.cost {
         driver.send_command(Command::SpawnSquad {
             director_id: director.id,
             tier,
@@ -261,7 +277,6 @@ fn execute_command(world: &mut World, cmd: Command) {
             if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
                 let config = get_squad_config(tier);
                 if director.spend_points(config.cost) {
-                    director.squad_cooldowns[(tier - 1) as usize] = config.cooldown;
                     spawn_squad_perimeter(world, tier);
                 }
             }

@@ -1,3 +1,4 @@
+pub mod codex;
 pub mod font;
 pub mod renderer;
 pub mod sprites;

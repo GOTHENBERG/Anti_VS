@@ -311,8 +311,13 @@ pub fn update_combat(world: &mut World, dt: f32) {
     }
 
     if collected_xp > 0.0 {
-        let leveled_up = world.boss_inventory.add_xp(collected_xp);
-        if leveled_up {
+        let level_ups = world.boss_inventory.add_xp(collected_xp);
+        for _ in 0..level_ups {
+            // Сноуболл Босса: увеличение живучести и брони с каждым уровнем
+            world.boss_health.max += 40.0;
+            world.boss_health.current = (world.boss_health.current + 30.0).min(world.boss_health.max);
+            world.boss_resistances.flat_armor += 0.5;
+
             // Запуск адаптивного Level-Up
             handle_boss_level_up(world);
         }

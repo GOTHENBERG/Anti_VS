@@ -28,8 +28,11 @@ pub fn update_meditation(world: &mut World, dt: f32) {
 
             // Получение +30 опыта в секунду
             let xp_gain = 30.0 * dt;
-            let leveled_up = world.boss_inventory.add_xp(xp_gain);
-            if leveled_up {
+            let level_ups = world.boss_inventory.add_xp(xp_gain);
+            for _ in 0..level_ups {
+                world.boss_health.max += 40.0;
+                world.boss_health.current = (world.boss_health.current + 30.0).min(world.boss_health.max);
+                world.boss_resistances.flat_armor += 0.5;
                 handle_boss_level_up(world);
             }
 

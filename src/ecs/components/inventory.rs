@@ -96,17 +96,17 @@ impl BossInventory {
         }
     }
 
-    pub fn add_xp(&mut self, amount: f32) -> bool {
+    pub fn add_xp(&mut self, amount: f32) -> usize {
         self.current_xp += amount;
-        if self.current_xp >= self.xp_to_next_level {
+        let mut level_ups = 0;
+        while self.current_xp >= self.xp_to_next_level {
             self.current_xp -= self.xp_to_next_level;
             self.level += 1;
-            // Плавный рост кривой опыта
-            self.xp_to_next_level = (self.xp_to_next_level * 1.28 + 15.0).floor();
-            true
-        } else {
-            false
+            // Умеренный рост кривой опыта для динамичного сноуболла босса
+            self.xp_to_next_level = (self.xp_to_next_level * 1.20 + 10.0).floor();
+            level_ups += 1;
         }
+        level_ups
     }
 
     pub fn has_weapon(&self, kind: WeaponType) -> bool {

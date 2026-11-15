@@ -100,8 +100,8 @@ impl DirectorState {
     pub fn new(id: u8) -> Self {
         Self {
             id,
-            points: 40.0,
-            income_rate: 10.0,
+            points: 30.0,
+            income_rate: 8.0,
             total_points_spent: 0.0,
             income_timer: 0.0,
             squad_cooldowns: [0.0; 5],
@@ -113,9 +113,8 @@ impl DirectorState {
         if self.points >= cost {
             self.points -= cost;
             self.total_points_spent += cost;
-            // Spend to Grow: Каждая трата навсегда увеличивает постоянный доход:
-            // Базовая формула ТЗ: Прирост дохода = Стоимость покупки * 0.05
-            self.income_rate += cost * 0.05;
+            // Spend to Grow: сбалансированная формула прироста дохода (+2% от стоимости покупки)
+            self.income_rate += cost * 0.02;
             true
         } else {
             false

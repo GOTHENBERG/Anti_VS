@@ -154,7 +154,7 @@ pub fn render_ui(
         let spent_text = format!("Потрачено: {:.0}", director.total_points_spent);
         let spawn_text = format!("Призвано монстров: {}", director.total_mobs_spawned);
         let stats_text = format!("FPS: {} | Мобы на поле: {}", get_fps(), world.mobs.len());
-        let cam_info = "WASD: Камера | Колесо: Зум | [C]: Босс";
+        let cam_info = "WASD: Камера | Колесо: Зум | [C]: Босс | [I]: Кодекс";
 
         fonts.draw_text(&points_text, 25.0, 38.0, 22.0, GOLD);
         fonts.draw_text(&income_text, 25.0, 62.0, 17.0, GREEN);
@@ -198,22 +198,19 @@ pub fn render_ui(
             let tier = (i + 1) as u8;
             let config = get_squad_config(tier);
             let is_unlocked = director.total_points_spent >= config.unlock_spent_threshold;
-            let cd = director.squad_cooldowns[i];
             let can_afford = director.points >= config.cost;
 
             let bx = start_x + (i as f32) * (btn_width + 12.0);
 
             let bg_color = if !is_unlocked {
                 Color::new(0.14, 0.14, 0.17, 0.92)
-            } else if cd > 0.0 {
-                Color::new(0.24, 0.18, 0.18, 0.92)
             } else if !can_afford {
-                Color::new(0.28, 0.18, 0.18, 0.92)
+                Color::new(0.24, 0.18, 0.18, 0.92)
             } else {
-                Color::new(0.14, 0.32, 0.20, 0.95)
+                Color::new(0.14, 0.35, 0.20, 0.95)
             };
 
-            let border_color = if is_unlocked && can_afford && cd <= 0.0 {
+            let border_color = if is_unlocked && can_afford {
                 GREEN
             } else if is_unlocked {
                 WHITE
@@ -252,18 +249,12 @@ pub fn render_ui(
 
                 let prog = (director.total_points_spent / config.unlock_spent_threshold).clamp(0.0, 1.0);
                 draw_rectangle(bx + 6.0, btn_y + 52.0, (btn_width - 56.0) * prog, 6.0, RED);
-            } else if cd > 0.0 {
-                let cd_text = format!("Откат: {:.1}с", cd);
-                fonts.draw_text(&cd_text, bx + 6.0, btn_y + 40.0, 14.0, YELLOW);
-
-                let cd_ratio = (cd / config.cooldown).clamp(0.0, 1.0);
-                draw_rectangle(bx + 6.0, btn_y + 52.0, (btn_width - 56.0) * (1.0 - cd_ratio), 6.0, YELLOW);
             } else {
                 let cost_text = format!("Цена: {:.0} ({} шт)", config.cost, config.count);
                 let cost_color = if can_afford { GOLD } else { GRAY };
                 fonts.draw_text(&cost_text, bx + 6.0, btn_y + 40.0, 13.0, cost_color);
 
-                let grow_text = format!("+ {:.2}/2c доход", config.cost * 0.05);
+                let grow_text = format!("+ {:.2}/2c доход", config.cost * 0.02);
                 fonts.draw_text(&grow_text, bx + 6.0, btn_y + 58.0, 12.0, GREEN);
             }
         }
