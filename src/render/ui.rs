@@ -45,7 +45,7 @@ pub fn render_ui(
     let mut hovered_tooltip: Option<HoverTooltip> = None;
     let mut interaction = UiInteraction::default();
 
-    // 1. Верхний таймер обратного отсчета в стиле Risk of Rain 2 (справа сверху)
+    // 1. Верхний цифровой таймер обратного отсчета (справа сверху)
     let timer_box_w = 165.0;
     let timer_box_h = 44.0;
     let timer_box_x = screen_w - timer_box_w - 20.0;
@@ -103,7 +103,7 @@ pub fn render_ui(
     draw_rectangle(bar_x, bar_y + bar_h + 3.0, bar_w, 4.0, Color::new(0.12, 0.12, 0.20, 0.9));
     draw_rectangle(bar_x, bar_y + bar_h + 3.0, bar_w * xp_ratio, 4.0, SKYBLUE);
 
-    // 3. ДВА РАЗДЕЛЬНЫХ ПОЛЯ: ОРУЖИЕ И ПАССИВНЫЕ РЕЛИКВИИ (Стиль Risk of Rain 2)
+    // 3. ДВА РАЗДЕЛЬНЫХ ПОЛЯ: ОРУЖИЕ И ПАССИВНЫЕ РЕЛИКВИИ
     let field_y = bar_y + bar_h + 10.0;
     let field_w = 270.0;
     let field_h = 60.0;
@@ -148,7 +148,7 @@ pub fn render_ui(
                 );
             }
 
-            // Бейдж уровня в правом нижнем углу слота (как в RoR2)
+            // Бейдж уровня в правом нижнем углу слота
             let lvl_tag = if w.is_evolved { "MAX".to_string() } else { format!("{}", w.level) };
             let tag_w = fonts.measure_heading(&lvl_tag, 10.0).width + 4.0;
             draw_rectangle(sx + slot_size - tag_w, wep_slots_y + slot_size - 11.0, tag_w, 11.0, Color::new(0.0, 0.0, 0.0, 0.85));
@@ -873,7 +873,7 @@ fn draw_minimap(
     fonts.draw_text("КАРТА АРЕНЫ (ЛКМ)", mini_x + 6.0, mini_y + 14.0, 11.0, LIGHTGRAY);
 }
 
-/// Всплывающая подсказка для плашки Очков Душ и Инкама (Dota-Style)
+/// Всплывающая подсказка для плашки Очков Душ и Инкама
 fn draw_souls_plaque_tooltip(
     px: f32,
     py: f32,

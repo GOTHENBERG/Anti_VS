@@ -27,10 +27,10 @@ pub struct GameTextures {
     // Environment
     pub floor_stone: Option<Texture2D>,
     pub wall_brick: Option<Texture2D>,
-    pub floor_isaac_plain: Option<Texture2D>,
-    pub floor_isaac_cracked: Option<Texture2D>,
-    pub floor_isaac_blood: Option<Texture2D>,
-    pub floor_isaac_runic: Option<Texture2D>,
+    pub floor_dungeon_plain: Option<Texture2D>,
+    pub floor_dungeon_cracked: Option<Texture2D>,
+    pub floor_dungeon_blood: Option<Texture2D>,
+    pub floor_dungeon_runic: Option<Texture2D>,
 
     // Projectiles
     pub proj_wind: Option<Texture2D>,
@@ -126,10 +126,10 @@ impl GameTextures {
 
         let floor_stone = load_filtered("assets/tiles/floor_stone.png", p_filter).await;
         let wall_brick = load_filtered("assets/tiles/wall_brick.png", p_filter).await;
-        let floor_isaac_plain = load_filtered("assets/tiles/floor_isaac_plain.png", p_filter).await;
-        let floor_isaac_cracked = load_filtered("assets/tiles/floor_isaac_cracked.png", p_filter).await;
-        let floor_isaac_blood = load_filtered("assets/tiles/floor_isaac_blood.png", p_filter).await;
-        let floor_isaac_runic = load_filtered("assets/tiles/floor_isaac_runic.png", p_filter).await;
+        let floor_dungeon_plain = load_filtered("assets/tiles/floor_dungeon_plain.png", p_filter).await;
+        let floor_dungeon_cracked = load_filtered("assets/tiles/floor_dungeon_cracked.png", p_filter).await;
+        let floor_dungeon_blood = load_filtered("assets/tiles/floor_dungeon_blood.png", p_filter).await;
+        let floor_dungeon_runic = load_filtered("assets/tiles/floor_dungeon_runic.png", p_filter).await;
 
         let proj_wind = load_filtered("assets/sprites/proj_wind.png", p_filter).await;
         let proj_fire = load_filtered("assets/sprites/proj_fire.png", p_filter).await;
@@ -186,10 +186,10 @@ impl GameTextures {
             chest,
             floor_stone,
             wall_brick,
-            floor_isaac_plain,
-            floor_isaac_cracked,
-            floor_isaac_blood,
-            floor_isaac_runic,
+            floor_dungeon_plain,
+            floor_dungeon_cracked,
+            floor_dungeon_blood,
+            floor_dungeon_runic,
             proj_wind,
             proj_fire,
             proj_magic,

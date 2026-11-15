@@ -11,11 +11,11 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
     let cols = (map_w / tile_size) as usize;
     let rows = (map_h / tile_size) as usize;
 
-    // 2. Текстурный каменный пол подземелья (Атмосферный подвал в стиле The Binding of Isaac)
-    if let Some(plain_tex) = textures.floor_isaac_plain.as_ref() {
-        let cracked_tex = textures.floor_isaac_cracked.as_ref().unwrap_or(plain_tex);
-        let blood_tex = textures.floor_isaac_blood.as_ref().unwrap_or(plain_tex);
-        let runic_tex = textures.floor_isaac_runic.as_ref().unwrap_or(plain_tex);
+    // 2. Текстурный каменный пол подземелья (Атмосферные гранитные плиты арены)
+    if let Some(plain_tex) = textures.floor_dungeon_plain.as_ref() {
+        let cracked_tex = textures.floor_dungeon_cracked.as_ref().unwrap_or(plain_tex);
+        let blood_tex = textures.floor_dungeon_blood.as_ref().unwrap_or(plain_tex);
+        let runic_tex = textures.floor_dungeon_runic.as_ref().unwrap_or(plain_tex);
 
         for y in 0..rows {
             let py = (y as f32) * tile_size;
@@ -45,7 +45,7 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
                     },
                 );
 
-                // Случайные мелкие булыжники и осколки камня на полу (как в Isaac)
+                // Случайные мелкие булыжники и осколки камня на полу
                 if hash == 42 || hash == 88 {
                     draw_circle(px + 22.0, py + 38.0, 3.5, Color::new(0.12, 0.10, 0.15, 0.9));
                     draw_circle(px + 21.0, py + 37.0, 2.5, Color::new(0.35, 0.30, 0.40, 0.9));
