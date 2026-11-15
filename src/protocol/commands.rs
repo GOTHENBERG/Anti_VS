@@ -25,10 +25,20 @@ pub enum Command {
         director_id: u8,
         tier: u8,
     },
+    /// Призыв отрядов на все доступные души (Shift + 1-8)
+    SpawnSquadMax {
+        director_id: u8,
+        tier: u8,
+    },
     /// Улучшение грейда мобов Директором (клавиши F, G, H)
     UpgradeDirectorGrade {
         director_id: u8,
         grade_type: u8, // 0: Fury, 1: Carapace, 2: Pestilence
+    },
+    /// Улучшение грейда на все деньги (Shift + F, G, H)
+    UpgradeDirectorGradeMax {
+        director_id: u8,
+        grade_type: u8,
     },
     /// Движение Босса (локальный ИИ или второй игрок в мультиплеере)
     BossMove {

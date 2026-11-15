@@ -425,6 +425,29 @@ fn draw_kamikaze(mob: &MobEntity, time: f32) {
 
 /// Отрисовка Алтаря Крови
 pub fn draw_blood_altar(pos: Vec2, current_hp: f32, max_hp: f32, time: f32, textures: &GameTextures) {
+    let aura_radius = 180.0;
+    let aura_pulse = (time * 2.5).sin() * 5.0;
+
+    // 1. Мягкая фоновая полупрозрачная аура крови на земле (зона лечения 180px)
+    draw_circle(pos.x, pos.y, aura_radius + aura_pulse, Color::new(0.65, 0.05, 0.15, 0.08));
+    // 2. Внешняя светящаяся граница ауры (рунический контур радиуса 180px)
+    draw_circle_lines(pos.x, pos.y, aura_radius + aura_pulse, 1.8, Color::new(0.85, 0.15, 0.25, 0.45));
+
+    // 3. Расширяющаяся периодическая волна исцеления
+    let wave_cycle = (time * 0.8).fract();
+    let wave_radius = wave_cycle * aura_radius;
+    let wave_alpha = (1.0 - wave_cycle) * 0.35;
+    draw_circle_lines(pos.x, pos.y, wave_radius, 1.5, Color::new(1.0, 0.2, 0.35, wave_alpha));
+
+    // 4. Парящие кровавые частицы по орбите ауры
+    for i in 0..6 {
+        let angle = time * 0.8 + (i as f32) * std::f32::consts::PI / 3.0;
+        let px = pos.x + angle.cos() * (aura_radius - 10.0);
+        let py = pos.y + angle.sin() * (aura_radius - 10.0);
+        let sp = (time * 6.0 + i as f32).sin() * 1.5;
+        draw_circle(px, py, 2.5 + sp, Color::new(0.9, 0.2, 0.3, 0.65));
+    }
+
     if let Some(altar_tex) = textures.altar.as_ref() {
         draw_ellipse(pos.x, pos.y + 18.0, 28.0, 10.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.55));
         let pulse = (time * 4.0).sin() * 2.0;

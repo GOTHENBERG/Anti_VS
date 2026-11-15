@@ -200,6 +200,21 @@ async fn main() {
                 try_summon_squad(director, tier, &mut net_driver);
             }
         }
+        if let Some(tier) = ui_interaction.direct_summon_max_tier {
+            if let Some(director) = world.directors.first() {
+                net_driver.send_command(Command::SpawnSquadMax { director_id: director.id, tier });
+            }
+        }
+        if let Some(grade) = ui_interaction.upgrade_grade {
+            if let Some(director) = world.directors.first() {
+                net_driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: grade });
+            }
+        }
+        if let Some(grade) = ui_interaction.upgrade_grade_max {
+            if let Some(director) = world.directors.first() {
+                net_driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: grade });
+            }
+        }
 
         // Логика перемещения карты зажатием ЛКМ (если курсор не над UI и окна закрыты)
         if is_mouse_button_pressed(MouseButton::Left) {
@@ -309,55 +324,48 @@ fn handle_camera_input(
 
 fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam: &Camera2D) {
     if let Some(director) = world.directors.first() {
-        let screen_w = screen_width();
-        let screen_h = screen_height();
+        let is_shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
 
-        // 1. Горячие клавиши 1, 2, 3, 4, 5, 6, 7, 8 для спавна отрядов
+        // 1. Горячие клавиши 1, 2, 3, 4, 5, 6, 7, 8 для спавна отрядов (с поддержкой Shift для спавна на все деньги)
         let keys = [
             KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4,
             KeyCode::Key5, KeyCode::Key6, KeyCode::Key7, KeyCode::Key8,
         ];
         for (i, key) in keys.iter().enumerate() {
             if is_key_pressed(*key) {
-                try_summon_squad(director, (i + 1) as u8, driver);
-            }
-        }
-
-        // 1.1 Горячие клавиши F, G, H для улучшений мобов Директора
-        if is_key_pressed(KeyCode::F) {
-            driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 0 });
-        }
-        if is_key_pressed(KeyCode::G) {
-            driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 1 });
-        }
-        if is_key_pressed(KeyCode::H) {
-            driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 2 });
-        }
-
-        // 2. Клик левой кнопкой мыши по кнопкам улучшений [F, G, H]
-        if is_mouse_button_pressed(MouseButton::Left) {
-            let (mx, my) = mouse_position();
-
-            let g_btn_w = 236.0;
-            let g_btn_h = 32.0;
-            let g_total_w = 3.0 * g_btn_w + 2.0 * 10.0;
-            let g_start_x = (screen_w - g_total_w) / 2.0;
-            let card_h = 118.0;
-            let cards_y = screen_h - card_h - 20.0;
-            let g_y = cards_y - g_btn_h - 8.0;
-
-            for i in 0..3 {
-                let gx = g_start_x + (i as f32) * (g_btn_w + 10.0);
-                if mx >= gx && mx <= gx + g_btn_w && my >= g_y && my <= g_y + g_btn_h {
-                    driver.send_command(Command::UpgradeDirectorGrade {
-                        director_id: director.id,
-                        grade_type: i as u8,
-                    });
+                let tier = (i + 1) as u8;
+                if is_shift {
+                    driver.send_command(Command::SpawnSquadMax { director_id: director.id, tier });
+                } else {
+                    try_summon_squad(director, tier, driver);
                 }
             }
         }
 
-        // 3. Клик правой кнопкой мыши — построить разрушаемый Алтарь Крови в координатах мира!
+        // 1.1 Горячие клавиши F, G, H для улучшений мобов Директора (с поддержкой Shift для прокачки на все деньги)
+        if is_key_pressed(KeyCode::F) {
+            if is_shift {
+                driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 0 });
+            } else {
+                driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 0 });
+            }
+        }
+        if is_key_pressed(KeyCode::G) {
+            if is_shift {
+                driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 1 });
+            } else {
+                driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 1 });
+            }
+        }
+        if is_key_pressed(KeyCode::H) {
+            if is_shift {
+                driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 2 });
+            } else {
+                driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 2 });
+            }
+        }
+
+        // 2. Клик правой кнопкой мыши — построить разрушаемый Алтарь Крови в координатах мира!
         if is_mouse_button_pressed(MouseButton::Right) {
             if director.points >= BLOOD_ALTAR_COST
                 && director.altar_cooldown <= 0.0
@@ -390,11 +398,37 @@ fn try_summon_squad(director: &crate::ecs::world::DirectorState, tier: u8, drive
 fn execute_command(world: &mut World, cmd: Command) {
     match cmd {
         Command::SpawnSquad { director_id, tier } => {
+            let config = get_squad_config(tier);
+            let can_spawn = if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
+                director.spend_points(config.cost)
+            } else {
+                false
+            };
+            if can_spawn {
+                spawn_squad_perimeter(world, tier);
+            }
+        }
+        Command::SpawnSquadMax { director_id, tier } => {
+            let config = get_squad_config(tier);
+            let mut count = 0;
             if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
-                let config = get_squad_config(tier);
-                if director.spend_points(config.cost) {
-                    spawn_squad_perimeter(world, tier);
+                let is_unlocked = director.total_points_spent >= config.unlock_spent_threshold;
+                if is_unlocked {
+                    while director.spend_points(config.cost) && count < 50 {
+                        count += 1;
+                    }
                 }
+            }
+            for _ in 0..count {
+                spawn_squad_perimeter(world, tier);
+            }
+            if count > 0 {
+                world.add_floating_text(
+                    world.boss_pos,
+                    format!("⚡ ПРИЗЫВ НА ВСЕ: +{} отрядов {}!", count, config.name),
+                    GOLD,
+                    1.5,
+                );
             }
         }
         Command::UpgradeDirectorGrade { director_id, grade_type } => {
@@ -427,6 +461,60 @@ fn execute_command(world: &mut World, cmd: Command) {
             }
             if let Some((text, col)) = notification {
                 world.add_floating_text(world.boss_pos, text, col, 1.4);
+            }
+        }
+        Command::UpgradeDirectorGradeMax { director_id, grade_type } => {
+            let mut notification = None;
+            if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
+                let mut upgraded = 0;
+                match grade_type {
+                    0 => {
+                        while upgraded < 1000 {
+                            let cost = 100.0 * (director.grade_fury as f32 + 1.0);
+                            if director.spend_points(cost) {
+                                director.grade_fury += 1;
+                                upgraded += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if upgraded > 0 {
+                            notification = Some((format!("🔥 ЯРОСТЬ КРОВИ (+{} ур. -> Ур. {})", upgraded, director.grade_fury), RED));
+                        }
+                    }
+                    1 => {
+                        while upgraded < 1000 {
+                            let cost = 120.0 * (director.grade_carapace as f32 + 1.0);
+                            if director.spend_points(cost) {
+                                director.grade_carapace += 1;
+                                upgraded += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if upgraded > 0 {
+                            notification = Some((format!("🛡️ ПАНЦИРЬ (+{} ур. -> Ур. {})", upgraded, director.grade_carapace), SKYBLUE));
+                        }
+                    }
+                    2 => {
+                        while upgraded < 1000 {
+                            let cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+                            if director.spend_points(cost) {
+                                director.grade_pestilence += 1;
+                                upgraded += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if upgraded > 0 {
+                            notification = Some((format!("🧪 ЧУМНЫЕ СПОРЫ (+{} ур. -> Ур. {})", upgraded, director.grade_pestilence), LIME));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let Some((text, col)) = notification {
+                world.add_floating_text(world.boss_pos, text, col, 1.5);
             }
         }
         Command::PlaceStructure { director_id, pos, .. } => {

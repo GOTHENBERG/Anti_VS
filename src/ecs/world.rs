@@ -98,9 +98,9 @@ pub struct DirectorState {
     pub altar_cooldown: f32,
     pub altar_max_cooldown: f32,
     pub total_mobs_spawned: usize,
-    pub grade_fury: u8,        // [F] Ярость: +12% урон, +6% скорость
-    pub grade_carapace: u8,    // [G] Панцирь: +2.5 броня, +5% физ. рез
-    pub grade_pestilence: u8,  // [H] Мор: 25% шанс лужи яда при гибели моба
+    pub grade_fury: u32,        // [F] Ярость: +12% урон, +6% скорость (u32: никогда не переполняется при 255+)
+    pub grade_carapace: u32,    // [G] Панцирь: +2.5 броня, +5% физ. рез
+    pub grade_pestilence: u32,  // [H] Мор: 25% шанс лужи яда при гибели моба
 }
 
 impl DirectorState {

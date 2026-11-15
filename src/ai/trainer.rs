@@ -39,7 +39,7 @@ struct DirectorEval {
     avg_damage_dealt: f32,
     avg_altars_built: usize,
     mobs_spawned: [usize; 8],
-    grades: (u8, u8, u8),
+    grades: (u32, u32, u32),
 }
 
 pub fn run_co_evolutionary_training(generations: usize, population_size: usize) {

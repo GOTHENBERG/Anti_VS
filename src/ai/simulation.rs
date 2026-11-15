@@ -21,7 +21,7 @@ pub struct MatchResult {
     pub altars_built: usize,
     pub altars_destroyed: usize,
     pub mobs_spawned_by_tier: [usize; 8],
-    pub director_grades: (u8, u8, u8),
+    pub director_grades: (u32, u32, u32),
 }
 
 /// Выполняет один раунд автономной ускоренной симуляции сражения без рендеринга
