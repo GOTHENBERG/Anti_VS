@@ -365,18 +365,27 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
 
         boss_pop = next_boss_pop;
         director_pop = next_dir_pop;
+
+        // Авто-сохранение каждые 25 поколений (защита от сбоев и возможность прервать обучение в любой момент)
+        if gen_idx % 25 == 0 && gen_idx < generations {
+            save_models(&best_overall_boss, &best_overall_director, gen_idx, false);
+        }
     }
 
-    // 5. Экспорт обученных моделей в формате JSON
-    save_models(&best_overall_boss, &best_overall_director, generations);
+    // 5. Финальный экспорт обученных моделей в формате JSON
+    save_models(&best_overall_boss, &best_overall_director, generations, true);
 }
 
-fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize) {
-    println!("\n💾 СОХРАНЕНИЕ ОБУЧЕННЫХ МОДЕЛЕЙ...");
+fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, is_final: bool) {
+    if is_final {
+        println!("\n💾 ФИНАЛЬНОЕ СОХРАНЕНИЕ ОБУЧЕННЫХ МОДЕЛЕЙ...");
+    } else {
+        println!("\n💾 ⚡ [ЧЕКПОИНТ #{}] Автоматическое сохранение прогресса на диск...", boss.generation);
+    }
 
     if let Ok(boss_json) = serde_json::to_string_pretty(boss) {
         if let Ok(_) = std::fs::write("models/boss_policy.json", &boss_json) {
-            println!("  ✅ Полная нейросетевая модель Босса ({} синапсов) сохранена в: models/boss_policy.json", boss.total_synapses);
+            println!("  ✅ Нейросетевая модель Босса ({} синапсов, Поколение #{}) сохранена в: models/boss_policy.json", boss.total_synapses, boss.generation);
         }
     }
 
@@ -389,7 +398,7 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize) {
 
     if let Ok(dir_json) = serde_json::to_string_pretty(director) {
         if let Ok(_) = std::fs::write("models/director_policy.json", dir_json) {
-            println!("  ✅ Модель Директора сохранена в: models/director_policy.json");
+            println!("  ✅ Модель Директора (Поколение #{}) сохранена в: models/director_policy.json", director.generation);
         }
     }
 
@@ -399,12 +408,14 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize) {
         best_boss_survival_time: boss.avg_survival_time,
         best_boss_level: 28,
         best_director_kill_time: director.avg_boss_kill_time,
-        timestamp: "2026-11-16 00:20".to_string(),
+        timestamp: "2026-11-16".to_string(),
     };
 
     if let Ok(stats_json) = serde_json::to_string_pretty(&stats) {
         let _ = std::fs::write("models/training_log.json", stats_json);
     }
 
-    println!("🎉 Обучение завершено! Модель Босса теперь автоматически используется в игре!");
+    if is_final {
+        println!("🎉 Обучение завершено! Модель Босса теперь автоматически используется в игре!\n");
+    }
 }
