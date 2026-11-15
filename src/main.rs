@@ -305,7 +305,13 @@ async fn main() {
 
         // Авто-скриншот после отрисовки кадра
         if auto_screenshot && frame_count == 60 {
-            get_screen_data().export_png("screenshot.png");
+            if auto_dossier {
+                get_screen_data().export_png("screenshot_dossier.png");
+            } else if auto_codex {
+                get_screen_data().export_png("screenshot_codex.png");
+            } else {
+                get_screen_data().export_png("screenshot.png");
+            }
             break;
         }
 
