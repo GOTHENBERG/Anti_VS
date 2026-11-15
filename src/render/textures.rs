@@ -20,11 +20,17 @@ pub struct GameTextures {
     // Structures & Items
     pub altar: Option<Texture2D>,
     pub soul_crystal: Option<Texture2D>,
+    pub soul_ethereal: Option<Texture2D>,
+    pub soul_ethereal_sm: Option<Texture2D>,
     pub chest: Option<Texture2D>,
 
     // Environment
     pub floor_stone: Option<Texture2D>,
     pub wall_brick: Option<Texture2D>,
+    pub floor_isaac_plain: Option<Texture2D>,
+    pub floor_isaac_cracked: Option<Texture2D>,
+    pub floor_isaac_blood: Option<Texture2D>,
+    pub floor_isaac_runic: Option<Texture2D>,
 
     // Projectiles
     pub proj_wind: Option<Texture2D>,
@@ -54,6 +60,16 @@ pub struct GameTextures {
     pub icon_chest: Option<Texture2D>,
     pub icon_hourglass: Option<Texture2D>,
     pub icon_jewel: Option<Texture2D>,
+    pub icon_fire_aura: Option<Texture2D>,
+    pub icon_holy_hammer: Option<Texture2D>,
+    pub icon_ice_shards: Option<Texture2D>,
+    pub icon_thunder: Option<Texture2D>,
+    pub icon_blood_daggers: Option<Texture2D>,
+    pub icon_giant_heart: Option<Texture2D>,
+    pub icon_blood_stone: Option<Texture2D>,
+    pub icon_eagle_scope: Option<Texture2D>,
+    pub icon_magnet_sphere: Option<Texture2D>,
+    pub icon_corrosive_flask: Option<Texture2D>,
 }
 
 async fn load_filtered(path: &str, filter: FilterMode) -> Option<Texture2D> {
@@ -104,10 +120,16 @@ impl GameTextures {
 
         let altar = load_filtered("assets/sprites/structure_altar.png", p_filter).await;
         let soul_crystal = load_filtered("assets/sprites/crystal_soul.png", p_filter).await;
+        let soul_ethereal = load_filtered("assets/sprites/soul_ethereal.png", ui_filter).await;
+        let soul_ethereal_sm = load_filtered("assets/sprites/soul_ethereal_sm.png", ui_filter).await;
         let chest = load_filtered("assets/sprites/item_chest.png", p_filter).await;
 
         let floor_stone = load_filtered("assets/tiles/floor_stone.png", p_filter).await;
         let wall_brick = load_filtered("assets/tiles/wall_brick.png", p_filter).await;
+        let floor_isaac_plain = load_filtered("assets/tiles/floor_isaac_plain.png", p_filter).await;
+        let floor_isaac_cracked = load_filtered("assets/tiles/floor_isaac_cracked.png", p_filter).await;
+        let floor_isaac_blood = load_filtered("assets/tiles/floor_isaac_blood.png", p_filter).await;
+        let floor_isaac_runic = load_filtered("assets/tiles/floor_isaac_runic.png", p_filter).await;
 
         let proj_wind = load_filtered("assets/sprites/proj_wind.png", p_filter).await;
         let proj_fire = load_filtered("assets/sprites/proj_fire.png", p_filter).await;
@@ -135,6 +157,16 @@ impl GameTextures {
         let icon_chest = load_filtered("assets/icons/chest_1_square_transparent.png", ui_filter).await;
         let icon_hourglass = load_filtered("assets/icons/hourglass_square_transparent.png", ui_filter).await;
         let icon_jewel = load_filtered("assets/icons/jewel_square_transparent.png", ui_filter).await;
+        let icon_fire_aura = load_filtered("assets/icons/icon_fire_aura.png", ui_filter).await;
+        let icon_holy_hammer = load_filtered("assets/icons/icon_holy_hammer.png", ui_filter).await;
+        let icon_ice_shards = load_filtered("assets/icons/icon_ice_shards.png", ui_filter).await;
+        let icon_thunder = load_filtered("assets/icons/icon_thunder.png", ui_filter).await;
+        let icon_blood_daggers = load_filtered("assets/icons/icon_blood_daggers.png", ui_filter).await;
+        let icon_giant_heart = load_filtered("assets/icons/icon_giant_heart.png", ui_filter).await;
+        let icon_blood_stone = load_filtered("assets/icons/icon_blood_stone.png", ui_filter).await;
+        let icon_eagle_scope = load_filtered("assets/icons/icon_eagle_scope.png", ui_filter).await;
+        let icon_magnet_sphere = load_filtered("assets/icons/icon_magnet_sphere.png", ui_filter).await;
+        let icon_corrosive_flask = load_filtered("assets/icons/icon_corrosive_flask.png", ui_filter).await;
 
         Self {
             skeleton,
@@ -149,9 +181,15 @@ impl GameTextures {
             knight_walk,
             altar,
             soul_crystal,
+            soul_ethereal,
+            soul_ethereal_sm,
             chest,
             floor_stone,
             wall_brick,
+            floor_isaac_plain,
+            floor_isaac_cracked,
+            floor_isaac_blood,
+            floor_isaac_runic,
             proj_wind,
             proj_fire,
             proj_magic,
@@ -177,36 +215,46 @@ impl GameTextures {
             icon_chest,
             icon_hourglass,
             icon_jewel,
+            icon_fire_aura,
+            icon_holy_hammer,
+            icon_ice_shards,
+            icon_thunder,
+            icon_blood_daggers,
+            icon_giant_heart,
+            icon_blood_stone,
+            icon_eagle_scope,
+            icon_magnet_sphere,
+            icon_corrosive_flask,
         }
     }
 
     pub fn get_weapon_icon(&self, weapon_type: WeaponType) -> Option<&Texture2D> {
         match weapon_type {
             WeaponType::WindBlade | WeaponType::BladeStorm => self.icon_sword.as_ref(),
-            WeaponType::FireAura | WeaponType::Hellfire => self.icon_elixir.as_ref(),
+            WeaponType::FireAura | WeaponType::Hellfire => self.icon_fire_aura.as_ref().or(self.icon_elixir.as_ref()),
             WeaponType::MagicWand | WeaponType::DeathRay => self.icon_wand.as_ref(),
-            WeaponType::HolyHammer | WeaponType::DivineShield => self.icon_shield.as_ref(),
-            WeaponType::IceShards | WeaponType::BlizzardStorm => self.icon_ring.as_ref(),
-            WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => self.icon_bottle.as_ref(),
+            WeaponType::HolyHammer | WeaponType::DivineShield => self.icon_holy_hammer.as_ref().or(self.icon_shield.as_ref()),
+            WeaponType::IceShards | WeaponType::BlizzardStorm => self.icon_ice_shards.as_ref().or(self.icon_ring.as_ref()),
+            WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => self.icon_corrosive_flask.as_ref().or(self.icon_bottle.as_ref()),
             WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver => self.icon_ax.as_ref(),
             WeaponType::CelestialBow | WeaponType::StarfallBarrage => self.icon_bow.as_ref(),
-            WeaponType::ThunderOrb | WeaponType::ThunderstormWrath => self.icon_jewel.as_ref(),
-            WeaponType::BloodDaggers | WeaponType::BloodHarvest => self.icon_sword.as_ref(),
+            WeaponType::ThunderOrb | WeaponType::ThunderstormWrath => self.icon_thunder.as_ref().or(self.icon_jewel.as_ref()),
+            WeaponType::BloodDaggers | WeaponType::BloodHarvest => self.icon_blood_daggers.as_ref().or(self.icon_sword.as_ref()),
         }
     }
 
     pub fn get_passive_icon(&self, passive_type: PassiveType) -> Option<&Texture2D> {
         match passive_type {
             PassiveType::SpeedGloves => self.icon_glove.as_ref(),
-            PassiveType::GiantHeart => self.icon_chest.as_ref(),
+            PassiveType::GiantHeart => self.icon_giant_heart.as_ref().or(self.icon_chest.as_ref()),
             PassiveType::CooldownTome => self.icon_book.as_ref(),
             PassiveType::LightArmor => self.icon_armor.as_ref(),
             PassiveType::FrostRing => self.icon_ring.as_ref(),
-            PassiveType::CorrosiveFlask => self.icon_bottle.as_ref(),
-            PassiveType::BloodStone => self.icon_bottle.as_ref(),
-            PassiveType::EagleScope => self.icon_ring.as_ref(),
+            PassiveType::CorrosiveFlask => self.icon_corrosive_flask.as_ref().or(self.icon_bottle.as_ref()),
+            PassiveType::BloodStone => self.icon_blood_stone.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::EagleScope => self.icon_eagle_scope.as_ref().or(self.icon_ring.as_ref()),
             PassiveType::ChronoHourglass => self.icon_hourglass.as_ref(),
-            PassiveType::MagnetSphere => self.icon_jewel.as_ref(),
+            PassiveType::MagnetSphere => self.icon_magnet_sphere.as_ref().or(self.icon_jewel.as_ref()),
         }
     }
 

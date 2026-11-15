@@ -114,4 +114,55 @@ impl GameFonts {
             measure_text(text, None, size.round() as u16, 1.0)
         }
     }
+
+    /// Разбивает текст на строки так, чтобы ни одна строка не превышала max_width
+    pub fn wrap_text(&self, text: &str, size: f32, max_width: f32) -> Vec<String> {
+        let mut lines = Vec::new();
+        for paragraph in text.split('\n') {
+            let mut current_line = String::new();
+            for word in paragraph.split_whitespace() {
+                let test_line = if current_line.is_empty() {
+                    word.to_string()
+                } else {
+                    format!("{} {}", current_line, word)
+                };
+                let w = self.measure_text(&test_line, size).width;
+                if w <= max_width {
+                    current_line = test_line;
+                } else {
+                    if !current_line.is_empty() {
+                        lines.push(current_line);
+                        current_line = word.to_string();
+                    } else {
+                        // Слово длиннее всей строки - добавляем как есть
+                        lines.push(word.to_string());
+                        current_line.clear();
+                    }
+                }
+            }
+            if !current_line.is_empty() {
+                lines.push(current_line);
+            }
+        }
+        lines
+    }
+
+    /// Отрисовывает текст с автоматическим переносом по словам и возвращает конечную y-координату
+    pub fn draw_text_wrapped(
+        &self,
+        text: &str,
+        x: f32,
+        mut y: f32,
+        size: f32,
+        line_spacing: f32,
+        max_width: f32,
+        color: Color,
+    ) -> f32 {
+        let lines = self.wrap_text(text, size, max_width);
+        for line in &lines {
+            self.draw_text(line, x, y, size, color);
+            y += line_spacing;
+        }
+        y
+    }
 }

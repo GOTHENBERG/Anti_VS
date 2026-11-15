@@ -197,12 +197,11 @@ fn draw_tab_bestiary(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
         }
 
         let text_x = cx + 68.0;
-        fonts.draw_heading(name, text_x, cy + 18.0, 13.5, *col);
-        let cost_w = fonts.measure_text(cost_info, 11.5).width;
-        fonts.draw_text(cost_info, cx + col_w - cost_w - 10.0, cy + 18.0, 11.5, GOLD);
-        fonts.draw_text(stats, text_x, cy + 38.0, 11.5, WHITE);
-        fonts.draw_text(role, text_x, cy + 56.0, 11.0, SKYBLUE);
-        fonts.draw_text(unlock, text_x, cy + 74.0, 11.0, GREEN);
+        fonts.draw_heading(name, text_x, cy + 18.0, 13.0, *col);
+        fonts.draw_text(cost_info, text_x, cy + 36.0, 11.0, GOLD);
+        fonts.draw_text(stats, text_x, cy + 54.0, 11.0, WHITE);
+        fonts.draw_text(role, text_x, cy + 72.0, 10.5, SKYBLUE);
+        fonts.draw_text(unlock, text_x, cy + 90.0, 10.5, GREEN);
     }
 }
 

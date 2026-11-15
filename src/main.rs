@@ -89,6 +89,47 @@ async fn main() {
         let mouse_delta = current_mpos - last_mouse_pos;
 
         if auto_screenshot && frame_count == 10 {
+            world.boss_inventory.weapons.push(crate::ecs::components::inventory::WeaponSlot {
+                kind: crate::ecs::components::inventory::WeaponType::Hellfire,
+                level: 8,
+                cooldown_timer: 0.0,
+                base_cooldown: 0.5,
+                damage: 48.0,
+                is_evolved: true,
+            });
+            world.boss_inventory.weapons.push(crate::ecs::components::inventory::WeaponSlot {
+                kind: crate::ecs::components::inventory::WeaponType::HolyHammer,
+                level: 3,
+                cooldown_timer: 0.0,
+                base_cooldown: 1.2,
+                damage: 35.0,
+                is_evolved: false,
+            });
+            world.boss_inventory.weapons.push(crate::ecs::components::inventory::WeaponSlot {
+                kind: crate::ecs::components::inventory::WeaponType::ThunderOrb,
+                level: 2,
+                cooldown_timer: 0.0,
+                base_cooldown: 1.0,
+                damage: 25.0,
+                is_evolved: false,
+            });
+            world.boss_inventory.passives.push(crate::ecs::components::inventory::PassiveSlot {
+                kind: crate::ecs::components::inventory::PassiveType::GiantHeart,
+                level: 3,
+            });
+            world.boss_inventory.passives.push(crate::ecs::components::inventory::PassiveSlot {
+                kind: crate::ecs::components::inventory::PassiveType::LightArmor,
+                level: 2,
+            });
+            world.boss_inventory.passives.push(crate::ecs::components::inventory::PassiveSlot {
+                kind: crate::ecs::components::inventory::PassiveType::BloodStone,
+                level: 1,
+            });
+            world.boss_inventory.passives.push(crate::ecs::components::inventory::PassiveSlot {
+                kind: crate::ecs::components::inventory::PassiveType::EagleScope,
+                level: 4,
+            });
+
             spawn_squad_perimeter(&mut world, 1);
             spawn_squad_perimeter(&mut world, 3);
             spawn_squad_perimeter(&mut world, 6);

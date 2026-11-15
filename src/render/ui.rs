@@ -45,124 +45,175 @@ pub fn render_ui(
     let mut hovered_tooltip: Option<HoverTooltip> = None;
     let mut interaction = UiInteraction::default();
 
-    // 1. Верхний таймер 17:00 обратного отсчета
-    let timer_text = clock.formatted_remaining();
-    let timer_font_size = 36.0;
-    let timer_w = fonts.measure_heading(&timer_text, timer_font_size).width;
-    fonts.draw_heading(&timer_text, (screen_w - timer_w) / 2.0, 38.0, timer_font_size, WHITE);
+    // 1. Верхний таймер обратного отсчета в стиле Risk of Rain 2 (справа сверху)
+    let timer_box_w = 165.0;
+    let timer_box_h = 44.0;
+    let timer_box_x = screen_w - timer_box_w - 20.0;
+    let timer_box_y = 14.0;
 
-    // 2. Полоска здоровья Босса и Опыт (сверху под таймером)
-    let bar_w = 480.0;
+    draw_rectangle(timer_box_x, timer_box_y, timer_box_w, timer_box_h, Color::new(0.06, 0.07, 0.11, 0.95));
+    draw_rectangle_lines(timer_box_x, timer_box_y, timer_box_w, timer_box_h, 1.8, Color::new(0.4, 0.45, 0.55, 0.9));
+
+    fonts.draw_text("⏱ ОСТАЛОСЬ ВРЕМЕНИ", timer_box_x + 12.0, timer_box_y + 14.0, 10.0, Color::new(0.8, 0.75, 0.5, 0.9));
+    let timer_text = clock.formatted_remaining();
+    fonts.draw_heading(&timer_text, timer_box_x + 12.0, timer_box_y + 36.0, 22.0, WHITE);
+
+    // 1.1 Кнопка Паузы прямо под таймером
+    let pause_btn_w = timer_box_w;
+    let pause_btn_h = 28.0;
+    let pause_btn_x = timer_box_x;
+    let pause_btn_y = timer_box_y + timer_box_h + 6.0;
+    let pause_hover = mx >= pause_btn_x && mx <= pause_btn_x + pause_btn_w && my >= pause_btn_y && my <= pause_btn_y + pause_btn_h;
+    if pause_hover {
+        interaction.is_mouse_over_ui = true;
+    }
+    draw_rectangle(pause_btn_x, pause_btn_y, pause_btn_w, pause_btn_h, if pause_hover { Color::new(0.32, 0.22, 0.12, 1.0) } else { Color::new(0.12, 0.11, 0.10, 0.95) });
+    draw_rectangle_lines(pause_btn_x, pause_btn_y, pause_btn_w, pause_btn_h, 1.5, if pause_hover { GOLD } else { GRAY });
+    let p_label = "⏸ Пауза [Space]";
+    let pw = fonts.measure_heading(p_label, 12.0).width;
+    fonts.draw_heading(p_label, pause_btn_x + (pause_btn_w - pw) / 2.0, pause_btn_y + 18.0, 12.0, if pause_hover { GOLD } else { WHITE });
+
+    if is_mouse_button_pressed(MouseButton::Left) && pause_hover {
+        interaction.clicked_pause = true;
+    }
+
+    // 2. Полоска здоровья Босса и Опыт (сверху по центру)
+    let bar_w = 560.0;
     let bar_h = 22.0;
     let bar_x = (screen_w - bar_w) / 2.0;
-    let bar_y = 50.0;
+    let bar_y = 14.0;
 
     let hp_ratio = (world.boss_health.current / world.boss_health.max).clamp(0.0, 1.0);
-    draw_rectangle(bar_x, bar_y, bar_w, bar_h, Color::new(0.12, 0.12, 0.18, 0.95));
-    draw_rectangle(bar_x, bar_y, bar_w * hp_ratio, bar_h, Color::new(0.9, 0.2, 0.2, 1.0));
-    draw_rectangle_lines(bar_x, bar_y, bar_w, bar_h, 2.0, WHITE);
+    draw_rectangle(bar_x, bar_y, bar_w, bar_h, Color::new(0.10, 0.10, 0.15, 0.96));
+    draw_rectangle(bar_x, bar_y, bar_w * hp_ratio, bar_h, Color::new(0.88, 0.18, 0.22, 1.0));
+    draw_rectangle_lines(bar_x, bar_y, bar_w, bar_h, 2.0, Color::new(0.9, 0.8, 0.5, 1.0));
 
     let hp_text = format!(
-        "{:.0} / {:.0} HP  (Босс ур. {}) | Броня: {:.1}",
+        "👑 ВЕРХОВНЫЙ ПАЛАДИН (Ур. {}) | {:.0} / {:.0} HP | Броня: {:.1}",
+        world.boss_inventory.level,
         world.boss_health.current,
         world.boss_health.max,
-        world.boss_inventory.level,
         world.boss_resistances.flat_armor
     );
-    let hp_text_w = fonts.measure_text(&hp_text, 15.0).width;
-    fonts.draw_text(&hp_text, (screen_w - hp_text_w) / 2.0, bar_y + 16.0, 15.0, WHITE);
+    let hp_text_w = fonts.measure_heading(&hp_text, 13.5).width;
+    fonts.draw_heading(&hp_text, (screen_w - hp_text_w) / 2.0, bar_y + 16.0, 13.5, WHITE);
 
     // Полоска опыта босса
     let xp_ratio = (world.boss_inventory.current_xp / world.boss_inventory.xp_to_next_level).clamp(0.0, 1.0);
-    draw_rectangle(bar_x, bar_y + bar_h + 3.0, bar_w, 5.0, Color::new(0.15, 0.15, 0.25, 0.9));
-    draw_rectangle(bar_x, bar_y + bar_h + 3.0, bar_w * xp_ratio, 5.0, SKYBLUE);
+    draw_rectangle(bar_x, bar_y + bar_h + 3.0, bar_w, 4.0, Color::new(0.12, 0.12, 0.20, 0.9));
+    draw_rectangle(bar_x, bar_y + bar_h + 3.0, bar_w * xp_ratio, 4.0, SKYBLUE);
 
-    // 3. Инвентарь Босса (6 Оружий + 6 Пассивок) с HD иконками
-    let inv_y = bar_y + bar_h + 12.0;
-    let slot_w = 38.0;
-    let slot_h = 28.0;
-    let total_slots_w = 12.0 * (slot_w + 4.0);
-    let start_inv_x = (screen_w - total_slots_w) / 2.0;
+    // 3. ДВА РАЗДЕЛЬНЫХ ПОЛЯ: ОРУЖИЕ И ПАССИВНЫЕ РЕЛИКВИИ (Стиль Risk of Rain 2)
+    let field_y = bar_y + bar_h + 10.0;
+    let field_w = 270.0;
+    let field_h = 60.0;
+    let slot_size = 40.0;
+    let slot_gap = 4.0;
 
-    if mx >= start_inv_x && mx <= start_inv_x + total_slots_w && my >= inv_y && my <= inv_y + slot_h {
-        interaction.is_mouse_over_ui = true;
-    }
+    // 3.1 Левое поле: Оружие Босса (6 слотов)
+    let wep_field_x = bar_x;
+    draw_rectangle(wep_field_x, field_y, field_w, field_h, Color::new(0.07, 0.08, 0.12, 0.95));
+    draw_rectangle_lines(wep_field_x, field_y, field_w, field_h, 1.5, Color::new(0.35, 0.50, 0.70, 0.85));
+    fonts.draw_heading("⚔️ ОРУЖИЕ БОССА", wep_field_x + 8.0, field_y + 13.0, 11.0, SKYBLUE);
 
-    // 6 слотов оружия
+    let wep_slots_start_x = wep_field_x + 4.0;
+    let wep_slots_y = field_y + 16.0;
+
     for i in 0..6 {
-        let sx = start_inv_x + (i as f32) * (slot_w + 4.0);
-        draw_rectangle(sx, inv_y, slot_w, slot_h, Color::new(0.08, 0.1, 0.16, 0.92));
-        draw_rectangle_lines(sx, inv_y, slot_w, slot_h, 1.5, GRAY);
+        let sx = wep_slots_start_x + (i as f32) * (slot_size + slot_gap);
+        let is_hover = mx >= sx && mx <= sx + slot_size && my >= wep_slots_y && my <= wep_slots_y + slot_size;
+        if is_hover { interaction.is_mouse_over_ui = true; }
+
+        draw_rectangle(sx, wep_slots_y, slot_size, slot_size, Color::new(0.04, 0.05, 0.08, 0.95));
 
         if let Some(w) = world.boss_inventory.weapons.get(i) {
-            let bg_color = if w.is_evolved {
-                Color::new(0.65, 0.45, 0.05, 0.85)
+            let (border_col, bg_col) = if w.is_evolved {
+                (GOLD, Color::new(0.40, 0.22, 0.05, 0.9))
             } else {
-                Color::new(0.12, 0.28, 0.48, 0.85)
+                (Color::new(0.3, 0.6, 0.9, 0.9), Color::new(0.08, 0.18, 0.32, 0.9))
             };
-            draw_rectangle(sx + 2.0, inv_y + 2.0, slot_w - 4.0, slot_h - 4.0, bg_color);
+            draw_rectangle(sx + 2.0, wep_slots_y + 2.0, slot_size - 4.0, slot_size - 4.0, bg_col);
+            draw_rectangle_lines(sx, wep_slots_y, slot_size, slot_size, if w.is_evolved { 2.0 } else { 1.5 }, border_col);
 
             if let Some(icon) = textures.get_weapon_icon(w.kind) {
                 draw_texture_ex(
                     icon,
-                    sx + 4.0,
-                    inv_y + 2.0,
+                    sx + 3.0,
+                    wep_slots_y + 3.0,
                     WHITE,
                     DrawTextureParams {
-                        dest_size: Some(Vec2::new(slot_w - 8.0, slot_h - 4.0)),
+                        dest_size: Some(Vec2::new(slot_size - 6.0, slot_size - 6.0)),
                         ..Default::default()
                     },
                 );
             }
 
-            let lvl_text = format!("{}", w.level);
-            let text_color = if w.is_evolved { GOLD } else { WHITE };
-            fonts.draw_text(&lvl_text, sx + 3.0, inv_y + slot_h - 4.0, 13.0, text_color);
+            // Бейдж уровня в правом нижнем углу слота (как в RoR2)
+            let lvl_tag = if w.is_evolved { "MAX".to_string() } else { format!("{}", w.level) };
+            let tag_w = fonts.measure_heading(&lvl_tag, 10.0).width + 4.0;
+            draw_rectangle(sx + slot_size - tag_w, wep_slots_y + slot_size - 11.0, tag_w, 11.0, Color::new(0.0, 0.0, 0.0, 0.85));
+            fonts.draw_heading(&lvl_tag, sx + slot_size - tag_w + 2.0, wep_slots_y + slot_size - 2.0, 10.0, if w.is_evolved { GOLD } else { WHITE });
 
-            if mx >= sx && mx <= sx + slot_w && my >= inv_y && my <= inv_y + slot_h {
-                hovered_tooltip = Some(HoverTooltip::Weapon(w.clone(), sx, inv_y));
+            if is_hover {
+                hovered_tooltip = Some(HoverTooltip::Weapon(w.clone(), sx, wep_slots_y));
             }
+        } else {
+            // Пустой слот оружия
+            draw_rectangle_lines(sx, wep_slots_y, slot_size, slot_size, 1.0, Color::new(0.2, 0.22, 0.28, 0.7));
+            draw_line(sx + 8.0, wep_slots_y + 8.0, sx + slot_size - 8.0, wep_slots_y + slot_size - 8.0, 1.0, Color::new(0.25, 0.25, 0.35, 0.4));
         }
     }
 
-    // Разделитель слотов оружия и пассивок
-    draw_line(
-        start_inv_x + 6.0 * (slot_w + 4.0) - 2.0,
-        inv_y,
-        start_inv_x + 6.0 * (slot_w + 4.0) - 2.0,
-        inv_y + slot_h,
-        2.0,
-        WHITE,
-    );
+    // Центральный декоративный элемент между полями
+    let div_cx = bar_x + bar_w / 2.0;
+    draw_line(div_cx, field_y + 6.0, div_cx, field_y + field_h - 6.0, 1.5, Color::new(0.5, 0.45, 0.6, 0.6));
+    draw_circle(div_cx, field_y + field_h / 2.0, 3.5, GOLD);
 
-    // 6 слотов пассивок
+    // 3.2 Правое поле: Пассивные Реликвии (6 слотов)
+    let pas_field_x = bar_x + bar_w - field_w;
+    draw_rectangle(pas_field_x, field_y, field_w, field_h, Color::new(0.08, 0.06, 0.12, 0.95));
+    draw_rectangle_lines(pas_field_x, field_y, field_w, field_h, 1.5, Color::new(0.60, 0.35, 0.75, 0.85));
+    fonts.draw_heading("🔮 ПАССИВНЫЕ РЕЛИКВИИ", pas_field_x + 8.0, field_y + 13.0, 11.0, Color::new(0.85, 0.55, 1.0, 1.0));
+
+    let pas_slots_start_x = pas_field_x + 4.0;
+    let pas_slots_y = field_y + 16.0;
+
     for i in 0..6 {
-        let sx = start_inv_x + ((i + 6) as f32) * (slot_w + 4.0);
-        draw_rectangle(sx, inv_y, slot_w, slot_h, Color::new(0.08, 0.1, 0.16, 0.92));
-        draw_rectangle_lines(sx, inv_y, slot_w, slot_h, 1.5, GRAY);
+        let sx = pas_slots_start_x + (i as f32) * (slot_size + slot_gap);
+        let is_hover = mx >= sx && mx <= sx + slot_size && my >= pas_slots_y && my <= pas_slots_y + slot_size;
+        if is_hover { interaction.is_mouse_over_ui = true; }
+
+        draw_rectangle(sx, pas_slots_y, slot_size, slot_size, Color::new(0.05, 0.04, 0.08, 0.95));
 
         if let Some(p) = world.boss_inventory.passives.get(i) {
-            draw_rectangle(sx + 2.0, inv_y + 2.0, slot_w - 4.0, slot_h - 4.0, Color::new(0.35, 0.12, 0.42, 0.85));
+            draw_rectangle(sx + 2.0, pas_slots_y + 2.0, slot_size - 4.0, slot_size - 4.0, Color::new(0.26, 0.10, 0.34, 0.9));
+            draw_rectangle_lines(sx, pas_slots_y, slot_size, slot_size, 1.5, Color::new(0.75, 0.40, 0.90, 0.95));
 
             if let Some(icon) = textures.get_passive_icon(p.kind) {
                 draw_texture_ex(
                     icon,
-                    sx + 4.0,
-                    inv_y + 2.0,
+                    sx + 3.0,
+                    pas_slots_y + 3.0,
                     WHITE,
                     DrawTextureParams {
-                        dest_size: Some(Vec2::new(slot_w - 8.0, slot_h - 4.0)),
+                        dest_size: Some(Vec2::new(slot_size - 6.0, slot_size - 6.0)),
                         ..Default::default()
                     },
                 );
             }
 
-            let lvl_text = format!("{}", p.level);
-            fonts.draw_text(&lvl_text, sx + 3.0, inv_y + slot_h - 4.0, 13.0, WHITE);
+            let lvl_tag = format!("{}", p.level);
+            let tag_w = fonts.measure_heading(&lvl_tag, 10.0).width + 4.0;
+            draw_rectangle(sx + slot_size - tag_w, pas_slots_y + slot_size - 11.0, tag_w, 11.0, Color::new(0.0, 0.0, 0.0, 0.85));
+            fonts.draw_heading(&lvl_tag, sx + slot_size - tag_w + 2.0, pas_slots_y + slot_size - 2.0, 10.0, GOLD);
 
-            if mx >= sx && mx <= sx + slot_w && my >= inv_y && my <= inv_y + slot_h {
-                hovered_tooltip = Some(HoverTooltip::Passive(p.clone(), sx, inv_y));
+            if is_hover {
+                hovered_tooltip = Some(HoverTooltip::Passive(p.clone(), sx, pas_slots_y));
             }
+        } else {
+            // Пустой слот реликвии
+            draw_rectangle_lines(sx, pas_slots_y, slot_size, slot_size, 1.0, Color::new(0.25, 0.20, 0.30, 0.7));
+            draw_circle_lines(sx + slot_size / 2.0, pas_slots_y + slot_size / 2.0, 6.0, 1.0, Color::new(0.35, 0.25, 0.40, 0.4));
         }
     }
 
@@ -170,20 +221,19 @@ pub fn render_ui(
     if world.boss_inventory.perk_announcement_timer > 0.0 {
         if let Some(ref perk_text) = world.boss_inventory.last_chosen_perk {
             let banner_w = 480.0;
-            let banner_h = 36.0;
+            let banner_h = 34.0;
             let bx = (screen_w - banner_w) / 2.0;
-            let by = inv_y + slot_h + 8.0;
+            let by = field_y + field_h + 8.0;
 
             draw_rectangle(bx, by, banner_w, banner_h, Color::new(0.08, 0.08, 0.14, 0.96));
             draw_rectangle_lines(bx, by, banner_w, banner_h, 2.0, GOLD);
 
-            let tw = fonts.measure_heading(perk_text, 18.0).width;
-            fonts.draw_heading(perk_text, (screen_w - tw) / 2.0, by + 24.0, 18.0, GOLD);
+            let tw = fonts.measure_heading(perk_text, 16.0).width;
+            fonts.draw_heading(perk_text, (screen_w - tw) / 2.0, by + 23.0, 16.0, GOLD);
         }
     }
 
-    // 5. Верхние кнопки: Кодекс (слева) и Пауза (справа)
-    // 5.1 Кнопка Кодекса [ 📖 Кодекс (I) ]
+    // 5. Верхняя левая кнопка: Кодекс [ 📖 Кодекс (I) ]
     let codex_btn_w = 145.0;
     let codex_btn_h = 34.0;
     let codex_btn_x = 20.0;
@@ -204,32 +254,15 @@ pub fn render_ui(
     fonts.draw_text("WASD: Камера | Колесо: Зум", 20.0, 62.0, 11.5, YELLOW);
     fonts.draw_text("[C]: Центр босса | ЛКМ: Двигать карту", 20.0, 78.0, 11.5, YELLOW);
 
-    // 5.2 Кнопка Паузы [ ⏸ Пауза (Space) ]
-    let pause_btn_w = 160.0;
-    let pause_btn_h = 34.0;
-    let pause_btn_x = screen_w - pause_btn_w - 20.0;
-    let pause_btn_y = 14.0;
-    let pause_hover = mx >= pause_btn_x && mx <= pause_btn_x + pause_btn_w && my >= pause_btn_y && my <= pause_btn_y + pause_btn_h;
-    if pause_hover {
-        interaction.is_mouse_over_ui = true;
-    }
-    draw_rectangle(pause_btn_x, pause_btn_y, pause_btn_w, pause_btn_h, if pause_hover { Color::new(0.35, 0.25, 0.12, 1.0) } else { Color::new(0.14, 0.12, 0.10, 0.95) });
-    draw_rectangle_lines(pause_btn_x, pause_btn_y, pause_btn_w, pause_btn_h, 1.5, if pause_hover { GOLD } else { GRAY });
-    fonts.draw_heading("⏸ Пауза [Space]", pause_btn_x + 14.0, pause_btn_y + 22.0, 14.0, if pause_hover { GOLD } else { WHITE });
-
-    if is_mouse_button_pressed(MouseButton::Left) && pause_hover {
-        interaction.clicked_pause = true;
-    }
-
     // 6. ТАКТИЧЕСКАЯ МИНИКАРТА (В левой нижней части экрана)
     draw_minimap(world, cam_pos, cam_zoom, fonts, &mut interaction);
 
-    // 7. ДОТА-СТАЙЛ ПАНЕЛЬ ОЧКОВ ДУШ И ДОХОДА (Справа внизу, как голда в Dota 2)
+    // 7. СТИЛЬНАЯ ПАНЕЛЬ ОЧКОВ ДУШ И ДОХОДА В ОДНУ СТРОКУ (Справа внизу)
     if let Some(director) = world.directors.first() {
-        let panel_w = 210.0;
-        let panel_h = 58.0;
-        let panel_x = screen_w - panel_w - 20.0;
-        let panel_y = screen_h - panel_h - 18.0;
+        let panel_w = 264.0;
+        let panel_h = 40.0;
+        let panel_x = screen_w - panel_w - 18.0;
+        let panel_y = screen_h - panel_h - 16.0;
 
         if mx >= panel_x && mx <= panel_x + panel_w && my >= panel_y && my <= panel_y + panel_h {
             interaction.is_mouse_over_ui = true;
@@ -253,52 +286,88 @@ pub fn render_ui(
         draw_circle(panel_x + 4.0, panel_y + panel_h - 4.0, 1.5, rivet_col);
         draw_circle(panel_x + panel_w - 4.0, panel_y + panel_h - 4.0, 1.5, rivet_col);
 
-        // Иконка Душ / Кристалла слева
-        if let Some(c_tex) = textures.soul_crystal.as_ref() {
-            let isize = 24.0;
+        // 1. Призрачная дымчатая иконка душ слева
+        let time = get_time() as f32;
+        let soul_icon_s = 24.0;
+        let icon_x = panel_x + 6.0;
+        let icon_y = panel_y + (panel_h - soul_icon_s) / 2.0;
+
+        if let Some(s_tex) = textures.soul_ethereal.as_ref() {
             draw_texture_ex(
-                c_tex,
-                panel_x + 8.0,
-                panel_y + (panel_h - isize) / 2.0,
-                GOLD,
+                s_tex,
+                icon_x,
+                icon_y,
+                WHITE,
                 DrawTextureParams {
-                    dest_size: Some(Vec2::new(isize, isize)),
+                    dest_size: Some(Vec2::new(soul_icon_s, soul_icon_s)),
+                    ..Default::default()
+                },
+            );
+        } else if let Some(c_tex) = textures.soul_crystal.as_ref() {
+            draw_texture_ex(c_tex, icon_x, icon_y, GOLD, DrawTextureParams { dest_size: Some(Vec2::new(soul_icon_s, soul_icon_s)), ..Default::default() });
+        } else {
+            draw_circle(icon_x + 12.0, icon_y + 12.0, 8.0, SKYBLUE);
+        }
+
+        // Дымчатые парящие частицы душ (живой вайб душ)
+        for p_i in 0..3 {
+            let p_offset = (time * 2.2 + p_i as f32 * 1.5) % 2.5;
+            let p_x = icon_x + 8.0 + (time * 3.5 + p_i as f32).sin() * 4.0;
+            let p_y = icon_y + 14.0 - p_offset * 7.0;
+            let p_alpha = (1.0 - p_offset / 2.5).clamp(0.0, 1.0) * 0.5;
+            draw_circle(p_x, p_y, 1.5, Color::new(0.4, 0.9, 1.0, p_alpha));
+        }
+
+        // 2. Число Душ (крупное, золотое, в одну строку)
+        let points_text = format!("{:.0}", director.points);
+        fonts.draw_heading(&points_text, panel_x + 33.0, panel_y + 26.0, 17.0, GOLD);
+        let points_w = fonts.measure_heading(&points_text, 17.0).width;
+
+        // Разделитель 1
+        let div1_x = panel_x + 37.0 + points_w;
+        draw_line(div1_x, panel_y + 8.0, div1_x, panel_y + panel_h - 8.0, 1.0, DARKGRAY);
+
+        // 3. Индикатор Дохода (в одну строку рядом с числом душ): ▲ +X.X [иконка душ] / 2с
+        let inc_start_x = div1_x + 7.0;
+        let inc_val_text = format!("▲ +{:.1}", total_income);
+        fonts.draw_heading(&inc_val_text, inc_start_x, panel_y + 26.0, 12.5, GREEN);
+        let inc_w = fonts.measure_heading(&inc_val_text, 12.5).width;
+
+        // Маленький символ очков душ прямо рядом с доходом
+        let sm_soul_x = inc_start_x + inc_w + 2.0;
+        let sm_soul_s = 15.0;
+        if let Some(sm_tex) = textures.soul_ethereal_sm.as_ref() {
+            draw_texture_ex(
+                sm_tex,
+                sm_soul_x,
+                panel_y + (panel_h - sm_soul_s) / 2.0,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(Vec2::new(sm_soul_s, sm_soul_s)),
                     ..Default::default()
                 },
             );
         } else {
-            draw_circle(panel_x + 20.0, panel_y + panel_h / 2.0, 9.0, GOLD);
-            draw_circle(panel_x + 20.0, panel_y + panel_h / 2.0, 4.0, WHITE);
+            draw_circle(sm_soul_x + 7.0, panel_y + panel_h / 2.0, 4.0, SKYBLUE);
         }
 
-        // Число Душ (крупное, яркое, золотое как в Доте)
-        let points_text = format!("{:.0}", director.points);
-        fonts.draw_heading(&points_text, panel_x + 36.0, panel_y + 28.0, 20.0, GOLD);
+        let per_sec_x = sm_soul_x + sm_soul_s + 1.0;
+        fonts.draw_text("/2с", per_sec_x, panel_y + 25.0, 10.5, SKYBLUE);
+        let per_sec_w = fonts.measure_text("/2с", 10.5).width;
 
-        // Подпись под числом душ
-        let sub_hint = format!("Алт: {} | Потр: {:.0}", altar_count, director.total_points_spent);
-        fonts.draw_text(&sub_hint, panel_x + 36.0, panel_y + 47.0, 10.5, LIGHTGRAY);
+        // Разделитель 2
+        let div2_x = per_sec_x + per_sec_w + 6.0;
+        draw_line(div2_x, panel_y + 8.0, div2_x, panel_y + panel_h - 8.0, 1.0, DARKGRAY);
 
-        // Индикатор Дохода (справа на плашке: зеленый бейдж с приростом)
-        let pill_w = 78.0;
-        let pill_h = 24.0;
-        let pill_x = panel_x + panel_w - pill_w - 8.0;
-        let pill_y = panel_y + 8.0;
+        // 4. Число алтарей
+        let altar_str = format!("🏛️{}", altar_count);
+        fonts.draw_heading(&altar_str, div2_x + 6.0, panel_y + 25.0, 11.5, PURPLE);
 
-        draw_rectangle(pill_x, pill_y, pill_w, pill_h, Color::new(0.04, 0.16, 0.08, 0.95));
-        draw_rectangle_lines(pill_x, pill_y, pill_w, pill_h, 1.2, Color::new(0.2, 0.85, 0.35, 0.9));
-
-        let inc_text = format!("▲ +{:.1}", total_income);
-        fonts.draw_heading(&inc_text, pill_x + 6.0, pill_y + 17.0, 12.0, GREEN);
-
-        let per_sec_text = "/ 2 сек";
-        fonts.draw_text(per_sec_text, pill_x + 36.0, panel_y + 46.0, 10.0, Color::new(0.5, 0.8, 0.6, 0.9));
-
-        // 7.1 Виджет Алтаря Крови (компактно прямо над Дота-панелью душ)
+        // 7.1 Виджет Алтаря Крови (компактно прямо над строкой душ)
         let aw_x = panel_x;
         let aw_w = panel_w;
-        let aw_h = 68.0;
-        let aw_y = panel_y - aw_h - 8.0;
+        let aw_h = 52.0;
+        let aw_y = panel_y - aw_h - 6.0;
 
         if mx >= aw_x && mx <= aw_x + aw_w && my >= aw_y && my <= aw_y + aw_h {
             interaction.is_mouse_over_ui = true;
@@ -320,8 +389,8 @@ pub fn render_ui(
         draw_rectangle_lines(aw_x, aw_y, aw_w, aw_h, 1.8, aw_border);
 
         if let Some(altar_tex) = textures.altar.as_ref() {
-            let icon_w = 28.0;
-            let icon_h = 44.0;
+            let icon_w = 26.0;
+            let icon_h = 38.0;
             let icon_tint = if on_cooldown { Color::new(0.8, 0.4, 0.4, 0.8) } else { WHITE };
             draw_texture_ex(
                 altar_tex,
@@ -334,46 +403,46 @@ pub fn render_ui(
                 },
             );
         } else {
-            draw_circle(aw_x + 22.0, aw_y + 34.0, 12.0, PURPLE);
+            draw_circle(aw_x + 20.0, aw_y + 28.0, 10.0, PURPLE);
         }
 
-        let content_x = aw_x + 42.0;
-        fonts.draw_heading("АЛТАРЬ КРОВИ [ПКМ]", content_x, aw_y + 18.0, 12.0, GOLD);
+        let content_x = aw_x + 38.0;
+        fonts.draw_heading("АЛТАРЬ КРОВИ [ПКМ]", content_x, aw_y + 16.0, 11.5, GOLD);
 
         if on_cooldown {
             let cd_text = format!("Перезарядка: {:.1}с", director.altar_cooldown);
-            fonts.draw_text(&cd_text, content_x, aw_y + 34.0, 11.0, Color::new(1.0, 0.35, 0.35, 1.0));
+            fonts.draw_text(&cd_text, content_x, aw_y + 32.0, 10.5, Color::new(1.0, 0.35, 0.35, 1.0));
 
-            let bar_w = 155.0;
-            let bar_h = 5.0;
+            let bar_w = 180.0;
+            let bar_h = 4.0;
             let prog = (1.0 - director.altar_cooldown / director.altar_max_cooldown).clamp(0.0, 1.0);
-            draw_rectangle(content_x, aw_y + 40.0, bar_w, bar_h, Color::new(0.2, 0.1, 0.1, 0.9));
-            draw_rectangle(content_x, aw_y + 40.0, bar_w * prog, bar_h, ORANGE);
-            draw_rectangle_lines(content_x, aw_y + 40.0, bar_w, bar_h, 1.0, GRAY);
+            draw_rectangle(content_x, aw_y + 36.0, bar_w, bar_h, Color::new(0.2, 0.1, 0.1, 0.9));
+            draw_rectangle(content_x, aw_y + 36.0, bar_w * prog, bar_h, ORANGE);
 
             let count_text = format!("Активно: {} (+{:.0}/2с)", world.structures.len(), world.structures.len() as f32 * 3.0);
-            fonts.draw_text(&count_text, content_x, aw_y + 57.0, 10.5, LIGHTGRAY);
+            fonts.draw_text(&count_text, content_x, aw_y + 49.0, 10.0, LIGHTGRAY);
         } else if can_afford_altar {
-            fonts.draw_text("ГОТОВ [50 душ]", content_x, aw_y + 34.0, 11.5, GREEN);
-            let bar_w = 155.0;
-            draw_rectangle(content_x, aw_y + 40.0, bar_w, 5.0, GREEN);
+            fonts.draw_text("ГОТОВ [50 душ]", content_x, aw_y + 32.0, 11.0, GREEN);
             let count_text = format!("Активно: {} (+{:.0}/2с)", world.structures.len(), world.structures.len() as f32 * 3.0);
-            fonts.draw_text(&count_text, content_x, aw_y + 57.0, 10.5, SKYBLUE);
+            fonts.draw_text(&count_text, content_x, aw_y + 49.0, 10.5, SKYBLUE);
         } else {
-            fonts.draw_text("ГОТОВ (Не хватает: 50)", content_x, aw_y + 34.0, 11.0, GRAY);
+            fonts.draw_text("ГОТОВ (Не хватает: 50)", content_x, aw_y + 32.0, 10.5, GRAY);
             let count_text = format!("Активно: {} (+{:.0}/2с)", world.structures.len(), world.structures.len() as f32 * 3.0);
-            fonts.draw_text(&count_text, content_x, aw_y + 52.0, 10.5, LIGHTGRAY);
+            fonts.draw_text(&count_text, content_x, aw_y + 49.0, 10.0, LIGHTGRAY);
         }
 
         // 8. ПАНЕЛЬ ГРЕЙДОВ МОБОВ ДИРЕКТОРА [F, G, H] (Над карточками мобов, поддержка Shift для прокачки на все)
         let is_shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
-        let g_btn_w = 236.0;
-        let g_btn_h = 32.0;
-        let g_total_w = 3.0 * g_btn_w + 2.0 * 10.0;
-        let g_start_x = (screen_w - g_total_w) / 2.0;
+        let card_w = 78.0;
+        let card_gap = 5.0;
+        let total_cards_w = 8.0 * card_w + 7.0 * card_gap; // 659px
+        let cards_start_x = (screen_w - total_cards_w) / 2.0;
+
+        let g_btn_w = (total_cards_w - 16.0) / 3.0; // 214.3px
+        let g_btn_h = 30.0;
         let card_h = 118.0;
-        let cards_y = screen_h - card_h - 18.0;
-        let g_y = cards_y - g_btn_h - 8.0;
+        let cards_y = screen_h - card_h - 16.0;
+        let g_y = cards_y - g_btn_h - 6.0;
 
         let grades = [
             ("F", "Ярость Крови", director.grade_fury, 100.0 * (director.grade_fury as f32 + 1.0), "+12% урон, +6% скор."),
@@ -382,7 +451,7 @@ pub fn render_ui(
         ];
 
         for (i, (key, name, lvl, cost, desc)) in grades.iter().enumerate() {
-            let gx = g_start_x + (i as f32) * (g_btn_w + 10.0);
+            let gx = cards_start_x + (i as f32) * (g_btn_w + 8.0);
             let g_hover = mx >= gx && mx <= gx + g_btn_w && my >= g_y && my <= g_y + g_btn_h;
             if g_hover {
                 interaction.is_mouse_over_ui = true;
@@ -399,9 +468,9 @@ pub fn render_ui(
             draw_rectangle(gx, g_y, g_btn_w, g_btn_h, bg);
             draw_rectangle_lines(gx, g_y, g_btn_w, g_btn_h, 1.5, border);
 
-            let title = format!("[{}] {} (Ур. {}) - {:.0} душ", key, name, lvl, cost);
-            fonts.draw_heading(&title, gx + 6.0, g_y + 14.0, 11.5, if can_buy { GOLD } else { LIGHTGRAY });
-            fonts.draw_text(desc, gx + 6.0, g_y + 26.0, 10.5, SKYBLUE);
+            let title = format!("[{}] {} (Ур. {}) - {:.0}", key, name, lvl, cost);
+            fonts.draw_heading(&title, gx + 6.0, g_y + 13.0, 11.0, if can_buy { GOLD } else { LIGHTGRAY });
+            fonts.draw_text(desc, gx + 6.0, g_y + 25.0, 10.0, SKYBLUE);
 
             if is_mouse_button_pressed(MouseButton::Left) && g_hover && can_buy {
                 if is_shift {
@@ -413,10 +482,6 @@ pub fn render_ui(
         }
 
         // 9. КАРТОЧКИ ПРИЗЫВА МОБОВ (Центральный блок: идеальные отступы от краев, ЛКМ = призыв, кнопка [i] = досье, Shift = на все души)
-        let card_w = 86.0;
-        let card_gap = 7.0;
-        let total_cards_w = 8.0 * card_w + 7.0 * card_gap; // 737px
-        let cards_start_x = (screen_w - total_cards_w) / 2.0;
 
         for i in 0..8 {
             let tier = (i + 1) as u8;
@@ -504,11 +569,27 @@ pub fn render_ui(
             let nw = fonts.measure_heading(short_name, 11.0).width;
             fonts.draw_heading(short_name, cx + (card_w - nw) / 2.0, cy + 68.0, 11.0, if is_unlocked { WHITE } else { LIGHTGRAY });
 
-            // Стоимость душ
-            let cost_str = format!("💀 {:.0}", config.cost);
-            let cw = fonts.measure_heading(&cost_str, 12.0).width;
+            // Стоимость душ с дымчатой иконкой
+            let cost_val = format!("{:.0}", config.cost);
+            let cost_num_w = fonts.measure_heading(&cost_val, 12.0).width;
+            let icon_s = 13.0;
+            let total_cost_w = cost_num_w + icon_s + 2.0;
+            let start_cost_x = cx + (card_w - total_cost_w) / 2.0;
             let cost_col = if !is_unlocked { GRAY } else if can_afford { GOLD } else { Color::new(1.0, 0.4, 0.4, 1.0) };
-            fonts.draw_heading(&cost_str, cx + (card_w - cw) / 2.0, cy + 84.0, 12.0, cost_col);
+
+            if let Some(sm_tex) = textures.soul_ethereal_sm.as_ref() {
+                draw_texture_ex(
+                    sm_tex,
+                    start_cost_x,
+                    cy + 73.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(icon_s, icon_s)),
+                        ..Default::default()
+                    },
+                );
+            }
+            fonts.draw_heading(&cost_val, start_cost_x + icon_s + 2.0, cy + 85.0, 12.0, cost_col);
 
             // Роль
             let role_str = match tier {

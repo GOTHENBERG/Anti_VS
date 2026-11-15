@@ -11,8 +11,51 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
     let cols = (map_w / tile_size) as usize;
     let rows = (map_h / tile_size) as usize;
 
-    // 2. Текстурный каменный пол подземелья
-    if let Some(floor_tex) = textures.floor_stone.as_ref() {
+    // 2. Текстурный каменный пол подземелья (Атмосферный подвал в стиле The Binding of Isaac)
+    if let Some(plain_tex) = textures.floor_isaac_plain.as_ref() {
+        let cracked_tex = textures.floor_isaac_cracked.as_ref().unwrap_or(plain_tex);
+        let blood_tex = textures.floor_isaac_blood.as_ref().unwrap_or(plain_tex);
+        let runic_tex = textures.floor_isaac_runic.as_ref().unwrap_or(plain_tex);
+
+        for y in 0..rows {
+            let py = (y as f32) * tile_size;
+            for x in 0..cols {
+                let px = (x as f32) * tile_size;
+                let hash = ((x * 73856093) ^ (y * 19349663)) % 100;
+
+                let (tex, tint) = if hash < 15 {
+                    (cracked_tex, Color::new(0.96, 0.94, 0.98, 1.0))
+                } else if hash < 27 {
+                    (blood_tex, Color::new(1.0, 0.95, 0.95, 1.0))
+                } else if hash < 36 {
+                    (runic_tex, Color::new(0.92, 0.90, 0.96, 1.0))
+                } else {
+                    let shade = 0.90 + ((hash % 10) as f32) * 0.02;
+                    (plain_tex, Color::new(shade, shade * 0.97, shade, 1.0))
+                };
+
+                draw_texture_ex(
+                    tex,
+                    px,
+                    py,
+                    tint,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(tile_size, tile_size)),
+                        ..Default::default()
+                    },
+                );
+
+                // Случайные мелкие булыжники и осколки камня на полу (как в Isaac)
+                if hash == 42 || hash == 88 {
+                    draw_circle(px + 22.0, py + 38.0, 3.5, Color::new(0.12, 0.10, 0.15, 0.9));
+                    draw_circle(px + 21.0, py + 37.0, 2.5, Color::new(0.35, 0.30, 0.40, 0.9));
+                } else if hash == 73 {
+                    draw_circle(px + 44.0, py + 18.0, 2.5, Color::new(0.12, 0.10, 0.15, 0.8));
+                    draw_circle(px + 43.0, py + 17.0, 1.8, Color::new(0.32, 0.28, 0.38, 0.8));
+                }
+            }
+        }
+    } else if let Some(floor_tex) = textures.floor_stone.as_ref() {
         for y in 0..rows {
             let py = (y as f32) * tile_size;
             for x in 0..cols {
@@ -128,8 +171,11 @@ pub fn draw_boss(pos: Vec2, vel: Vec2, invulnerable: bool, time: f32, textures: 
     let is_moving = vel.length_squared() > 4.0;
     let flip_x = facing_dir.x < -0.1;
 
-    // 1. Тень под ногами
-    draw_ellipse(pos.x, pos.y + 14.0, 22.0, 10.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.45));
+    // 1. Тень и золотая аура Паладина под ногами (гарантирует яркое выделение на любом полу)
+    draw_ellipse(pos.x, pos.y + 14.0, 24.0, 11.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.55));
+    let hero_glow = (time * 4.0).sin() * 2.0;
+    draw_ellipse(pos.x, pos.y + 12.0, 28.0 + hero_glow, 13.0 + hero_glow * 0.4, 0.0, Color::new(1.0, 0.82, 0.25, 0.25));
+    draw_ellipse_lines(pos.x, pos.y + 12.0, 28.0 + hero_glow, 13.0 + hero_glow * 0.4, 0.0, 1.2, Color::new(1.0, 0.90, 0.35, 0.5));
 
     // 2. Развевающийся алый плащ за спиной
     let cape_flutter = (time * 8.0).sin() * 5.0;
@@ -165,6 +211,11 @@ pub fn draw_boss(pos: Vec2, vel: Vec2, invulnerable: bool, time: f32, textures: 
                 ..Default::default()
             },
         );
+
+        // Сияющий святой нимб паладина
+        let halo_y = pos.y - 32.0 + (time * 3.5).sin() * 2.0;
+        draw_ellipse(pos.x, halo_y, 10.0, 3.5, 0.0, Color::new(1.0, 0.95, 0.4, 0.35));
+        draw_ellipse_lines(pos.x, halo_y, 10.0, 3.5, 0.0, 1.8, GOLD);
     } else {
         // Процедурные латы и шлем (fallback)
         let body_color = if invulnerable {

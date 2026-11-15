@@ -39,8 +39,8 @@ pub fn draw_mob_dossier(
     draw_rectangle_lines(x, y, modal_w, 44.0, 1.5, DARKGRAY);
 
     let config = get_squad_config(tier);
-    let title = format!("📖 ТАКТИЧЕСКОЕ ДОСЬЕ ИНФЕРНО: {} (ТИР {})", config.name.to_uppercase(), tier);
-    fonts.draw_heading(&title, x + 24.0, y + 30.0, 18.0, GOLD);
+    let title = format!("📖 ТАКТИЧЕСКОЕ ДОСЬЕ: {} [ТИР {}]", config.name.to_uppercase(), tier);
+    fonts.draw_heading(&title, x + 24.0, y + 29.0, 16.0, GOLD);
 
     // Кнопка закрытия [ X ]
     let close_btn_w = 40.0;
@@ -116,12 +116,23 @@ pub fn draw_mob_dossier(
     let can_afford = director.map_or(false, |d| d.points >= config.cost);
 
     fonts.draw_heading("ПАРАМЕТРЫ ПРИЗЫВА", left_x + 14.0, summon_box_y + 24.0, 14.0, GOLD);
-    let cost_str = format!("• Стоимость: {:.0} Очков Душ", config.cost);
-    let count_str = format!("• Размер отряда: {} существ", config.count);
-    let inc_str = format!("• Прирост дохода: +{:.2} душ / 2 сек", config.cost * 0.02);
+    let cost_str = format!("• Стоимость: {:.0}", config.cost);
     fonts.draw_text(&cost_str, left_x + 14.0, summon_box_y + 48.0, 13.0, if can_afford { GREEN } else { RED });
+    let cw = fonts.measure_text(&cost_str, 13.0).width;
+    if let Some(sm_tex) = textures.soul_ethereal_sm.as_ref() {
+        draw_texture_ex(sm_tex, left_x + 16.0 + cw, summon_box_y + 37.0, WHITE, DrawTextureParams { dest_size: Some(Vec2::new(14.0, 14.0)), ..Default::default() });
+    }
+
+    let count_str = format!("• Размер отряда: {} существ", config.count);
     fonts.draw_text(&count_str, left_x + 14.0, summon_box_y + 68.0, 13.0, WHITE);
+
+    let inc_str = format!("• Прирост дохода: +{:.2}", config.cost * 0.02);
     fonts.draw_text(&inc_str, left_x + 14.0, summon_box_y + 88.0, 13.0, SKYBLUE);
+    let iw = fonts.measure_text(&inc_str, 13.0).width;
+    if let Some(sm_tex) = textures.soul_ethereal_sm.as_ref() {
+        draw_texture_ex(sm_tex, left_x + 16.0 + iw, summon_box_y + 77.0, WHITE, DrawTextureParams { dest_size: Some(Vec2::new(14.0, 14.0)), ..Default::default() });
+    }
+    fonts.draw_text("/ 2 сек", left_x + 34.0 + iw, summon_box_y + 88.0, 12.0, SKYBLUE);
 
     let total_spawned = director.map_or(0, |d| d.total_mobs_spawned);
     let stats_match = format!("• Всего на поле боя: {} (Призвано: {})", world.mobs.len(), total_spawned);
@@ -277,15 +288,20 @@ pub fn draw_mob_dossier(
         ),
     };
 
-    fonts.draw_text(strat1, right_x + 16.0, lore_box_y + 48.0, 12.0, WHITE);
-    fonts.draw_text(strat2, right_x + 16.0, lore_box_y + 70.0, 12.0, SKYBLUE);
-    fonts.draw_text(strat3, right_x + 16.0, lore_box_y + 92.0, 12.0, YELLOW);
+    let text_max_w = right_w - 32.0;
+    let mut cur_y = lore_box_y + 46.0;
+    cur_y = fonts.draw_text_wrapped(strat1, right_x + 16.0, cur_y, 11.5, 16.0, text_max_w, WHITE) + 4.0;
+    cur_y = fonts.draw_text_wrapped(strat2, right_x + 16.0, cur_y, 11.5, 16.0, text_max_w, SKYBLUE) + 4.0;
+    cur_y = fonts.draw_text_wrapped(strat3, right_x + 16.0, cur_y, 11.5, 16.0, text_max_w, YELLOW) + 4.0;
 
-    draw_line(right_x + 16.0, lore_box_y + 112.0, right_x + right_w - 16.0, lore_box_y + 112.0, 1.0, DARKGRAY);
+    draw_line(right_x + 16.0, cur_y + 4.0, right_x + right_w - 16.0, cur_y + 4.0, 1.0, DARKGRAY);
+    cur_y += 20.0;
 
-    fonts.draw_heading("ЭНЦИКЛОПЕДИЧЕСКАЯ СПРАВКА (WIKI LORE):", right_x + 16.0, lore_box_y + 130.0, 12.0, GOLD);
-    fonts.draw_text(lore_l1, right_x + 16.0, lore_box_y + 150.0, 11.5, LIGHTGRAY);
-    fonts.draw_text(lore_l2, right_x + 16.0, lore_box_y + 166.0, 11.5, LIGHTGRAY);
+    fonts.draw_heading("📖 ЭНЦИКЛОПЕДИЧЕСКАЯ СПРАВКА (WIKI LORE):", right_x + 16.0, cur_y, 12.0, GOLD);
+    cur_y += 18.0;
+
+    let full_lore = format!("{} {}", lore_l1, lore_l2);
+    fonts.draw_text_wrapped(&full_lore, right_x + 16.0, cur_y, 11.5, 16.0, text_max_w, LIGHTGRAY);
 
     let tip_text = "💡 Совет: Нажмите клавишу [Esc] или кликните [X], чтобы вернуться в бой";
     fonts.draw_text(tip_text, right_x + 16.0, lore_box_y + lore_box_h - 14.0, 11.0, GRAY);
