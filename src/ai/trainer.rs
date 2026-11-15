@@ -25,6 +25,7 @@ struct BossEval {
     fitness: f32,
     avg_survival: f32,
     avg_level: u32,
+    avg_damage_taken: f32,
     avg_altars_destroyed: usize,
     avg_altars_built: usize,
     mobs_spawned: [usize; 8],
@@ -35,6 +36,7 @@ struct DirectorEval {
     idx: usize,
     fitness: f32,
     avg_kill_speed: f32,
+    avg_damage_dealt: f32,
     avg_altars_built: usize,
     mobs_spawned: [usize; 8],
     grades: (u8, u8, u8),
@@ -117,6 +119,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                 let mut total_survival = 0.0;
                 let mut total_level = 0;
                 let mut total_score = 0.0;
+                let mut total_damage_taken = 0.0;
                 let mut total_altars_destroyed = 0;
                 let mut total_altars_built = 0;
                 let mut total_mobs = [0usize; 8];
@@ -136,16 +139,19 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
 
                     total_survival += res.survival_time;
                     total_level += res.boss_level;
+                    total_damage_taken += res.damage_dealt_to_boss;
                     total_altars_destroyed += res.altars_destroyed;
                     total_altars_built += res.altars_built;
                     for t in 0..8 {
                         total_mobs[t] += res.mobs_spawned_by_tier[t];
                     }
 
-                    // Фитнес Босса: время жизни + уровень + уничтоженные алтари
-                    let score = res.survival_time * 1.5
+                    // Фитнес Босса: время жизни + уровень + уничтоженные алтари - "КНУТ" за полученный урон!
+                    let damage_penalty = res.damage_dealt_to_boss * 0.25;
+                    let score = (res.survival_time * 1.5
                         + (res.boss_level as f32 * 35.0)
-                        + (res.altars_destroyed as f32 * 60.0);
+                        + (res.altars_destroyed as f32 * 60.0)
+                        - damage_penalty).max(10.0);
                     total_score += score;
                 }
 
@@ -160,6 +166,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                     fitness: total_score / m_f,
                     avg_survival: total_survival / m_f,
                     avg_level: (total_level as f32 / m_f).round() as u32,
+                    avg_damage_taken: total_damage_taken / m_f,
                     avg_altars_destroyed: ((total_altars_destroyed as f32) / m_f).round() as usize,
                     avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
                     mobs_spawned: avg_mobs,
@@ -174,6 +181,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                 let director = &director_pop[d_idx];
                 let mut total_kill_speed = 0.0;
                 let mut total_score = 0.0;
+                let mut total_damage_dealt = 0.0;
                 let mut total_altars_built = 0;
                 let mut total_mobs = [0usize; 8];
                 let mut last_grades = (0, 0, 0);
@@ -190,12 +198,16 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
 
                     let res = run_headless_simulation(boss, director, 600.0);
 
-                    // Фитнес Директора: чем быстрее убит босс, тем выше фитнес!
+                    // Фитнес Директора: награда за скорость + "ПРЯНИК" за урон + бонус за добивание + алтари!
+                    let damage_reward = res.damage_dealt_to_boss * 0.35;
+                    let kill_bonus = if !res.boss_won { 250.0 } else { 0.0 };
                     let kill_score = (600.0 - res.survival_time) * 2.0
-                        + (res.damage_dealt_to_boss * 0.15)
+                        + damage_reward
+                        + kill_bonus
                         + (res.altars_built as f32 * 25.0);
                     total_score += kill_score;
                     total_kill_speed += res.survival_time;
+                    total_damage_dealt += res.damage_dealt_to_boss;
                     total_altars_built += res.altars_built;
                     last_grades = res.director_grades;
                     for t in 0..8 {
@@ -213,6 +225,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                     idx: d_idx,
                     fitness: total_score / m_f,
                     avg_kill_speed: total_kill_speed / m_f,
+                    avg_damage_dealt: total_damage_dealt / m_f,
                     avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
                     mobs_spawned: avg_mobs,
                     grades: last_grades,
@@ -278,13 +291,16 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             gen_idx, generations, current_gen_num, hof_bosses.len()
         );
         println!(
-            "   👑 Лучший Босс: выжил {:.1}с (Ур. {}, Фитнес {:.0}) | Сломал алтарей: {}",
+            "   👑 Лучший Босс: выжил {:.1}с (Ур. {}, Фитнес {:.0}) | Урон получен: {:.0} HP (Кнут: -{:.0}) | Сломал алтарей: {}",
             best_boss_eval.avg_survival, best_boss_eval.avg_level, best_boss_eval.fitness,
+            best_boss_eval.avg_damage_taken, best_boss_eval.avg_damage_taken * 0.25,
             best_boss_eval.avg_altars_destroyed,
         );
         println!(
-            "   👁️ Лучший Директор: сбрил за {:.1}с (Фитнес {:.0}) | Построил алтарей: {} | Грейды армии: [🔥Ярость: {}, 🛡️Панцирь: {}, 🧪Мор: {}]",
-            best_dir_eval.avg_kill_speed, best_dir_eval.fitness, best_dir_eval.avg_altars_built,
+            "   👁️ Лучший Директор: сбрил за {:.1}с (Фитнес {:.0}) | Нанес урона: {:.0} HP (Пряник: +{:.0}) | Построил алтарей: {} | Грейды: [🔥Ярость: {}, 🛡️Панцирь: {}, 🧪Мор: {}]",
+            best_dir_eval.avg_kill_speed, best_dir_eval.fitness,
+            best_dir_eval.avg_damage_dealt, best_dir_eval.avg_damage_dealt * 0.35,
+            best_dir_eval.avg_altars_built,
             best_dir_eval.grades.0, best_dir_eval.grades.1, best_dir_eval.grades.2,
         );
         println!(
