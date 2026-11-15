@@ -108,9 +108,9 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
         }
     }
 
-    // 6. Отрисовка снарядов
+    // 6. Отрисовка снарядов (с обновленными эффектами для босса и мобов)
     for proj in &world.projectiles {
-        draw_projectile_sprite(proj.pos, proj.vel, proj.radius, proj.damage_type, textures);
+        draw_projectile_sprite(proj, textures);
     }
 
     // 7. Луч Смерти (Death Ray)

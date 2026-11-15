@@ -13,7 +13,9 @@ pub fn update_director(world: &mut World, dt: f32) {
         director.income_timer += dt;
         if director.income_timer >= 2.0 {
             director.income_timer -= 2.0;
-            director.points += director.income_rate;
+            // Базовый доход плюс бонус от каждого живого Алтаря Крови (+3.0 душ)
+            let altar_income = world.structures.len() as f32 * 3.0;
+            director.points += director.income_rate + altar_income;
         }
     }
 }

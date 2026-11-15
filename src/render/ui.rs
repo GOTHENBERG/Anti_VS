@@ -1,10 +1,20 @@
 use macroquad::prelude::*;
 use crate::content::mobs::get_squad_config;
+use crate::content::passives::get_passive_def;
 use crate::content::structures::BLOOD_ALTAR_COST;
+use crate::content::weapons::get_weapon_def;
 use crate::core::time::GameClock;
+use crate::ecs::components::inventory::{PassiveSlot, PassiveType, WeaponSlot, WeaponType};
 use crate::ecs::world::World;
 use crate::render::font::GameFonts;
 use crate::render::textures::GameTextures;
+
+enum HoverTooltip {
+    Weapon(WeaponSlot, f32, f32),
+    Passive(PassiveSlot, f32, f32),
+    Squad(u8, f32, f32),
+    WorldEntity(Vec2, Vec<(String, Color)>),
+}
 
 pub fn render_ui(
     world: &World,
@@ -16,18 +26,20 @@ pub fn render_ui(
 ) {
     let screen_w = screen_width();
     let screen_h = screen_height();
+    let (mx, my) = mouse_position();
+    let mut hovered_tooltip: Option<HoverTooltip> = None;
 
     // 1. Верхний таймер 30:00 обратного отсчета
     let timer_text = clock.formatted_remaining();
-    let timer_font_size = 34.0;
-    let timer_w = fonts.measure_text(&timer_text, timer_font_size).width;
-    fonts.draw_text(&timer_text, (screen_w - timer_w) / 2.0, 36.0, timer_font_size, WHITE);
+    let timer_font_size = 36.0;
+    let timer_w = fonts.measure_heading(&timer_text, timer_font_size).width;
+    fonts.draw_heading(&timer_text, (screen_w - timer_w) / 2.0, 38.0, timer_font_size, WHITE);
 
     // 2. Полоска здоровья Босса и Опыт (сверху под таймером)
     let bar_w = 480.0;
     let bar_h = 22.0;
     let bar_x = (screen_w - bar_w) / 2.0;
-    let bar_y = 48.0;
+    let bar_y = 50.0;
 
     let hp_ratio = (world.boss_health.current / world.boss_health.max).clamp(0.0, 1.0);
     draw_rectangle(bar_x, bar_y, bar_w, bar_h, Color::new(0.12, 0.12, 0.18, 0.95));
@@ -35,7 +47,7 @@ pub fn render_ui(
     draw_rectangle_lines(bar_x, bar_y, bar_w, bar_h, 2.0, WHITE);
 
     let hp_text = format!(
-        "{:.0} / {:.0} HP  (Босс ур. {}) | Броня: {:.0}",
+        "{:.0} / {:.0} HP  (Босс ур. {}) | Броня: {:.1}",
         world.boss_health.current,
         world.boss_health.max,
         world.boss_inventory.level,
@@ -87,6 +99,11 @@ pub fn render_ui(
             let lvl_text = format!("{}", w.level);
             let text_color = if w.is_evolved { GOLD } else { WHITE };
             fonts.draw_text(&lvl_text, sx + 3.0, inv_y + slot_h - 4.0, 13.0, text_color);
+
+            // Проверка наведения курсора на оружие
+            if mx >= sx && mx <= sx + slot_w && my >= inv_y && my <= inv_y + slot_h {
+                hovered_tooltip = Some(HoverTooltip::Weapon(w.clone(), sx, inv_y));
+            }
         }
     }
 
@@ -125,53 +142,61 @@ pub fn render_ui(
 
             let lvl_text = format!("{}", p.level);
             fonts.draw_text(&lvl_text, sx + 3.0, inv_y + slot_h - 4.0, 13.0, WHITE);
+
+            // Проверка наведения курсора на пассивку
+            if mx >= sx && mx <= sx + slot_w && my >= inv_y && my <= inv_y + slot_h {
+                hovered_tooltip = Some(HoverTooltip::Passive(p.clone(), sx, inv_y));
+            }
         }
     }
 
     // 4. Баннер Level-Up / Эволюции Босса
     if world.boss_inventory.perk_announcement_timer > 0.0 {
         if let Some(ref perk_text) = world.boss_inventory.last_chosen_perk {
-            let banner_w = 460.0;
-            let banner_h = 34.0;
+            let banner_w = 480.0;
+            let banner_h = 36.0;
             let bx = (screen_w - banner_w) / 2.0;
             let by = inv_y + slot_h + 8.0;
 
             draw_rectangle(bx, by, banner_w, banner_h, Color::new(0.08, 0.08, 0.14, 0.96));
             draw_rectangle_lines(bx, by, banner_w, banner_h, 2.0, GOLD);
 
-            let tw = fonts.measure_text(perk_text, 18.0).width;
-            fonts.draw_text(perk_text, (screen_w - tw) / 2.0, by + 23.0, 18.0, GOLD);
+            let tw = fonts.measure_heading(perk_text, 18.0).width;
+            fonts.draw_heading(perk_text, (screen_w - tw) / 2.0, by + 24.0, 18.0, GOLD);
         }
     }
 
     // 5. Панель Директора (слева вверху)
     if let Some(director) = world.directors.first() {
-        draw_rectangle(15.0, 15.0, 280.0, 150.0, Color::new(0.08, 0.08, 0.12, 0.92));
-        draw_rectangle_lines(15.0, 15.0, 280.0, 150.0, 2.0, DARKGRAY);
+        draw_rectangle(15.0, 15.0, 290.0, 155.0, Color::new(0.08, 0.08, 0.12, 0.92));
+        draw_rectangle_lines(15.0, 15.0, 290.0, 155.0, 2.0, DARKGRAY);
+
+        let altar_count = world.structures.len();
+        let total_income = director.income_rate + (altar_count as f32 * 3.0);
 
         let points_text = format!("Очки Душ: {:.0}", director.points);
-        let income_text = format!("Доход: +{:.1} / 2 сек", director.income_rate);
+        let income_text = format!("Доход: +{:.1} / 2 сек (Алтарей: {})", total_income, altar_count);
         let spent_text = format!("Потрачено: {:.0}", director.total_points_spent);
         let spawn_text = format!("Призвано монстров: {}", director.total_mobs_spawned);
         let stats_text = format!("FPS: {} | Мобы на поле: {}", get_fps(), world.mobs.len());
         let cam_info = "WASD: Камера | Колесо: Зум | [C]: Босс | [I]: Кодекс";
 
-        fonts.draw_text(&points_text, 25.0, 38.0, 22.0, GOLD);
-        fonts.draw_text(&income_text, 25.0, 62.0, 17.0, GREEN);
-        fonts.draw_text(&spent_text, 25.0, 84.0, 15.0, LIGHTGRAY);
-        fonts.draw_text(&spawn_text, 25.0, 104.0, 15.0, SKYBLUE);
-        fonts.draw_text(&stats_text, 25.0, 125.0, 14.0, WHITE);
+        fonts.draw_heading(&points_text, 25.0, 40.0, 22.0, GOLD);
+        fonts.draw_text(&income_text, 25.0, 64.0, 15.0, GREEN);
+        fonts.draw_text(&spent_text, 25.0, 86.0, 14.0, LIGHTGRAY);
+        fonts.draw_text(&spawn_text, 25.0, 106.0, 14.0, SKYBLUE);
+        fonts.draw_text(&stats_text, 25.0, 126.0, 13.0, WHITE);
         fonts.draw_text(cam_info, 25.0, 148.0, 12.0, YELLOW);
 
         // 6. Подсказка для правой кнопки мыши (ПКМ — Алтарь)
         let rmb_text = format!("ПКМ: Построить Алтарь Крови ({:.0} душ)", BLOOD_ALTAR_COST);
         let rmb_color = if director.points >= BLOOD_ALTAR_COST { PURPLE } else { GRAY };
-        fonts.draw_text(&rmb_text, 15.0, 185.0, 15.0, rmb_color);
+        fonts.draw_text(&rmb_text, 15.0, 188.0, 15.0, rmb_color);
 
         // 7. Тактическая миникарта (справа вверху)
         draw_minimap(world, cam_pos, cam_zoom, fonts);
 
-        // 8. Всплывающий текст урона и меток (в экранных координатах, всегда четко и прямо)
+        // 8. Всплывающий текст урона и меток (в экранных координатах, всегда четко)
         for text in &world.floating_texts {
             let alpha = (text.lifetime / 0.8).clamp(0.0, 1.0);
             let mut color = text.color;
@@ -182,8 +207,8 @@ pub fn render_ui(
             let sy = (text.pos.y - cam_pos.y) * cam_zoom + screen_h / 2.0;
 
             if sx >= -100.0 && sx <= screen_w + 100.0 && sy >= -50.0 && sy <= screen_h + 50.0 {
-                let tw = fonts.measure_text(&text.text, font_size).width;
-                fonts.draw_text(&text.text, sx - tw / 2.0, sy, font_size, color);
+                let tw = fonts.measure_heading(&text.text, font_size).width;
+                fonts.draw_heading(&text.text, sx - tw / 2.0, sy, font_size, color);
             }
         }
 
@@ -241,7 +266,7 @@ pub fn render_ui(
 
             // Название отряда и горячая клавиша
             let header = format!("[{}] {}", i + 1, config.name);
-            fonts.draw_text(&header, bx + 6.0, btn_y + 20.0, 14.0, WHITE);
+            fonts.draw_heading(&header, bx + 6.0, btn_y + 20.0, 14.0, WHITE);
 
             if !is_unlocked {
                 let lock_text = format!("Нужно: {:.0}", config.unlock_spent_threshold);
@@ -257,6 +282,270 @@ pub fn render_ui(
                 let grow_text = format!("+ {:.2}/2c доход", config.cost * 0.02);
                 fonts.draw_text(&grow_text, bx + 6.0, btn_y + 58.0, 12.0, GREEN);
             }
+
+            // Проверка наведения на кнопку призыва
+            if mx >= bx && mx <= bx + btn_width && my >= btn_y && my <= btn_y + btn_height {
+                hovered_tooltip = Some(HoverTooltip::Squad(tier, bx, btn_y));
+            }
+        }
+    }
+
+    // 10. Проверка наведения курсора на объекты в игровом мире (World Entities: Алтарь, Босс, Мобы)
+    if hovered_tooltip.is_none() && my > 95.0 && my < screen_h - 95.0 {
+        let world_mx = (mx - screen_w / 2.0) / cam_zoom + cam_pos.x;
+        let world_my = (my - screen_h / 2.0) / cam_zoom + cam_pos.y;
+        let world_mpos = Vec2::new(world_mx, world_my);
+
+        // 10.1 Наведение на Босса
+        if world_mpos.distance(world.boss_pos) < 36.0 {
+            let state_str = if world.boss_still_time >= 2.0 {
+                ("🧘 МЕДИТАЦИЯ ПОКОЯ (+2% HP/с, +30 XP/с)".to_string(), GREEN)
+            } else if world.boss_dash_cooldown <= 0.0 {
+                ("⚡ РЫВОК ГОТОВ (8-лучевой Dash)".to_string(), GOLD)
+            } else {
+                ("⚔️ АКТИВНЫЙ БОЙ (Кайтинг орд)".to_string(), SKYBLUE)
+            };
+
+            let lines = vec![
+                ("👑 СОЛО-БОСС (АВТОНОМНЫЙ ГЕРОЙ)".to_string(), YELLOW),
+                (format!("Здоровье: {:.0} / {:.0} HP | Броня: {:.1}", world.boss_health.current, world.boss_health.max, world.boss_resistances.flat_armor), WHITE),
+                (format!("Уровень: {} | Оружий: {}/6 | Пассивок: {}/6", world.boss_inventory.level, world.boss_inventory.weapons.len(), world.boss_inventory.passives.len()), LIGHTGRAY),
+                state_str,
+            ];
+            hovered_tooltip = Some(HoverTooltip::WorldEntity(Vec2::new(mx, my), lines));
+        }
+
+        // 10.2 Наведение на Алтарь Крови
+        if hovered_tooltip.is_none() {
+            for st in &world.structures {
+                if world_mpos.distance(st.pos) < st.radius + 18.0 {
+                    let lines = vec![
+                        ("🏛️ АЛТАРЬ КРОВИ (Инфернальная структура)".to_string(), PURPLE),
+                        (format!("Здоровье: {:.0} / {:.0} HP | Броня: {:.0}", st.health.current, st.health.max, st.resistances.flat_armor), WHITE),
+                        ("+3.0 Очков Душ каждые 2 сек к доходу Директора".to_string(), GREEN),
+                        ("Аура Крови: лечит союзных мобов на +35 HP каждые 3 сек в радиусе 180px".to_string(), SKYBLUE),
+                        ("⚠️ РАЗРУШАЕМ: Босс атакует и уничтожает алтарь!".to_string(), ORANGE),
+                    ];
+                    hovered_tooltip = Some(HoverTooltip::WorldEntity(Vec2::new(mx, my), lines));
+                    break;
+                }
+            }
+        }
+
+        // 10.3 Наведение на Моба
+        if hovered_tooltip.is_none() {
+            let nearby_indices = world.spatial_grid.query_nearby(world_mpos, 28.0);
+            for idx in nearby_indices {
+                if let Some(mob) = world.mobs.get(idx) {
+                    if mob.pos.distance(world_mpos) < mob.radius + 12.0 {
+                        let config = get_squad_config(mob.tier);
+                        let mut lines = vec![
+                            (format!("👹 {} (Тир {})", config.name, mob.tier), WHITE),
+                            (format!("HP: {:.0} / {:.0} | Скорость: {:.0} | Броня: {:.0}", mob.health.current, mob.health.max, mob.speed, mob.resistances.flat_armor), LIGHTGRAY),
+                        ];
+
+                        if mob.status.burn_timer > 0.0 {
+                            lines.push((format!("🔥 Горение: -{:.0} HP/сек", mob.status.burn_dps), ORANGE));
+                        }
+                        if mob.status.is_frozen() {
+                            lines.push(("❄️ Заморозка: полностью обездвижен".to_string(), SKYBLUE));
+                        } else if mob.status.slow_timer > 0.0 {
+                            lines.push(("❄️ Замедление скорости на 50%".to_string(), SKYBLUE));
+                        }
+                        if mob.status.poison_timer > 0.0 {
+                            lines.push((format!("🧪 Отравление: -{:.0} HP/сек", mob.status.poison_dps), LIME));
+                        }
+
+                        hovered_tooltip = Some(HoverTooltip::WorldEntity(Vec2::new(mx, my), lines));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // 11. Отрисовка активной карточки-подсказки (Tooltip) поверх всех элементов
+    if let Some(tooltip) = hovered_tooltip {
+        match tooltip {
+            HoverTooltip::Weapon(w, slot_x, slot_y) => {
+                draw_weapon_tooltip(&w, slot_x, slot_y, screen_w, fonts);
+            }
+            HoverTooltip::Passive(p, slot_x, slot_y) => {
+                draw_passive_tooltip(&p, slot_x, slot_y, screen_w, fonts);
+            }
+            HoverTooltip::Squad(tier, btn_x, btn_y) => {
+                draw_squad_tooltip(tier, btn_x, btn_y, screen_w, fonts, world);
+            }
+            HoverTooltip::WorldEntity(screen_pos, lines) => {
+                draw_world_entity_tooltip(screen_pos, lines, screen_w, screen_h, fonts);
+            }
+        }
+    }
+}
+
+/// Всплывающая подсказка для оружия Босса
+fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &GameFonts) {
+    let def = get_weapon_def(w.kind);
+    let card_w = 340.0;
+    let card_h = 135.0;
+    let card_x = (sx + 19.0 - card_w / 2.0).clamp(10.0, screen_w - card_w - 10.0);
+    let card_y = sy + 36.0;
+
+    // Фон и обводка
+    draw_rectangle(card_x, card_y, card_w, card_h, Color::new(0.06, 0.08, 0.14, 0.96));
+    let border_color = if w.is_evolved { GOLD } else { SKYBLUE };
+    draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, border_color);
+
+    // Заголовок
+    let title = format!("{} [Ур. {}/8]", def.name, w.level);
+    fonts.draw_heading(&title, card_x + 12.0, card_y + 22.0, 16.0, border_color);
+
+    // Характеристики
+    let dmg_type_str = match def.damage_type {
+        crate::ecs::components::combat::DamageType::Physical => "Физический",
+        crate::ecs::components::combat::DamageType::Fire => "Огненный",
+        crate::ecs::components::combat::DamageType::Ice => "Ледяной",
+        crate::ecs::components::combat::DamageType::Holy => "Святой",
+        crate::ecs::components::combat::DamageType::True => "Чистый (True)",
+        _ => "Обычный",
+    };
+    let stats_text = format!("Урон: {:.0} ({}) | Кулдаун: {:.2}с", w.damage, dmg_type_str, w.base_cooldown);
+    fonts.draw_text(&stats_text, card_x + 12.0, card_y + 44.0, 13.0, WHITE);
+
+    // Описание механики
+    fonts.draw_text(def.description, card_x + 12.0, card_y + 68.0, 12.0, LIGHTGRAY);
+
+    // Рецепт эволюции
+    let (evo_str, evo_col) = if w.is_evolved {
+        ("⭐ СУПЕРОРУЖИЕ: Максимальная боевая эволюция".to_string(), GOLD)
+    } else {
+        let (req_passive, evo_weapon) = match w.kind {
+            WeaponType::WindBlade => ("Перчатка Скорости", "Буря Клинков"),
+            WeaponType::FireAura => ("Сердце Гиганта", "Адское Пекло"),
+            WeaponType::MagicWand => ("Фолиант Времени", "Луч Смерти"),
+            WeaponType::HolyHammer => ("Броня Света", "Праведный Щит"),
+            WeaponType::IceShards => ("Кольцо Заморозки", "Ледниковая Буря"),
+            WeaponType::PoisonOrbs => ("Едкий Сосуд", "Токсичный Мор"),
+            _ => ("-", "-"),
+        };
+        (format!("Эволюция (Ур. 8 + {}): -> {}", req_passive, evo_weapon), YELLOW)
+    };
+    fonts.draw_text(&evo_str, card_x + 12.0, card_y + 92.0, 12.0, evo_col);
+    fonts.draw_text("Совет: Босс выбирает апгрейды адаптивно в зависимости от угроз", card_x + 12.0, card_y + 114.0, 11.0, GRAY);
+}
+
+/// Всплывающая подсказка для пассивного предмета Босса
+fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts: &GameFonts) {
+    let def = get_passive_def(p.kind);
+    let card_w = 330.0;
+    let card_h = 125.0;
+    let card_x = (sx + 19.0 - card_w / 2.0).clamp(10.0, screen_w - card_w - 10.0);
+    let card_y = sy + 36.0;
+
+    draw_rectangle(card_x, card_y, card_w, card_h, Color::new(0.08, 0.06, 0.14, 0.96));
+    draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, PURPLE);
+
+    let title = format!("{} [Ур. {}/5]", def.name, p.level);
+    fonts.draw_heading(&title, card_x + 12.0, card_y + 22.0, 16.0, GOLD);
+
+    // Точный текущий бонус
+    let bonus_text = match p.kind {
+        PassiveType::SpeedGloves => format!("Текущий бонус: +{}% к скорости атаки оружия", p.level * 15),
+        PassiveType::GiantHeart => format!("Текущий бонус: +{}% к макс. здоровью и регенерации", p.level * 25),
+        PassiveType::CooldownTome => format!("Текущий бонус: -{}% времени отката оружия", p.level * 20),
+        PassiveType::LightArmor => format!("Текущий бонус: +{:.0} к плоской броне, +{}% к защите", p.level as f32 * 8.0, p.level * 15),
+        PassiveType::FrostRing => format!("Текущий бонус: +{}% к длительности замедления врагов", p.level * 20),
+        PassiveType::CorrosiveFlask => format!("Текущий бонус: +{}% к пробитию брони всеми атаками", p.level * 15),
+    };
+    fonts.draw_text(&bonus_text, card_x + 12.0, card_y + 44.0, 13.0, GREEN);
+
+    // Описание
+    fonts.draw_text(def.description, card_x + 12.0, card_y + 68.0, 12.0, LIGHTGRAY);
+
+    let evo_synergy = match p.kind {
+        PassiveType::SpeedGloves => "Связка для эволюции: Клинок Ветра -> Буря Клинков",
+        PassiveType::GiantHeart => "Связка для эволюции: Огненная Аура -> Адское Пекло",
+        PassiveType::CooldownTome => "Связка для эволюции: Магический Жезл -> Луч Смерти",
+        PassiveType::LightArmor => "Связка для эволюции: Святой Молот -> Праведный Щит",
+        PassiveType::FrostRing => "Связка для эволюции: Ледяные Осколки -> Ледниковая Буря",
+        PassiveType::CorrosiveFlask => "Связка для эволюции: Чумные Сферы -> Токсичный Мор",
+    };
+    fonts.draw_text(evo_synergy, card_x + 12.0, card_y + 92.0, 12.0, YELLOW);
+}
+
+/// Всплывающая подсказка тактического досье отряда мобов
+fn draw_squad_tooltip(tier: u8, bx: f32, by: f32, screen_w: f32, fonts: &GameFonts, world: &World) {
+    let config = get_squad_config(tier);
+    let card_w = 370.0;
+    let card_h = 195.0;
+    let card_x = (bx + 97.0 - card_w / 2.0).clamp(10.0, screen_w - card_w - 10.0);
+    let card_y = by - card_h - 10.0;
+
+    let director = world.directors.first();
+    let is_unlocked = director.map_or(false, |d| d.total_points_spent >= config.unlock_spent_threshold);
+
+    draw_rectangle(card_x, card_y, card_w, card_h, Color::new(0.06, 0.08, 0.12, 0.97));
+    let border_color = if is_unlocked { GREEN } else { RED };
+    draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, border_color);
+
+    let title = format!("Отряд: {} (Тир {})", config.name, tier);
+    fonts.draw_heading(&title, card_x + 14.0, card_y + 24.0, 16.0, if is_unlocked { GOLD } else { LIGHTGRAY });
+
+    let cost_info = format!("Цена: {:.0} Душ | Отряд: {} бойцов | +{:.2}/2с доход", config.cost, config.count, config.cost * 0.02);
+    fonts.draw_text(&cost_info, card_x + 14.0, card_y + 46.0, 13.0, GREEN);
+
+    // Детальные статы моба
+    let (hp_val, spd_val, dmg_val, arm_val, res_str) = match tier {
+        1 => (32.0, 105.0, 7.0, 0.0, "Физ: 5% | Огонь: 0% | Холод: 0% | Святость: -40%"),
+        2 => (50.0, 160.0, 12.0, 1.0, "Физ: 10% | Огонь: 0% | Холод: 0% | Святость: -20%"),
+        3 => (75.0, 80.0, 16.0, 2.0, "Физ: 15% | Огонь: 20% | Холод: -10% | Святость: -40%"),
+        4 => (380.0, 52.0, 32.0, 14.0, "Физ: 35% | Холод: 100% (Иммун) | Огонь: -50% (Уязвим!)"),
+        _ => (130.0, 185.0, 220.0, 2.0, "Физ: 10% | Огонь: 50% | Холод: 0% | Взрыв по площади: 220"),
+    };
+
+    let combat_text = if tier == 5 {
+        format!("HP: {:.0} | Скорость: {:.0} | Броня: {:.0} | Взрыв: 220 урона", hp_val, spd_val, arm_val)
+    } else if tier == 3 {
+        format!("HP: {:.0} | Скорость: {:.0} | Броня: {:.0} | Урон: {:.0} (Дальний бой 260px)", hp_val, spd_val, arm_val, dmg_val)
+    } else {
+        format!("HP: {:.0} | Скорость: {:.0} | Броня: {:.0} | Урон: {:.0} (Ближний бой)", hp_val, spd_val, arm_val, dmg_val)
+    };
+    fonts.draw_text(&combat_text, card_x + 14.0, card_y + 68.0, 13.0, WHITE);
+    fonts.draw_text(res_str, card_x + 14.0, card_y + 90.0, 12.0, SKYBLUE);
+
+    // Тактическое назначение
+    fonts.draw_text(config.description, card_x + 14.0, card_y + 116.0, 12.0, YELLOW);
+
+    if !is_unlocked {
+        let req = format!("🔒 Откроется после траты еще {:.0} Душ", config.unlock_spent_threshold - director.map_or(0.0, |d| d.total_points_spent));
+        fonts.draw_text(&req, card_x + 14.0, card_y + 146.0, 13.0, RED);
+    } else {
+        fonts.draw_text("⚡ Нажмите [1..5] или кликните ЛКМ для призыва отряда кольцом вокруг арены", card_x + 14.0, card_y + 146.0, 11.0, LIGHTGRAY);
+        fonts.draw_text("Кулдаун призыва снят: призывайте мгновенно при наличии Очков Душ!", card_x + 14.0, card_y + 168.0, 11.0, GOLD);
+    }
+}
+
+/// Всплывающая подсказка при наведении на объекты на карте
+fn draw_world_entity_tooltip(
+    screen_pos: Vec2,
+    lines: Vec<(String, Color)>,
+    screen_w: f32,
+    screen_h: f32,
+    fonts: &GameFonts,
+) {
+    let card_w = 340.0;
+    let card_h = (lines.len() as f32 * 22.0) + 16.0;
+    let card_x = (screen_pos.x + 16.0).clamp(10.0, screen_w - card_w - 10.0);
+    let card_y = (screen_pos.y - card_h - 12.0).clamp(10.0, screen_h - card_h - 10.0);
+
+    draw_rectangle(card_x, card_y, card_w, card_h, Color::new(0.05, 0.05, 0.10, 0.95));
+    draw_rectangle_lines(card_x, card_y, card_w, card_h, 1.5, WHITE);
+
+    for (i, (text, color)) in lines.iter().enumerate() {
+        if i == 0 {
+            fonts.draw_heading(text, card_x + 10.0, card_y + 20.0, 14.0, *color);
+        } else {
+            fonts.draw_text(text, card_x + 10.0, card_y + 20.0 + (i as f32 * 21.0), 12.0, *color);
         }
     }
 }

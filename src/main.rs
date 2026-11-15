@@ -67,6 +67,7 @@ async fn main() {
 
         if auto_screenshot && frame_count == 10 {
             spawn_squad_perimeter(&mut world, 1);
+            spawn_squad_perimeter(&mut world, 3);
         }
 
         // Пауза по P

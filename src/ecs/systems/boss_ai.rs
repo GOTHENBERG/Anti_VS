@@ -24,6 +24,20 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     let boss_pos = world.boss_pos;
     let mut total_force = Vec2::ZERO;
 
+    let mobs_in_close_radius = world.spatial_grid.query_nearby(boss_pos, 90.0)
+        .iter()
+        .filter(|&&idx| {
+            if let Some(mob) = world.mobs.get(idx) {
+                mob.pos.distance_squared(boss_pos) < 90.0 * 90.0
+            } else {
+                false
+            }
+        })
+        .count();
+
+    let hp_ratio = world.boss_health.current / world.boss_health.max;
+    let is_critical_hp = hp_ratio < 0.30;
+
     // 1. Потенциальные поля: Отталкивание от мобов в радиусе 180 пикселей (закон обратных квадратов)
     // Используем пространственную сетку для мгновенного запроса соседей за O(1)!
     let nearby_mob_indices = world.spatial_grid.query_nearby(boss_pos, 180.0);
@@ -46,6 +60,49 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         }
     }
     total_force += gem_pull;
+
+    // 2.1 Стратегическая цель: Атака и разрушение Алтарей Крови
+    // Если босс достаточно здоров (HP > 35%) и рядом нет плотной толпы,
+    // он целенаправленно выдвигается на алтарь для его разрушения
+    let is_safe_to_siege = hp_ratio > 0.35 && mobs_in_close_radius < 8;
+    if is_safe_to_siege {
+        let mut closest_altar_dist_sq = 550.0 * 550.0;
+        let mut altar_force = Vec2::ZERO;
+        for st in &world.structures {
+            let dist_sq = st.pos.distance_squared(boss_pos);
+            if dist_sq < closest_altar_dist_sq {
+                closest_altar_dist_sq = dist_sq;
+                altar_force = calculate_attract_force(boss_pos, st.pos, 550.0, 240.0);
+            }
+        }
+        total_force += altar_force;
+    }
+
+    // 2.2 Тактическая контратака против дальников (Культисты-стрелки)
+    // Если на арене скопились стрелки (Тир 3), босс не пятится в угол,
+    // а агрессивно фланкирует и сокращает дистанцию к их кластеру!
+    let nearby_cultists: Vec<Vec2> = world.spatial_grid.query_nearby(boss_pos, 420.0)
+        .iter()
+        .filter_map(|&idx| world.mobs.get(idx))
+        .filter(|m| m.tier == 3)
+        .map(|m| m.pos)
+        .collect();
+
+    if nearby_cultists.len() >= 2 && hp_ratio > 0.30 && mobs_in_close_radius < 10 {
+        let mut center = Vec2::ZERO;
+        for cp in &nearby_cultists {
+            center += *cp;
+        }
+        center /= nearby_cultists.len() as f32;
+
+        let to_cluster = center - boss_pos;
+        let dist = to_cluster.length();
+        if dist > 70.0 {
+            let aggression = if world.boss_inventory.ranged_damage_recent > 20.0 { 290.0 } else { 190.0 };
+            let hunt_dir = to_cluster / dist;
+            total_force += hunt_dir * aggression;
+        }
+    }
 
     // 3. Потенциальные поля: Резкое отталкивание от границ карты ближе чем на 80 пикселей
     let map_w = crate::core::MAP_WIDTH;
@@ -70,21 +127,11 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     }
 
     // 4. Экстренный рывок: 8-лучевой Context Steering Dash
-    // Триггер: в радиусе 90px > 15 мобов ИЛИ HP < 30%
-    let mobs_in_close_radius = world.spatial_grid.query_nearby(boss_pos, 90.0)
-        .iter()
-        .filter(|&&idx| {
-            if let Some(mob) = world.mobs.get(idx) {
-                mob.pos.distance_squared(boss_pos) < 90.0 * 90.0
-            } else {
-                false
-            }
-        })
-        .count();
-
-    let hp_ratio = world.boss_health.current / world.boss_health.max;
-    let is_critical_hp = hp_ratio < 0.30;
-    let should_dash = (mobs_in_close_radius >= 15 || (is_critical_hp && mobs_in_close_radius >= 3))
+    // Триггер: в радиусе 90px > 14 мобов ИЛИ HP < 30% ИЛИ плотный обстрел дальников
+    let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
+    let should_dash = (mobs_in_close_radius >= 14
+        || (is_critical_hp && mobs_in_close_radius >= 3)
+        || (heavy_ranged_fire && mobs_in_close_radius >= 4))
         && world.boss_dash_cooldown <= 0.0;
 
     if should_dash {
@@ -138,6 +185,27 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         world.spawn_particles(old_pos, 20, GOLD, 120.0);
         world.spawn_particles(dash_target, 20, YELLOW, 140.0);
         world.add_floating_text(dash_target, "РЫВОК (DASH)!".to_string(), YELLOW, 1.3);
+
+        // При рывке уничтожаются вражеские снаряды на пути и наносится рассекающий урон
+        for proj in &mut world.projectiles {
+            if proj.faction == crate::ecs::components::combat::Faction::Director
+                && proj.pos.distance_squared(dash_target) < 130.0 * 130.0
+            {
+                proj.lifetime = 0.0;
+            }
+        }
+
+        let in_dash_slice = world.spatial_grid.query_nearby(dash_target, 90.0);
+        for idx in in_dash_slice {
+            if let Some(mob) = world.mobs.get_mut(idx) {
+                if mob.pos.distance_squared(dash_target) < 90.0 * 90.0 {
+                    mob.health.take_damage(80.0);
+                    if !mob.knockback_immune {
+                        mob.knockback_vel += best_dir * 240.0;
+                    }
+                }
+            }
+        }
     } else {
         // Обычное передвижение по вектору сил
         let max_speed = 160.0;

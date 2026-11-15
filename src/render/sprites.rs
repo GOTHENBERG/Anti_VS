@@ -1,5 +1,4 @@
 use macroquad::prelude::*;
-use crate::ecs::components::combat::DamageType;
 use crate::ecs::world::MobEntity;
 use crate::render::textures::GameTextures;
 
@@ -441,13 +440,129 @@ pub fn draw_blood_altar(pos: Vec2, current_hp: f32, max_hp: f32, time: f32, text
     }
 }
 
-/// Отрисовка снаряда с текстурой или процедурной моделью
-pub fn draw_projectile_sprite(pos: Vec2, vel: Vec2, radius: f32, damage_type: DamageType, textures: &GameTextures) {
-    if let Some(tex) = textures.get_projectile_texture(damage_type) {
-        let dir = vel.normalize_or_zero();
-        let angle = dir.y.atan2(dir.x);
-        let size = radius * 3.0;
+/// Отрисовка снаряда с высокодетализированными эффектами для атак босса и мобов
+pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textures: &GameTextures) {
+    let pos = proj.pos;
+    let vel = proj.vel;
+    let radius = proj.radius;
+    let dir = vel.normalize_or_zero();
+    let norm = Vec2::new(-dir.y, dir.x);
+    let angle = dir.y.atan2(dir.x);
 
+    // 1. Атаки сил Директора / мобов (Темные стрелы культистов-стрелков)
+    if proj.faction == crate::ecs::components::combat::Faction::Director {
+        // Демоническая стрела крови и теней
+        let tip = pos + dir * (radius * 2.2);
+        let back_l = pos - dir * (radius * 1.2) + norm * (radius * 0.9);
+        let back_r = pos - dir * (radius * 1.2) - norm * (radius * 0.9);
+
+        // Внешнее кровавое оперение
+        draw_triangle(tip, back_l, back_r, Color::new(0.75, 0.05, 0.20, 0.95));
+        draw_triangle_lines(tip, back_l, back_r, 1.5, Color::new(0.95, 0.2, 0.35, 1.0));
+
+        // Внутренний сгусток темной магии
+        draw_circle(pos.x, pos.y, radius * 0.65, Color::new(0.35, 0.0, 0.55, 0.95));
+        draw_circle(pos.x, pos.y, radius * 0.35, Color::new(0.9, 0.2, 0.6, 1.0));
+
+        // Дымный теневой след
+        let trail_len = radius * 3.5;
+        draw_line(
+            pos.x,
+            pos.y,
+            pos.x - dir.x * trail_len,
+            pos.y - dir.y * trail_len,
+            3.5,
+            Color::new(0.45, 0.0, 0.6, 0.45),
+        );
+        draw_line(
+            pos.x,
+            pos.y,
+            pos.x - dir.x * (trail_len * 0.6),
+            pos.y - dir.y * (trail_len * 0.6),
+            2.0,
+            Color::new(0.85, 0.1, 0.3, 0.7),
+        );
+        return;
+    }
+
+    // 2. Атаки Босса (Соло-героя) по видам вооружения
+    if let Some(w_kind) = proj.source_weapon {
+        match w_kind {
+            // Клинок Ветра: светящийся серповидный ветряной клинок
+            crate::ecs::components::inventory::WeaponType::WindBlade => {
+                let tip = pos + dir * (radius * 2.0);
+                let wing1 = pos + norm * (radius * 1.4) - dir * (radius * 0.4);
+                let wing2 = pos - norm * (radius * 1.4) - dir * (radius * 0.4);
+                let tail = pos - dir * radius;
+
+                draw_triangle(tip, wing1, tail, Color::new(0.6, 0.95, 0.85, 0.85));
+                draw_triangle(tip, wing2, tail, Color::new(0.6, 0.95, 0.85, 0.85));
+                draw_line(wing1.x, wing1.y, tip.x, tip.y, 2.0, WHITE);
+                draw_line(wing2.x, wing2.y, tip.x, tip.y, 2.0, WHITE);
+                draw_line(pos.x - dir.x * 20.0, pos.y - dir.y * 20.0, pos.x, pos.y, 2.5, Color::new(0.4, 0.9, 0.7, 0.4));
+                return;
+            }
+            // Магический Жезл: пульсирующая сфера тайной магии со звездой
+            crate::ecs::components::inventory::WeaponType::MagicWand => {
+                draw_circle(pos.x, pos.y, radius * 1.3, Color::new(0.7, 0.2, 1.0, 0.35));
+                draw_circle(pos.x, pos.y, radius * 0.85, Color::new(0.85, 0.3, 1.0, 0.9));
+                draw_circle(pos.x, pos.y, radius * 0.4, WHITE);
+
+                // Магические лучи
+                let flare = radius * 1.8;
+                draw_line(pos.x - dir.x * flare, pos.y - dir.y * flare, pos.x + dir.x * flare, pos.y + dir.y * flare, 2.0, WHITE);
+                draw_line(pos.x - norm.x * (flare * 0.7), pos.y - norm.y * (flare * 0.7), pos.x + norm.x * (flare * 0.7), pos.y + norm.y * (flare * 0.7), 2.0, SKYBLUE);
+                return;
+            }
+            // Святой Молот: вращающийся небесный молот
+            crate::ecs::components::inventory::WeaponType::HolyHammer => {
+                let rot_time = get_time() as f32 * 12.0;
+                let h_dir = Vec2::new(rot_time.cos(), rot_time.sin());
+                let h_norm = Vec2::new(-h_dir.y, h_dir.x);
+
+                // Рукоять
+                draw_line(
+                    pos.x - h_dir.x * 12.0,
+                    pos.y - h_dir.y * 12.0,
+                    pos.x + h_dir.x * 8.0,
+                    pos.y + h_dir.y * 8.0,
+                    3.5,
+                    Color::new(0.55, 0.38, 0.18, 1.0),
+                );
+                // Навершие молота (золотой брусок)
+                let head_c = pos + h_dir * 8.0;
+                draw_line(
+                    head_c.x - h_norm.x * 10.0,
+                    head_c.y - h_norm.y * 10.0,
+                    head_c.x + h_norm.x * 10.0,
+                    head_c.y + h_norm.y * 10.0,
+                    7.0,
+                    GOLD,
+                );
+                draw_circle(head_c.x, head_c.y, 4.0, WHITE);
+                draw_circle_lines(pos.x, pos.y, radius * 1.4, 1.5, Color::new(1.0, 0.9, 0.3, 0.4));
+                return;
+            }
+            // Ледяные Осколки: ограненные кристаллы льда
+            crate::ecs::components::inventory::WeaponType::IceShards => {
+                let p_front = pos + dir * (radius * 1.8);
+                let p_back = pos - dir * (radius * 1.5);
+                let p_left = pos + norm * (radius * 0.85);
+                let p_right = pos - norm * (radius * 0.85);
+
+                draw_triangle(p_front, p_left, p_back, Color::new(0.4, 0.8, 1.0, 0.85));
+                draw_triangle(p_front, p_right, p_back, Color::new(0.7, 0.9, 1.0, 0.9));
+                draw_line(p_front.x, p_front.y, p_back.x, p_back.y, 1.5, WHITE);
+                draw_line(pos.x - dir.x * 14.0, pos.y - dir.y * 14.0, pos.x, pos.y, 2.0, Color::new(0.3, 0.7, 1.0, 0.35));
+                return;
+            }
+            _ => {}
+        }
+    }
+
+    // Текстурный fallback
+    if let Some(tex) = textures.get_projectile_texture(proj.damage_type) {
+        let size = radius * 3.2;
         draw_texture_ex(
             tex,
             pos.x - size / 2.0,
@@ -461,45 +576,8 @@ pub fn draw_projectile_sprite(pos: Vec2, vel: Vec2, radius: f32, damage_type: Da
             },
         );
     } else {
-        let dir = vel.normalize_or_zero();
-        let norm = Vec2::new(-dir.y, dir.x);
-
-        match damage_type {
-            DamageType::Physical => {
-                let tip = pos + dir * (radius * 1.6);
-                let back_l = pos - dir * radius + norm * (radius * 1.2);
-                let back_r = pos - dir * radius - norm * (radius * 1.2);
-                draw_triangle(tip, back_l, back_r, Color::new(0.8, 0.95, 0.85, 0.9));
-                draw_triangle_lines(tip, back_l, back_r, 1.5, Color::new(0.3, 0.9, 0.5, 1.0));
-            }
-            DamageType::Holy => {
-                draw_line(pos.x - dir.x * 10.0, pos.y - dir.y * 10.0, pos.x + dir.x * 6.0, pos.y + dir.y * 6.0, 3.0, Color::new(0.6, 0.4, 0.2, 1.0));
-                let head_center = pos + dir * 6.0;
-                draw_line(head_center.x - norm.x * 8.0, head_center.y - norm.y * 8.0, head_center.x + norm.x * 8.0, head_center.y + norm.y * 8.0, 6.0, GOLD);
-                draw_circle(head_center.x, head_center.y, 4.0, WHITE);
-            }
-            DamageType::Ice => {
-                let p1 = pos + dir * (radius * 1.5);
-                let p2 = pos + norm * (radius * 0.7);
-                let p3 = pos - dir * (radius * 1.5);
-                let p4 = pos - norm * (radius * 0.7);
-                draw_triangle(p1, p2, p3, SKYBLUE);
-                draw_triangle(p1, p4, p3, Color::new(0.6, 0.85, 1.0, 1.0));
-                draw_line(p1.x, p1.y, p3.x, p3.y, 1.5, WHITE);
-            }
-            DamageType::True => {
-                draw_circle(pos.x, pos.y, radius, Color::new(0.8, 0.3, 1.0, 0.9));
-                draw_circle(pos.x, pos.y, radius * 0.5, WHITE);
-                draw_line(pos.x, pos.y, pos.x - dir.x * (radius * 2.5), pos.y - dir.y * (radius * 2.5), 3.0, Color::new(0.6, 0.1, 0.9, 0.4));
-            }
-            DamageType::Fire => {
-                draw_circle(pos.x, pos.y, radius, ORANGE);
-                draw_circle(pos.x, pos.y, radius * 0.6, YELLOW);
-                draw_circle(pos.x, pos.y, radius * 0.3, WHITE);
-            }
-            _ => {
-                draw_circle(pos.x, pos.y, radius, WHITE);
-            }
-        }
+        // Общий процедурный fallback
+        draw_circle(pos.x, pos.y, radius, WHITE);
+        draw_circle(pos.x, pos.y, radius * 0.6, GOLD);
     }
 }

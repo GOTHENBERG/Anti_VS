@@ -84,6 +84,35 @@ pub fn update_combat(world: &mut World, dt: f32) {
         }
     }
 
+    // 1.3 Контактный урон аур по разрушаемым Алтарям Крови
+    for st in &mut world.structures {
+        let dist_sq = st.pos.distance_squared(boss_pos);
+        if has_blade_storm && dist_sq < (85.0 + st.radius).powi(2) {
+            let packet = DamagePacket {
+                source_id: Some(0),
+                target_id: st.id,
+                amount: 75.0 * dt,
+                damage_type: DamageType::Physical,
+                armor_penetration: 0.35,
+            };
+            let dmg = st.resistances.calculate_damage(&packet, false);
+            st.health.take_damage(dmg);
+        }
+
+        if has_divine_shield && dist_sq < (95.0 + st.radius).powi(2) {
+            let packet = DamagePacket {
+                source_id: Some(0),
+                target_id: st.id,
+                amount: 90.0 * dt,
+                damage_type: DamageType::Holy,
+                armor_penetration: 0.20,
+            };
+            let dmg = st.resistances.calculate_damage(&packet, false);
+            st.health.take_damage(dmg);
+            world.boss_health.heal(dmg * 0.05);
+        }
+    }
+
     // Обработка детонаций Камикадзе
     for (exp_pos, exp_damage, exp_radius) in kamikaze_explosions {
         world.screen_shake = 12.0;
@@ -117,6 +146,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
     // 2. Обработка очереди урона (из skills, кислотных луж и т.д.)
     let queue = std::mem::take(&mut world.damage_queue);
+    let mut structure_texts = Vec::new();
     for packet in queue {
         if packet.target_id == 0 {
             if !is_boss_invulnerable {
@@ -127,12 +157,20 @@ pub fn update_combat(world: &mut World, dt: f32) {
         } else if let Some(mob) = world.mobs.iter_mut().find(|m| m.id == packet.target_id) {
             let actual_dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
             mob.health.take_damage(actual_dmg);
+        } else if let Some(st) = world.structures.iter_mut().find(|s| s.id == packet.target_id) {
+            let actual_dmg = st.resistances.calculate_damage(&packet, false);
+            st.health.take_damage(actual_dmg);
+            structure_texts.push((st.pos, format!("-{:.0}", actual_dmg)));
         }
+    }
+    for (pos, txt) in structure_texts {
+        world.add_floating_text(pos, txt, GOLD, 1.0);
     }
 
     // 3. Коллизии снарядов
     let mut boss_hits = Vec::new();
     let mut hit_particles = Vec::new();
+    let mut structure_proj_hits = Vec::new();
 
     for proj in &mut world.projectiles {
         if proj.lifetime <= 0.0 || proj.pierce == 0 {
@@ -193,9 +231,44 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     }
                 }
             }
+
+            // Снаряды босса также атакуют и разрушают Алтари Крови
+            for st in &mut world.structures {
+                if proj.pierce == 0 {
+                    break;
+                }
+                if st.health.is_alive() && st.pos.distance_squared(proj.pos) < (st.radius + proj.radius).powi(2) {
+                    let packet = DamagePacket {
+                        source_id: Some(0),
+                        target_id: st.id,
+                        amount: proj.damage,
+                        damage_type: proj.damage_type,
+                        armor_penetration: proj.armor_penetration,
+                    };
+                    let actual_dmg = st.resistances.calculate_damage(&packet, false);
+                    st.health.take_damage(actual_dmg);
+                    proj.pierce = proj.pierce.saturating_sub(1);
+                    hit_particles.push((st.pos, PURPLE));
+                    structure_proj_hits.push((st.pos, format!("-{:.0}", actual_dmg)));
+                }
+            }
         } else if proj.faction == Faction::Director {
+            let dist_to_boss_sq = proj.pos.distance_squared(boss_pos);
+
+            // Парирование / уничтожение вражеских снарядов щитом или бурей клинков
+            let is_parried = (has_blade_storm && dist_to_boss_sq < 85.0 * 85.0)
+                || (has_divine_shield && dist_to_boss_sq < 95.0 * 95.0)
+                || (is_boss_invulnerable && dist_to_boss_sq < 70.0 * 70.0);
+
+            if is_parried {
+                proj.lifetime = 0.0;
+                let spark_color = if has_divine_shield { GOLD } else { SKYBLUE };
+                hit_particles.push((proj.pos, spark_color));
+                continue;
+            }
+
             // Вражеские снаряды (стрелы культистов) поражают Босса
-            if proj.pos.distance_squared(boss_pos) < (boss_radius + proj.radius).powi(2) {
+            if dist_to_boss_sq < (boss_radius + proj.radius).powi(2) {
                 proj.lifetime = 0.0; // снаряд уничтожается
                 if !is_boss_invulnerable {
                     let packet = DamagePacket {
@@ -213,6 +286,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 }
             }
         }
+    }
+
+    // Применяем всплывающий урон по структурам
+    for (pos, txt) in structure_proj_hits {
+        world.add_floating_text(pos, txt, GOLD, 1.1);
     }
 
     // Применяем собранные эффекты по боссу и частицы
@@ -267,6 +345,33 @@ pub fn update_combat(world: &mut World, dt: f32) {
             true
         }
     });
+
+    // 4.1 Разрушение Алтарей Крови
+    let mut destroyed_altars = Vec::new();
+    world.structures.retain(|st| {
+        if !st.health.is_alive() {
+            destroyed_altars.push((st.id, st.pos));
+            false
+        } else {
+            true
+        }
+    });
+
+    for (st_id, st_pos) in destroyed_altars {
+        world.screen_shake = 14.0;
+        world.spawn_particles(st_pos, 50, PURPLE, 190.0);
+        world.spawn_particles(st_pos, 35, RED, 150.0);
+        world.spawn_particles(st_pos, 25, GOLD, 130.0);
+        world.add_floating_text(st_pos, "💥 АЛТАРЬ КРОВИ РАЗРУШЕН!".to_string(), GOLD, 1.6);
+
+        // Награда боссу за уничтожение алтаря: много опыта + гарантированный Магнит
+        dropped_gems.push(SoulGemEntity {
+            id: st_id,
+            pos: st_pos,
+            xp_value: 150.0,
+            is_magnet: true,
+        });
+    }
 
     // Обработка взрывов трупов от Hellfire
     for (pos, dmg, radius) in corpse_explosions {
