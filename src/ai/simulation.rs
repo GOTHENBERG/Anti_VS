@@ -98,6 +98,27 @@ pub fn run_headless_simulation(
                     }
                 }
             }
+
+            // 1.3 Улучшение грейдов армии Режиссера (Ярость, Панцирь, Чумные споры)
+            if let Some(director) = world.directors.first_mut() {
+                let fury_cost = 100.0 * (director.grade_fury as f32 + 1.0);
+                let carapace_cost = 120.0 * (director.grade_carapace as f32 + 1.0);
+                let pestilence_cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+
+                if director.points >= pestilence_cost && director.grade_pestilence <= director.grade_fury {
+                    if director.spend_points(pestilence_cost) {
+                        director.grade_pestilence += 1;
+                    }
+                } else if director.points >= carapace_cost && director.grade_carapace <= director.grade_fury {
+                    if director.spend_points(carapace_cost) {
+                        director.grade_carapace += 1;
+                    }
+                } else if director.points >= fury_cost {
+                    if director.spend_points(fury_cost) {
+                        director.grade_fury += 1;
+                    }
+                }
+            }
         }
 
         // 2. Системные обновления игрового мира
