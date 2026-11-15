@@ -1,28 +1,40 @@
+use serde::{Deserialize, Serialize};
+
 pub const MAX_WEAPON_SLOTS: usize = 6;
 pub const MAX_PASSIVE_SLOTS: usize = 6;
 pub const MAX_WEAPON_LEVEL: u8 = 8;
+pub const MAX_PASSIVE_LEVEL: u8 = 5;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WeaponType {
-    WindBlade,    // Меч ветра (базовый)
-    FireAura,     // Огненная аура
-    MagicWand,    // Магический жезл
-    HolyHammer,   // Святой молот
-    BladeStorm,   // ЭВОЛЮЦИЯ: Буря клинков
-    InfernalAura, // ЭВОЛЮЦИЯ: Адское пекло
-    DeathRay,     // ЭВОЛЮЦИЯ: Луч смерти
-    DivineShield, // ЭВОЛЮЦИЯ: Праведный щит
+    // Базовые 6 оружий
+    WindBlade,      // 1. Клинок Ветра
+    FireAura,       // 2. Огненная Аура
+    MagicWand,      // 3. Магический Жезл
+    HolyHammer,     // 4. Святой Молот
+    IceShards,      // 5. Ледяные Осколки
+    PoisonOrbs,     // 6. Чумные Сферы
+
+    // Эволюции (4 из ТЗ + 2 завершающие сетку 6х6)
+    BladeStorm,     // Эволюция: Буря Клинков (Клинок Ветра + Перчатка Скорости)
+    Hellfire,       // Эволюция: Адское Пекло (Огненная Аура + Сердце Гиганта)
+    DeathRay,       // Эволюция: Луч Смерти (Магический Жезл + Фолиант Времени)
+    DivineShield,   // Эволюция: Праведный Щит (Святой Молот + Броня Света)
+    BlizzardStorm,  // Эволюция: Ледниковая Буря (Ледяные Осколки + Кольцо Заморозки)
+    ToxicPestilence,// Эволюция: Токсичный Мор (Чумные Сферы + Едкий Сосуд)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PassiveType {
-    SpeedGloves, // Скорость атаки
-    GiantHeart,  // ХП и регенерация
-    CooldownTome,// Снижение перезарядки
-    LightArmor,  // Броня и резисты
+    SpeedGloves,    // 1. Перчатка Скорости (+скорость атаки)
+    GiantHeart,     // 2. Сердце Гиганта (+макс ХП и регенерация)
+    CooldownTome,   // 3. Фолиант Времени (-кд всех способностей)
+    LightArmor,     // 4. Броня Света (+плоская броня и % физ. резист)
+    FrostRing,      // 5. Кольцо Заморозки (+радиус и сила замедления)
+    CorrosiveFlask, // 6. Едкий Сосуд (+пробитие брони атакующим)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeaponSlot {
     pub kind: WeaponType,
     pub level: u8,
@@ -32,13 +44,20 @@ pub struct WeaponSlot {
     pub is_evolved: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PassiveSlot {
     pub kind: PassiveType,
     pub level: u8,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum PerkChoice {
+    UpgradeWeapon(WeaponType),
+    UpgradePassive(PassiveType),
+    EvolveWeapon { from: WeaponType, to: WeaponType },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BossInventory {
     pub weapons: Vec<WeaponSlot>,
     pub passives: Vec<PassiveSlot>,
@@ -46,6 +65,12 @@ pub struct BossInventory {
     pub current_xp: f32,
     pub xp_to_next_level: f32,
     pub magnet_radius: f32,
+
+    // Адаптивная телеметрия для ИИ выбора перков
+    pub melee_damage_recent: f32,
+    pub ranged_damage_recent: f32,
+    pub last_chosen_perk: Option<String>,
+    pub perk_announcement_timer: f32,
 }
 
 impl BossInventory {
@@ -55,15 +80,19 @@ impl BossInventory {
                 kind: WeaponType::WindBlade,
                 level: 1,
                 cooldown_timer: 0.0,
-                base_cooldown: 1.2,
-                damage: 25.0,
+                base_cooldown: 1.1,
+                damage: 28.0,
                 is_evolved: false,
             }],
             passives: Vec::new(),
             level: 1,
             current_xp: 0.0,
-            xp_to_next_level: 50.0,
+            xp_to_next_level: 40.0,
             magnet_radius: 120.0,
+            melee_damage_recent: 0.0,
+            ranged_damage_recent: 0.0,
+            last_chosen_perk: None,
+            perk_announcement_timer: 0.0,
         }
     }
 
@@ -72,27 +101,39 @@ impl BossInventory {
         if self.current_xp >= self.xp_to_next_level {
             self.current_xp -= self.xp_to_next_level;
             self.level += 1;
-            self.xp_to_next_level = (self.xp_to_next_level * 1.25).floor();
-            true // Level Up!
+            // Плавный рост кривой опыта
+            self.xp_to_next_level = (self.xp_to_next_level * 1.28 + 15.0).floor();
+            true
         } else {
             false
         }
     }
 
-    /// Проверка возможности эволюции оружия
+    pub fn has_weapon(&self, kind: WeaponType) -> bool {
+        self.weapons.iter().any(|w| w.kind == kind)
+    }
+
+    pub fn has_passive(&self, kind: PassiveType) -> bool {
+        self.passives.iter().any(|p| p.kind == kind)
+    }
+
+    pub fn get_passive_level(&self, kind: PassiveType) -> u8 {
+        self.passives.iter().find(|p| p.kind == kind).map(|p| p.level).unwrap_or(0)
+    }
+
+    /// Проверка эволюции: Оружие 8 уровня + Связанная пассивка 1 уровня и выше
     pub fn can_evolve(&self, weapon_idx: usize) -> Option<WeaponType> {
         let weapon = self.weapons.get(weapon_idx)?;
         if weapon.level < MAX_WEAPON_LEVEL || weapon.is_evolved {
             return None;
         }
 
-        // Проверяем наличие парной пассивки
         match weapon.kind {
             WeaponType::WindBlade if self.has_passive(PassiveType::SpeedGloves) => {
                 Some(WeaponType::BladeStorm)
             }
             WeaponType::FireAura if self.has_passive(PassiveType::GiantHeart) => {
-                Some(WeaponType::InfernalAura)
+                Some(WeaponType::Hellfire)
             }
             WeaponType::MagicWand if self.has_passive(PassiveType::CooldownTome) => {
                 Some(WeaponType::DeathRay)
@@ -100,11 +141,33 @@ impl BossInventory {
             WeaponType::HolyHammer if self.has_passive(PassiveType::LightArmor) => {
                 Some(WeaponType::DivineShield)
             }
+            WeaponType::IceShards if self.has_passive(PassiveType::FrostRing) => {
+                Some(WeaponType::BlizzardStorm)
+            }
+            WeaponType::PoisonOrbs if self.has_passive(PassiveType::CorrosiveFlask) => {
+                Some(WeaponType::ToxicPestilence)
+            }
             _ => None,
         }
     }
 
-    pub fn has_passive(&self, kind: PassiveType) -> bool {
-        self.passives.iter().any(|p| p.kind == kind)
+    /// Множитель скорости перезарядки от пассивок
+    pub fn get_cooldown_multiplier(&self) -> f32 {
+        let mut mult = 1.0;
+        let speed_gloves = self.get_passive_level(PassiveType::SpeedGloves);
+        if speed_gloves > 0 {
+            mult *= 1.0 - (speed_gloves as f32 * 0.08); // до -40%
+        }
+        let tome = self.get_passive_level(PassiveType::CooldownTome);
+        if tome > 0 {
+            mult *= 1.0 - (tome as f32 * 0.07); // до -35%
+        }
+        mult.max(0.3)
+    }
+
+    /// Пробитие брони от пассивки CorrosiveFlask
+    pub fn get_armor_penetration(&self) -> f32 {
+        let flask = self.get_passive_level(PassiveType::CorrosiveFlask);
+        (flask as f32 * 0.10).min(0.50) // 10% за уровень, до 50%
     }
 }

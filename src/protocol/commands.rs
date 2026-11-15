@@ -20,12 +20,12 @@ impl From<NetVec2> for macroquad::prelude::Vec2 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
-    /// Призыв отряда мобов Директором
+    /// Призыв отряда мобов Директором (клавиши 1-5)
     SpawnSquad {
         director_id: u8,
         tier: u8,
     },
-    /// Движение Босса (приходит от ИИ или живого игрока в мультиплеере)
+    /// Движение Босса (локальный ИИ или второй игрок в мультиплеере)
     BossMove {
         direction: NetVec2,
     },
@@ -33,14 +33,12 @@ pub enum Command {
     BossDash {
         target_dir: NetVec2,
     },
-    /// Выбор карты прокачки при Level-Up
-    BossSelectPerk {
-        choice_index: usize,
-    },
-    /// Создание разрушаемого объекта Директором (алтарь, тотем, баррикада)
+    /// Размещение разрушаемой структуры (Алтарь Крови)
     PlaceStructure {
         director_id: u8,
         structure_type: u8,
         pos: NetVec2,
     },
+    /// Перезапуск игры
+    RestartGame,
 }

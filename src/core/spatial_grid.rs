@@ -1,49 +1,92 @@
 use macroquad::prelude::Vec2;
-use std::collections::HashMap;
 
 pub const CELL_SIZE: f32 = 64.0;
 
+/// Высокопроизводительная пространственная сетка с предварительно выделенной памятью
+/// Позволяет мгновенно находить соседей за O(1) вместо O(N^2)
 #[derive(Debug, Clone)]
 pub struct SpatialGrid {
-    cells: HashMap<(i32, i32), Vec<usize>>,
+    cell_size: f32,
+    cols: usize,
+    rows: usize,
+    /// Одномерный вектор корзин (flat array) для максимального кэш-попадания процессора
+    buckets: Vec<Vec<usize>>,
 }
 
 impl SpatialGrid {
-    pub fn new() -> Self {
+    pub fn new(width: f32, height: f32) -> Self {
+        let cols = ((width / CELL_SIZE).ceil() as usize) + 4;
+        let rows = ((height / CELL_SIZE).ceil() as usize) + 4;
+        let total_cells = cols * rows;
+
+        let mut buckets = Vec::with_capacity(total_cells);
+        for _ in 0..total_cells {
+            buckets.push(Vec::with_capacity(16));
+        }
+
         Self {
-            cells: HashMap::new(),
+            cell_size: CELL_SIZE,
+            cols,
+            rows,
+            buckets,
         }
     }
 
+    /// Очищает корзины без перевыделения памяти
     pub fn clear(&mut self) {
-        self.cells.clear();
+        for bucket in &mut self.buckets {
+            bucket.clear();
+        }
     }
 
-    fn to_cell_coords(pos: Vec2) -> (i32, i32) {
-        (
-            (pos.x / CELL_SIZE).floor() as i32,
-            (pos.y / CELL_SIZE).floor() as i32,
-        )
+    #[inline(always)]
+    fn get_cell_index(&self, pos: Vec2) -> Option<usize> {
+        let offset_x = pos.x + CELL_SIZE * 2.0;
+        let offset_y = pos.y + CELL_SIZE * 2.0;
+
+        if offset_x < 0.0 || offset_y < 0.0 {
+            return None;
+        }
+
+        let cx = (offset_x / self.cell_size) as usize;
+        let cy = (offset_y / self.cell_size) as usize;
+
+        if cx < self.cols && cy < self.rows {
+            Some(cy * self.cols + cx)
+        } else {
+            None
+        }
     }
 
-    pub fn insert(&mut self, entity_id: usize, pos: Vec2) {
-        let coords = Self::to_cell_coords(pos);
-        self.cells.entry(coords).or_default().push(entity_id);
+    /// Вставка сущности в сетку
+    pub fn insert(&mut self, entity_idx: usize, pos: Vec2) {
+        if let Some(idx) = self.get_cell_index(pos) {
+            self.buckets[idx].push(entity_idx);
+        }
     }
 
-    /// Возвращает ID всех сущностей в окрестности (9 соседних ячеек)
+    /// Запрос всех сущностей в радиусе (проверяет соседние ячейки сетки)
     pub fn query_nearby(&self, pos: Vec2, radius: f32) -> Vec<usize> {
-        let mut result = Vec::new();
-        let (min_x, min_y) = Self::to_cell_coords(pos - Vec2::splat(radius));
-        let (max_x, max_y) = Self::to_cell_coords(pos + Vec2::splat(radius));
+        let mut result = Vec::with_capacity(32);
+        let offset_x = pos.x + CELL_SIZE * 2.0;
+        let offset_y = pos.y + CELL_SIZE * 2.0;
 
-        for cx in min_x..=max_x {
-            for cy in min_y..=max_y {
-                if let Some(entities) = self.cells.get(&(cx, cy)) {
-                    result.extend_from_slice(entities);
+        let min_cx = ((offset_x - radius).max(0.0) / self.cell_size) as usize;
+        let max_cx = (((offset_x + radius).max(0.0) / self.cell_size) as usize).min(self.cols.saturating_sub(1));
+
+        let min_cy = ((offset_y - radius).max(0.0) / self.cell_size) as usize;
+        let max_cy = (((offset_y + radius).max(0.0) / self.cell_size) as usize).min(self.rows.saturating_sub(1));
+
+        for cy in min_cy..=max_cy {
+            let row_offset = cy * self.cols;
+            for cx in min_cx..=max_cx {
+                let cell_idx = row_offset + cx;
+                if cell_idx < self.buckets.len() {
+                    result.extend_from_slice(&self.buckets[cell_idx]);
                 }
             }
         }
+
         result
     }
 }
