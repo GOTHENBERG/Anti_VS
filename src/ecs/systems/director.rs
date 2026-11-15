@@ -9,6 +9,11 @@ pub fn update_director(world: &mut World, dt: f32) {
             }
         }
 
+        // Уменьшение персонального кулдауна Алтаря Крови
+        if director.altar_cooldown > 0.0 {
+            director.altar_cooldown = (director.altar_cooldown - dt).max(0.0);
+        }
+
         // Тиковый доход (ровно каждые 2.0 секунды)
         director.income_timer += dt;
         if director.income_timer >= 2.0 {

@@ -93,6 +93,9 @@ pub struct DirectorState {
     pub total_points_spent: f32,
     pub income_timer: f32,
     pub squad_cooldowns: [f32; 5],
+    pub altar_cooldown: f32,
+    pub altar_max_cooldown: f32,
+    pub max_active_altars: usize,
     pub total_mobs_spawned: usize,
 }
 
@@ -105,6 +108,9 @@ impl DirectorState {
             total_points_spent: 0.0,
             income_timer: 0.0,
             squad_cooldowns: [0.0; 5],
+            altar_cooldown: 0.0,
+            altar_max_cooldown: 14.0, // 14 секунд персональный кулдаун на постройку Алтаря
+            max_active_altars: 8,     // Лимит одновременных алтарей для предотвращения бесконечного спама
             total_mobs_spawned: 0,
         }
     }
@@ -159,6 +165,7 @@ pub struct World {
     pub next_entity_id: usize,
     pub total_damage_dealt_to_boss: f32,
     pub screen_shake: f32,
+    pub boss_model: Option<crate::ai::models::BossModel>,
 }
 
 impl World {
@@ -195,6 +202,7 @@ impl World {
             next_entity_id: 1,
             total_damage_dealt_to_boss: 0.0,
             screen_shake: 0.0,
+            boss_model: crate::ai::load_trained_boss_model(),
         }
     }
 

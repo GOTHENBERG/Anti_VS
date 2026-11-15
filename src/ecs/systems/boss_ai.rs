@@ -24,6 +24,21 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     let boss_pos = world.boss_pos;
     let mut total_force = Vec2::ZERO;
 
+    // Параметры ИИ: используются веса обученной нейро-модели (если загружена из models/boss_policy.json)
+    let (repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp) =
+        if let Some(ref model) = world.boss_model {
+            (
+                model.mob_repulsion_weight,
+                model.gem_attraction_weight,
+                model.altar_siege_aggression,
+                model.sniper_hunt_aggression,
+                model.dash_danger_threshold,
+                model.retreat_hp_threshold,
+            )
+        } else {
+            (440.0, 180.0, 260.0, 310.0, 13, 0.32)
+        };
+
     let mobs_in_close_radius = world.spatial_grid.query_nearby(boss_pos, 90.0)
         .iter()
         .filter(|&&idx| {
@@ -36,14 +51,14 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         .count();
 
     let hp_ratio = world.boss_health.current / world.boss_health.max;
-    let is_critical_hp = hp_ratio < 0.30;
+    let is_critical_hp = hp_ratio < retreat_hp;
 
     // 1. Потенциальные поля: Отталкивание от мобов в радиусе 180 пикселей (закон обратных квадратов)
     // Используем пространственную сетку для мгновенного запроса соседей за O(1)!
     let nearby_mob_indices = world.spatial_grid.query_nearby(boss_pos, 180.0);
     for idx in nearby_mob_indices {
         if let Some(mob) = world.mobs.get(idx) {
-            let repel = calculate_repel_force(boss_pos, mob.pos, 180.0, 420.0);
+            let repel = calculate_repel_force(boss_pos, mob.pos, 180.0, repel_weight);
             total_force += repel;
         }
     }
@@ -55,16 +70,16 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         let dist_sq = gem.pos.distance_squared(boss_pos);
         if dist_sq < closest_gem_dist_sq {
             closest_gem_dist_sq = dist_sq;
-            let strength = if gem.is_magnet { 300.0 } else { 160.0 };
+            let strength = if gem.is_magnet { gem_pull_weight * 1.8 } else { gem_pull_weight };
             gem_pull = calculate_attract_force(boss_pos, gem.pos, 260.0, strength);
         }
     }
     total_force += gem_pull;
 
     // 2.1 Стратегическая цель: Атака и разрушение Алтарей Крови
-    // Если босс достаточно здоров (HP > 35%) и рядом нет плотной толпы,
+    // Если босс достаточно здоров (HP > retreat_hp) и рядом нет плотной толпы,
     // он целенаправленно выдвигается на алтарь для его разрушения
-    let is_safe_to_siege = hp_ratio > 0.35 && mobs_in_close_radius < 8;
+    let is_safe_to_siege = hp_ratio > retreat_hp && mobs_in_close_radius < 8;
     if is_safe_to_siege {
         let mut closest_altar_dist_sq = 550.0 * 550.0;
         let mut altar_force = Vec2::ZERO;
@@ -72,7 +87,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
             let dist_sq = st.pos.distance_squared(boss_pos);
             if dist_sq < closest_altar_dist_sq {
                 closest_altar_dist_sq = dist_sq;
-                altar_force = calculate_attract_force(boss_pos, st.pos, 550.0, 240.0);
+                altar_force = calculate_attract_force(boss_pos, st.pos, 550.0, altar_aggression);
             }
         }
         total_force += altar_force;
@@ -88,7 +103,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         .map(|m| m.pos)
         .collect();
 
-    if nearby_cultists.len() >= 2 && hp_ratio > 0.30 && mobs_in_close_radius < 10 {
+    if nearby_cultists.len() >= 2 && hp_ratio > retreat_hp && mobs_in_close_radius < 10 {
         let mut center = Vec2::ZERO;
         for cp in &nearby_cultists {
             center += *cp;
@@ -98,7 +113,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         let to_cluster = center - boss_pos;
         let dist = to_cluster.length();
         if dist > 70.0 {
-            let aggression = if world.boss_inventory.ranged_damage_recent > 20.0 { 290.0 } else { 190.0 };
+            let aggression = if world.boss_inventory.ranged_damage_recent > 20.0 { sniper_aggression * 1.15 } else { sniper_aggression };
             let hunt_dir = to_cluster / dist;
             total_force += hunt_dir * aggression;
         }
@@ -127,9 +142,9 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     }
 
     // 4. Экстренный рывок: 8-лучевой Context Steering Dash
-    // Триггер: в радиусе 90px > 14 мобов ИЛИ HP < 30% ИЛИ плотный обстрел дальников
+    // Триггер: в радиусе 90px > dash_threshold мобов ИЛИ HP < retreat_hp ИЛИ плотный обстрел дальников
     let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
-    let should_dash = (mobs_in_close_radius >= 14
+    let should_dash = (mobs_in_close_radius >= dash_threshold
         || (is_critical_hp && mobs_in_close_radius >= 3)
         || (heavy_ranged_fire && mobs_in_close_radius >= 4))
         && world.boss_dash_cooldown <= 0.0;

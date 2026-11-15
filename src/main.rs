@@ -2,6 +2,7 @@
 
 use macroquad::prelude::*;
 
+mod ai;
 mod content;
 mod core;
 mod ecs;
@@ -41,6 +42,12 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    // Режим автономного со-эволюционного обучения ботов (Self-Play Training)
+    if std::env::args().any(|a| a == "--train") {
+        crate::ai::trainer::run_co_evolutionary_training(8, 8);
+        return;
+    }
+
     let mut world = World::new();
     let mut clock = GameClock::new();
     let mut net_driver = LocalDriver::new();
@@ -246,7 +253,10 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam
 
         // 3. Клик правой кнопкой мыши — построить разрушаемый Алтарь Крови в координатах мира!
         if is_mouse_button_pressed(MouseButton::Right) {
-            if director.points >= BLOOD_ALTAR_COST {
+            if director.points >= BLOOD_ALTAR_COST
+                && director.altar_cooldown <= 0.0
+                && world.structures.len() < director.max_active_altars
+            {
                 let (mx, my) = mouse_position();
                 let world_click = world_cam.screen_to_world(Vec2::new(mx, my));
                 driver.send_command(Command::PlaceStructure {
@@ -284,7 +294,11 @@ fn execute_command(world: &mut World, cmd: Command) {
         }
         Command::PlaceStructure { director_id, pos, .. } => {
             if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
-                if director.spend_points(BLOOD_ALTAR_COST) {
+                if director.altar_cooldown <= 0.0
+                    && world.structures.len() < director.max_active_altars
+                    && director.spend_points(BLOOD_ALTAR_COST)
+                {
+                    director.altar_cooldown = director.altar_max_cooldown;
                     spawn_blood_altar(world, pos.into());
                 }
             }

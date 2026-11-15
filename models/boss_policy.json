@@ -1,0 +1,30 @@
+{
+  "version": "v1.0-coev",
+  "generation": 3,
+  "fitness": 3990.0403,
+  "avg_survival_time": 600.02704,
+  "mob_repulsion_weight": 464.41977,
+  "gem_attraction_weight": 203.83136,
+  "altar_siege_aggression": 277.86462,
+  "sniper_hunt_aggression": 313.7787,
+  "wall_repel_weight": 560.0,
+  "dash_danger_threshold": 14,
+  "retreat_hp_threshold": 0.32,
+  "sniper_engage_min_count": 2,
+  "weapon_priorities": [
+    1.2,
+    1.4,
+    1.5,
+    1.3,
+    1.3,
+    1.1
+  ],
+  "passive_priorities": [
+    1.3,
+    1.5,
+    1.4,
+    1.4,
+    1.2,
+    1.2
+  ]
+}

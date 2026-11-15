@@ -14,6 +14,7 @@ enum HoverTooltip {
     Passive(PassiveSlot, f32, f32),
     Squad(u8, f32, f32),
     WorldEntity(Vec2, Vec<(String, Color)>),
+    AltarWidget(f32, f32),
 }
 
 pub fn render_ui(
@@ -188,10 +189,87 @@ pub fn render_ui(
         fonts.draw_text(&stats_text, 25.0, 126.0, 13.0, WHITE);
         fonts.draw_text(cam_info, 25.0, 148.0, 12.0, YELLOW);
 
-        // 6. Подсказка для правой кнопки мыши (ПКМ — Алтарь)
-        let rmb_text = format!("ПКМ: Построить Алтарь Крови ({:.0} душ)", BLOOD_ALTAR_COST);
-        let rmb_color = if director.points >= BLOOD_ALTAR_COST { PURPLE } else { GRAY };
-        fonts.draw_text(&rmb_text, 15.0, 188.0, 15.0, rmb_color);
+        // 6. Виджет перезарядки и статуса Алтаря Крови (с иконкой и прогресс-баром)
+        let aw_x = 15.0;
+        let aw_y = 178.0;
+        let aw_w = 290.0;
+        let aw_h = 76.0;
+
+        let on_cooldown = director.altar_cooldown > 0.0;
+        let is_at_limit = world.structures.len() >= director.max_active_altars;
+        let can_afford_altar = director.points >= BLOOD_ALTAR_COST;
+
+        let aw_border = if on_cooldown {
+            Color::new(0.9, 0.25, 0.25, 0.95)
+        } else if is_at_limit {
+            YELLOW
+        } else if can_afford_altar {
+            PURPLE
+        } else {
+            GRAY
+        };
+
+        draw_rectangle(aw_x, aw_y, aw_w, aw_h, Color::new(0.08, 0.08, 0.14, 0.95));
+        draw_rectangle_lines(aw_x, aw_y, aw_w, aw_h, 2.0, aw_border);
+
+        // Иконка Алтаря слева
+        if let Some(altar_tex) = textures.altar.as_ref() {
+            let icon_w = 34.0;
+            let icon_h = 54.0;
+            let icon_tint = if on_cooldown { Color::new(0.8, 0.4, 0.4, 0.8) } else { WHITE };
+            draw_texture_ex(
+                altar_tex,
+                aw_x + 10.0,
+                aw_y + (aw_h - icon_h) / 2.0,
+                icon_tint,
+                DrawTextureParams {
+                    dest_size: Some(Vec2::new(icon_w, icon_h)),
+                    ..Default::default()
+                },
+            );
+        } else {
+            draw_circle(aw_x + 28.0, aw_y + 38.0, 16.0, PURPLE);
+        }
+
+        let content_x = aw_x + 52.0;
+
+        // Заголовок виджета
+        fonts.draw_heading("АЛТАРЬ КРОВИ [ПКМ]", content_x, aw_y + 20.0, 14.0, GOLD);
+
+        if on_cooldown {
+            let cd_text = format!("Перезарядка: {:.1}с / {:.0}с", director.altar_cooldown, director.altar_max_cooldown);
+            fonts.draw_text(&cd_text, content_x, aw_y + 38.0, 12.0, Color::new(1.0, 0.35, 0.35, 1.0));
+
+            // Полоска отката кулдауна
+            let bar_w = 220.0;
+            let bar_h = 7.0;
+            let prog = (1.0 - director.altar_cooldown / director.altar_max_cooldown).clamp(0.0, 1.0);
+            draw_rectangle(content_x, aw_y + 46.0, bar_w, bar_h, Color::new(0.2, 0.1, 0.1, 0.9));
+            draw_rectangle(content_x, aw_y + 46.0, bar_w * prog, bar_h, ORANGE);
+            draw_rectangle_lines(content_x, aw_y + 46.0, bar_w, bar_h, 1.0, GRAY);
+
+            let count_text = format!("Активно: {}/{} алт. (+{:.0}/2с)", world.structures.len(), director.max_active_altars, world.structures.len() as f32 * 3.0);
+            fonts.draw_text(&count_text, content_x, aw_y + 67.0, 11.0, LIGHTGRAY);
+        } else if is_at_limit {
+            fonts.draw_text("ЛИМИТ АЛТАРЕЙ ДОСТИГНУТ!", content_x, aw_y + 38.0, 13.0, YELLOW);
+            let count_text = format!("Максимум {}/{} на арене (+{:.0}/2с)", world.structures.len(), director.max_active_altars, world.structures.len() as f32 * 3.0);
+            fonts.draw_text(&count_text, content_x, aw_y + 58.0, 12.0, LIGHTGRAY);
+        } else if can_afford_altar {
+            fonts.draw_text("ГОТОВ К ПОСТРОЙКЕ [50 душ]", content_x, aw_y + 38.0, 13.0, GREEN);
+            let bar_w = 220.0;
+            draw_rectangle(content_x, aw_y + 46.0, bar_w, 7.0, GREEN);
+            let count_text = format!("Активно: {}/{} алт. (+{:.0}/2с доход)", world.structures.len(), director.max_active_altars, world.structures.len() as f32 * 3.0);
+            fonts.draw_text(&count_text, content_x, aw_y + 67.0, 11.0, SKYBLUE);
+        } else {
+            fonts.draw_text("ГОТОВ (Не хватает душ: 50)", content_x, aw_y + 38.0, 12.0, GRAY);
+            let count_text = format!("Активно: {}/{} алт.", world.structures.len(), director.max_active_altars);
+            fonts.draw_text(&count_text, content_x, aw_y + 58.0, 12.0, LIGHTGRAY);
+        }
+
+        // Проверка наведения на виджет Алтаря
+        if mx >= aw_x && mx <= aw_x + aw_w && my >= aw_y && my <= aw_y + aw_h {
+            hovered_tooltip = Some(HoverTooltip::AltarWidget(aw_x, aw_y));
+        }
 
         // 7. Тактическая миникарта (справа вверху)
         draw_minimap(world, cam_pos, cam_zoom, fonts);
@@ -306,11 +384,18 @@ pub fn render_ui(
                 ("⚔️ АКТИВНЫЙ БОЙ (Кайтинг орд)".to_string(), SKYBLUE)
             };
 
+            let ai_str = if let Some(ref model) = world.boss_model {
+                (format!("🧠 ИИ: Обученная нейро-модель (Поколение {}, Фитнес {:.0})", model.generation, model.fitness), GOLD)
+            } else {
+                ("⚙️ ИИ: Базовые потенциальные поля".to_string(), LIGHTGRAY)
+            };
+
             let lines = vec![
                 ("👑 СОЛО-БОСС (АВТОНОМНЫЙ ГЕРОЙ)".to_string(), YELLOW),
                 (format!("Здоровье: {:.0} / {:.0} HP | Броня: {:.1}", world.boss_health.current, world.boss_health.max, world.boss_resistances.flat_armor), WHITE),
                 (format!("Уровень: {} | Оружий: {}/6 | Пассивок: {}/6", world.boss_inventory.level, world.boss_inventory.weapons.len(), world.boss_inventory.passives.len()), LIGHTGRAY),
                 state_str,
+                ai_str,
             ];
             hovered_tooltip = Some(HoverTooltip::WorldEntity(Vec2::new(mx, my), lines));
         }
@@ -379,8 +464,35 @@ pub fn render_ui(
             HoverTooltip::WorldEntity(screen_pos, lines) => {
                 draw_world_entity_tooltip(screen_pos, lines, screen_w, screen_h, fonts);
             }
+            HoverTooltip::AltarWidget(aw_x, aw_y) => {
+                draw_altar_widget_tooltip(aw_x, aw_y, screen_w, fonts, world);
+            }
         }
     }
+}
+
+/// Всплывающая подсказка для виджета Алтаря Крови
+fn draw_altar_widget_tooltip(aw_x: f32, aw_y: f32, screen_w: f32, fonts: &GameFonts, world: &World) {
+    let card_w = 360.0;
+    let card_h = 175.0;
+    let card_x = (aw_x + 300.0).clamp(10.0, screen_w - card_w - 10.0);
+    let card_y = aw_y;
+
+    let director = world.directors.first();
+    let max_altars = director.map_or(8, |d| d.max_active_altars);
+
+    draw_rectangle(card_x, card_y, card_w, card_h, Color::new(0.06, 0.06, 0.12, 0.96));
+    draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, PURPLE);
+
+    fonts.draw_heading("🏛️ АЛТАРЬ КРОВИ (Инфернальная база)", card_x + 12.0, card_y + 22.0, 15.0, GOLD);
+    fonts.draw_text("• Постройка: Клик ПКМ на свободной точке арены", card_x + 12.0, card_y + 44.0, 12.0, WHITE);
+    let cost_str = format!("• Стоимость: {:.0} Душ | Кулдаун: 14.0 сек (Лимит: {} шт)", BLOOD_ALTAR_COST, max_altars);
+    fonts.draw_text(&cost_str, card_x + 12.0, card_y + 64.0, 12.0, YELLOW);
+    let inc_str = format!("• Доход: +3.0 Очков Душ каждые 2 сек за каждый живой алтарь (Текущий: +{:.0}/2с)", world.structures.len() as f32 * 3.0);
+    fonts.draw_text(&inc_str, card_x + 12.0, card_y + 84.0, 12.0, GREEN);
+    fonts.draw_text("• Аура Крови: Восстанавливает +35 HP союзникам в радиусе 180px", card_x + 12.0, card_y + 104.0, 12.0, SKYBLUE);
+    fonts.draw_text("• Здоровье: 650 HP (Броня: 12, уязвим к святому урону -60%)", card_x + 12.0, card_y + 124.0, 12.0, LIGHTGRAY);
+    fonts.draw_text("⚠️ ОПАСНОСТЬ: Босс активно ищет и штурмует алтари (+150 XP)", card_x + 12.0, card_y + 148.0, 12.0, ORANGE);
 }
 
 /// Всплывающая подсказка для оружия Босса
