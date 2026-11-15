@@ -16,6 +16,7 @@ pub struct MobEntity {
     pub tier: u8,
     pub radius: f32,
     pub is_undead: bool,
+    pub is_elite: bool,
     pub knockback_immune: bool,
     pub knockback_vel: Vec2,
     pub attack_timer: f32,
@@ -92,10 +93,13 @@ pub struct DirectorState {
     pub income_rate: f32, // Очков каждые 2 секунды
     pub total_points_spent: f32,
     pub income_timer: f32,
-    pub squad_cooldowns: [f32; 5],
+    pub squad_cooldowns: [f32; 8],
     pub altar_cooldown: f32,
     pub altar_max_cooldown: f32,
     pub total_mobs_spawned: usize,
+    pub grade_fury: u8,        // [F] Ярость: +12% урон, +6% скорость
+    pub grade_carapace: u8,    // [G] Панцирь: +2.5 броня, +5% физ. рез
+    pub grade_pestilence: u8,  // [H] Мор: 25% шанс лужи яда при гибели моба
 }
 
 impl DirectorState {
@@ -106,10 +110,13 @@ impl DirectorState {
             income_rate: 8.0,
             total_points_spent: 0.0,
             income_timer: 0.0,
-            squad_cooldowns: [0.0; 5],
+            squad_cooldowns: [0.0; 8],
             altar_cooldown: 0.0,
             altar_max_cooldown: 60.0, // 60 секунд (1 минута) кулдаун на постройку Алтаря (без искусственного лимита)
             total_mobs_spawned: 0,
+            grade_fury: 0,
+            grade_carapace: 0,
+            grade_pestilence: 0,
         }
     }
 

@@ -7,31 +7,43 @@ pub const MAX_PASSIVE_LEVEL: u8 = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WeaponType {
-    // Базовые 6 оружий
-    WindBlade,      // 1. Клинок Ветра
-    FireAura,       // 2. Огненная Аура
-    MagicWand,      // 3. Магический Жезл
-    HolyHammer,     // 4. Святой Молот
-    IceShards,      // 5. Ледяные Осколки
-    PoisonOrbs,     // 6. Чумные Сферы
+    // Базовые оружия
+    WindBlade,        // 1. Клинок Ветра
+    FireAura,         // 2. Огненная Аура
+    MagicWand,        // 3. Магический Жезл
+    HolyHammer,       // 4. Святой Молот
+    IceShards,        // 5. Ледяные Осколки
+    PoisonOrbs,       // 6. Чумные Сферы
+    ExecutionerAxe,   // 7. Топор Палача
+    CelestialBow,     // 8. Небесный Лук
+    ThunderOrb,       // 9. Грозовая Сфера
+    BloodDaggers,     // 10. Кровавые Кинжалы
 
-    // Эволюции (4 из ТЗ + 2 завершающие сетку 6х6)
-    BladeStorm,     // Эволюция: Буря Клинков (Клинок Ветра + Перчатка Скорости)
-    Hellfire,       // Эволюция: Адское Пекло (Огненная Аура + Сердце Гиганта)
-    DeathRay,       // Эволюция: Луч Смерти (Магический Жезл + Фолиант Времени)
-    DivineShield,   // Эволюция: Праведный Щит (Святой Молот + Броня Света)
-    BlizzardStorm,  // Эволюция: Ледниковая Буря (Ледяные Осколки + Кольцо Заморозки)
-    ToxicPestilence,// Эволюция: Токсичный Мор (Чумные Сферы + Едкий Сосуд)
+    // Эволюции (10 эволюций)
+    BladeStorm,       // Эволюция: Буря Клинков (Клинок Ветра + Перчатка Скорости)
+    Hellfire,         // Эволюция: Адское Пекло (Огненная Аура + Сердце Гиганта)
+    DeathRay,         // Эволюция: Луч Смерти (Магический Жезл + Фолиант Времени)
+    DivineShield,     // Эволюция: Праведный Щит (Святой Молот + Броня Света)
+    BlizzardStorm,    // Эволюция: Ледниковая Буря (Ледяные Осколки + Кольцо Заморозки)
+    ToxicPestilence,  // Эволюция: Токсичный Мор (Чумные Сферы + Едкий Сосуд)
+    WhirlwindCleaver, // Эволюция: Вихревой Секач (Топор Палача + Кровавый Камень)
+    StarfallBarrage,  // Эволюция: Звездопадный Залп (Небесный Лук + Орлиный Прицел)
+    ThunderstormWrath,// Эволюция: Гнев Грозы (Грозовая Сфера + Песочные Часы)
+    BloodHarvest,     // Эволюция: Кровавая Жатва (Кровавые Кинжалы + Сфера Притяжения)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PassiveType {
-    SpeedGloves,    // 1. Перчатка Скорости (+скорость атаки)
-    GiantHeart,     // 2. Сердце Гиганта (+макс ХП и регенерация)
-    CooldownTome,   // 3. Фолиант Времени (-кд всех способностей)
-    LightArmor,     // 4. Броня Света (+плоская броня и % физ. резист)
-    FrostRing,      // 5. Кольцо Заморозки (+радиус и сила замедления)
-    CorrosiveFlask, // 6. Едкий Сосуд (+пробитие брони атакующим)
+    SpeedGloves,      // 1. Перчатка Скорости (+скорость атаки)
+    GiantHeart,       // 2. Сердце Гиганта (+макс ХП и регенерация)
+    CooldownTome,     // 3. Фолиант Времени (-кд всех способностей)
+    LightArmor,       // 4. Броня Света (+плоская броня и % физ. резист)
+    FrostRing,        // 5. Кольцо Заморозки (+радиус и сила замедления)
+    CorrosiveFlask,   // 6. Едкий Сосуд (+пробитие брони атакующим)
+    BloodStone,       // 7. Кровавый Камень (+урон и регенерация)
+    EagleScope,       // 8. Орлиный Прицел (+скорость полета снарядов)
+    ChronoHourglass,  // 9. Песочные Часы (+длительность эффектов)
+    MagnetSphere,     // 10. Сфера Притяжения (+радиус сбора душ)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -147,8 +159,44 @@ impl BossInventory {
             WeaponType::PoisonOrbs if self.has_passive(PassiveType::CorrosiveFlask) => {
                 Some(WeaponType::ToxicPestilence)
             }
+            WeaponType::ExecutionerAxe if self.has_passive(PassiveType::BloodStone) => {
+                Some(WeaponType::WhirlwindCleaver)
+            }
+            WeaponType::CelestialBow if self.has_passive(PassiveType::EagleScope) => {
+                Some(WeaponType::StarfallBarrage)
+            }
+            WeaponType::ThunderOrb if self.has_passive(PassiveType::ChronoHourglass) => {
+                Some(WeaponType::ThunderstormWrath)
+            }
+            WeaponType::BloodDaggers if self.has_passive(PassiveType::MagnetSphere) => {
+                Some(WeaponType::BloodHarvest)
+            }
             _ => None,
         }
+    }
+
+    /// Множитель урона от пассивок (BloodStone)
+    pub fn get_damage_multiplier(&self) -> f32 {
+        let blood_stone = self.get_passive_level(PassiveType::BloodStone);
+        1.0 + (blood_stone as f32 * 0.12) // +12% за уровень
+    }
+
+    /// Множитель скорости полета снарядов (EagleScope)
+    pub fn get_projectile_speed_multiplier(&self) -> f32 {
+        let eagle_scope = self.get_passive_level(PassiveType::EagleScope);
+        1.0 + (eagle_scope as f32 * 0.20) // +20% за уровень
+    }
+
+    /// Регенерация HP в секунду от BloodStone
+    pub fn get_hp_regen(&self) -> f32 {
+        let blood_stone = self.get_passive_level(PassiveType::BloodStone);
+        blood_stone as f32 * 2.5 // +2.5 HP/сек за уровень
+    }
+
+    /// Эффективный радиус сбора опыта от MagnetSphere
+    pub fn get_effective_magnet_radius(&self) -> f32 {
+        let magnet_sphere = self.get_passive_level(PassiveType::MagnetSphere);
+        self.magnet_radius + (magnet_sphere as f32 * 45.0)
     }
 
     /// Множитель скорости перезарядки от пассивок

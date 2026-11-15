@@ -85,6 +85,8 @@ pub fn update_skills(world: &mut World, dt: f32) {
     let boss_pos = world.boss_pos;
     let cd_multiplier = world.boss_inventory.get_cooldown_multiplier();
     let armor_pen = world.boss_inventory.get_armor_penetration();
+    let dmg_mult = world.boss_inventory.get_damage_multiplier();
+    let spd_mult = world.boss_inventory.get_projectile_speed_multiplier();
 
     // Вращение орбит для Бури Клинков и Праведного Щита
     world.blade_storm_angle = (world.blade_storm_angle + dt * 6.0) % (std::f32::consts::PI * 2.0);
@@ -104,7 +106,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
     let mut new_projectiles = Vec::new();
     let mut new_acid_pools = Vec::new();
     let mut death_ray_fire = false;
-    let mut death_ray_damage = 95.0;
+    let mut death_ray_damage = 95.0 * dmg_mult;
 
     // Клонируем список оружий для независимой мутации без удержания ссылки на весь мир
     let mut weapons = world.boss_inventory.weapons.clone();
@@ -114,6 +116,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
         weapon.cooldown_timer -= dt;
         if weapon.cooldown_timer <= 0.0 {
             weapon.cooldown_timer = weapon.base_cooldown * cd_multiplier;
+            let effective_damage = weapon.damage * dmg_mult;
 
             match weapon.kind {
                 // 1.1 Клинок Ветра: веер из 4-6 клинков
@@ -125,8 +128,8 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * 350.0,
-                            damage: weapon.damage,
+                            vel: dir * (350.0 * spd_mult),
+                            damage: effective_damage,
                             damage_type: DamageType::Physical,
                             armor_penetration: armor_pen,
                             lifetime: 1.4,
@@ -148,11 +151,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     for idx in mobs_in_range {
                         if let Some(mob) = world.mobs.get_mut(idx) {
                             if mob.pos.distance_squared(boss_pos) < aura_radius * aura_radius {
-                                mob.status.apply_burn(3.0, weapon.damage * 0.4);
+                                mob.status.apply_burn(3.0, effective_damage * 0.4);
                                 world.damage_queue.push(DamagePacket {
                                     source_id: Some(0),
                                     target_id: mob.id,
-                                    amount: weapon.damage,
+                                    amount: effective_damage,
                                     damage_type: DamageType::Fire,
                                     armor_penetration: armor_pen,
                                 });
@@ -166,7 +169,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             world.damage_queue.push(DamagePacket {
                                 source_id: Some(0),
                                 target_id: st.id,
-                                amount: weapon.damage * 0.8,
+                                amount: effective_damage * 0.8,
                                 damage_type: DamageType::Fire,
                                 armor_penetration: armor_pen,
                             });
@@ -183,8 +186,8 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     for idx in mobs_in_range {
                         if let Some(mob) = world.mobs.get_mut(idx) {
                             if mob.pos.distance_squared(boss_pos) < aura_radius * aura_radius {
-                                let percent_dmg = mob.health.max * 0.10 + weapon.damage;
-                                mob.status.apply_burn(4.0, weapon.damage * 0.6);
+                                let percent_dmg = mob.health.max * 0.10 + effective_damage;
+                                mob.status.apply_burn(4.0, effective_damage * 0.6);
                                 world.damage_queue.push(DamagePacket {
                                     source_id: Some(0),
                                     target_id: mob.id,
@@ -201,7 +204,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             world.damage_queue.push(DamagePacket {
                                 source_id: Some(0),
                                 target_id: st.id,
-                                amount: weapon.damage * 1.3,
+                                amount: effective_damage * 1.3,
                                 damage_type: DamageType::Fire,
                                 armor_penetration: armor_pen + 0.25,
                             });
@@ -211,15 +214,15 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     world.spawn_particles(boss_pos, 45, RED, 190.0);
                 }
 
-                // 1.5 Магический Жезл: быстрые стрелы в тактическую цель (культисты / алтари)
+                // 1.5 Магический Жезл: быстрые стрелы в тактическую цель
                 WeaponType::MagicWand => {
                     if let Some(target_pos) = tactical_target_pos {
                         let dir = (target_pos - boss_pos).normalize_or_zero();
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * 480.0,
-                            damage: weapon.damage,
+                            vel: dir * (480.0 * spd_mult),
+                            damage: effective_damage,
                             damage_type: DamageType::True,
                             armor_penetration: 1.0,
                             lifetime: 1.8,
@@ -231,10 +234,10 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     }
                 }
 
-                // 1.6 Луч Смерти (ЭВОЛЮЦИЯ): прожигающий лазер через весь экран по приоритетной цели
+                // 1.6 Луч Смерти (ЭВОЛЮЦИЯ): прожигающий лазер через весь экран
                 WeaponType::DeathRay => {
                     death_ray_fire = true;
-                    death_ray_damage = weapon.damage;
+                    death_ray_damage = effective_damage;
                 }
 
                 // 1.7 Святой Молот: запуск молотов с высоким уроном по нежити и алтарям
@@ -246,8 +249,8 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * 270.0,
-                            damage: weapon.damage,
+                            vel: dir * (270.0 * spd_mult),
+                            damage: effective_damage,
                             damage_type: DamageType::Holy,
                             armor_penetration: armor_pen,
                             lifetime: 2.2,
@@ -262,7 +265,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                 // 1.8 Праведный Щит (ЭВОЛЮЦИЯ): кружащийся щит с вампиризмом
                 WeaponType::DivineShield => {}
 
-                // 1.9 Ледяные Осколки: веер замедляющих кристаллов в тактическую цель
+                // 1.9 Ледяные Осколки: веер замедляющих кристаллов
                 WeaponType::IceShards => {
                     let base_dir = if let Some(target_pos) = tactical_target_pos {
                         (target_pos - boss_pos).normalize_or_zero()
@@ -280,8 +283,8 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * 380.0,
-                            damage: weapon.damage,
+                            vel: dir * (380.0 * spd_mult),
+                            damage: effective_damage,
                             damage_type: DamageType::Ice,
                             armor_penetration: armor_pen,
                             lifetime: 1.5,
@@ -306,7 +309,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                                 world.damage_queue.push(DamagePacket {
                                     source_id: Some(0),
                                     target_id: mob.id,
-                                    amount: weapon.damage,
+                                    amount: effective_damage,
                                     damage_type: DamageType::Ice,
                                     armor_penetration: armor_pen,
                                 });
@@ -319,7 +322,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             world.damage_queue.push(DamagePacket {
                                 source_id: Some(0),
                                 target_id: st.id,
-                                amount: weapon.damage,
+                                amount: effective_damage,
                                 damage_type: DamageType::Ice,
                                 armor_penetration: armor_pen,
                             });
@@ -340,7 +343,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         pos: boss_pos + offset,
                         radius: 70.0,
                         lifetime: 4.5,
-                        dps: weapon.damage * 0.7,
+                        dps: effective_damage * 0.7,
                         corrosive: false,
                     });
                 }
@@ -353,8 +356,217 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             pos: boss_pos + offset,
                             radius: 100.0,
                             lifetime: 6.0,
-                            dps: weapon.damage,
+                            dps: effective_damage,
                             corrosive: true,
+                        });
+                    }
+                }
+
+                // 1.13 Топор Палача: тяжелые рассекающие секиры
+                WeaponType::ExecutionerAxe => {
+                    let count = 2 + (weapon.level / 3) as usize;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (310.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Physical,
+                            armor_penetration: armor_pen + 0.15,
+                            lifetime: 1.8,
+                            radius: 14.0,
+                            pierce: 4,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::ExecutionerAxe),
+                        });
+                    }
+                }
+
+                // 1.14 Вихревой Секач (ЭВОЛЮЦИЯ): 6 гигантских секачей
+                WeaponType::WhirlwindCleaver => {
+                    let count = 6;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (380.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Physical,
+                            armor_penetration: armor_pen + 0.35,
+                            lifetime: 2.2,
+                            radius: 18.0,
+                            pierce: 8,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::WhirlwindCleaver),
+                        });
+                    }
+                }
+
+                // 1.15 Небесный Лук: залпы святых стрел по тактическим целям
+                WeaponType::CelestialBow => {
+                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                        (target_pos - boss_pos).normalize_or_zero()
+                    } else {
+                        Vec2::X
+                    };
+
+                    let count = 3 + (weapon.level / 3) as usize;
+                    for i in 0..count {
+                        let spread = ((i as f32) - (count as f32 - 1.0) / 2.0) * 0.15;
+                        let sin = spread.sin();
+                        let cos = spread.cos();
+                        let dir = Vec2::new(base_dir.x * cos - base_dir.y * sin, base_dir.x * sin + base_dir.y * cos);
+
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (540.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Holy,
+                            armor_penetration: armor_pen + 0.20,
+                            lifetime: 1.8,
+                            radius: 10.0,
+                            pierce: 3,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::CelestialBow),
+                        });
+                    }
+                }
+
+                // 1.16 Звездопадный Залп (ЭВОЛЮЦИЯ): 8 пронзающих звездных стрел
+                WeaponType::StarfallBarrage => {
+                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                        (target_pos - boss_pos).normalize_or_zero()
+                    } else {
+                        Vec2::X
+                    };
+
+                    let count = 8;
+                    for i in 0..count {
+                        let spread = ((i as f32) - 3.5) * 0.18;
+                        let sin = spread.sin();
+                        let cos = spread.cos();
+                        let dir = Vec2::new(base_dir.x * cos - base_dir.y * sin, base_dir.x * sin + base_dir.y * cos);
+
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (620.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Holy,
+                            armor_penetration: armor_pen + 0.40,
+                            lifetime: 2.2,
+                            radius: 13.0,
+                            pierce: 6,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::StarfallBarrage),
+                        });
+                    }
+                    world.spawn_particles(boss_pos, 25, GOLD, 180.0);
+                }
+
+                // 1.17 Грозовая Сфера: молниевые разряды
+                WeaponType::ThunderOrb => {
+                    let count = 2 + (weapon.level / 3) as usize;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32) + rand::gen_range(-0.3, 0.3);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (420.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::True,
+                            armor_penetration: 1.0,
+                            lifetime: 1.6,
+                            radius: 12.0,
+                            pierce: 3,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::ThunderOrb),
+                        });
+                    }
+                }
+
+                // 1.18 Гнев Грозы (ЭВОЛЮЦИЯ): каскад молний по арене
+                WeaponType::ThunderstormWrath => {
+                    let count = 6;
+                    for _ in 0..count {
+                        let offset = Vec2::new(rand::gen_range(-350.0, 350.0), rand::gen_range(-350.0, 350.0));
+                        let strike_pos = boss_pos + offset;
+                        world.spawn_particles(strike_pos, 30, YELLOW, 220.0);
+                        world.spawn_particles(strike_pos, 15, WHITE, 260.0);
+
+                        let nearby = world.spatial_grid.query_nearby(strike_pos, 120.0);
+                        for idx in nearby {
+                            if let Some(mob) = world.mobs.get_mut(idx) {
+                                if mob.pos.distance_squared(strike_pos) < 120.0 * 120.0 {
+                                    mob.status.apply_freeze(1.0); // шоковый стан
+                                    world.damage_queue.push(DamagePacket {
+                                        source_id: Some(0),
+                                        target_id: mob.id,
+                                        amount: effective_damage,
+                                        damage_type: DamageType::True,
+                                        armor_penetration: 1.0,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 1.19 Кровавые Кинжалы: быстрые серии клинков
+                WeaponType::BloodDaggers => {
+                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                        (target_pos - boss_pos).normalize_or_zero()
+                    } else {
+                        Vec2::X
+                    };
+
+                    let count = 3 + (weapon.level / 3) as usize;
+                    for i in 0..count {
+                        let spread = ((i as f32) - (count as f32 - 1.0) / 2.0) * 0.12;
+                        let sin = spread.sin();
+                        let cos = spread.cos();
+                        let dir = Vec2::new(base_dir.x * cos - base_dir.y * sin, base_dir.x * sin + base_dir.y * cos);
+
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (460.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Physical,
+                            armor_penetration: armor_pen,
+                            lifetime: 1.2,
+                            radius: 8.0,
+                            pierce: 1,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::BloodDaggers),
+                        });
+                    }
+                }
+
+                // 1.20 Кровавая Жатва (ЭВОЛЮЦИЯ): веер кинжалов с вампиризмом
+                WeaponType::BloodHarvest => {
+                    let count = 8;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (520.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Physical,
+                            armor_penetration: armor_pen + 0.25,
+                            lifetime: 1.5,
+                            radius: 10.0,
+                            pierce: 4,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::BloodHarvest),
                         });
                     }
                 }
@@ -363,6 +575,12 @@ pub fn update_skills(world: &mut World, dt: f32) {
     }
 
     world.boss_inventory.weapons = weapons;
+
+    // Пассивная регенерация здоровья от BloodStone
+    let hp_regen = world.boss_inventory.get_hp_regen();
+    if hp_regen > 0.0 {
+        world.boss_health.heal(hp_regen * dt);
+    }
 
     // Применение Луча Смерти по тактической цели
     if death_ray_fire {
@@ -419,34 +637,48 @@ pub fn update_skills(world: &mut World, dt: f32) {
     world.projectiles.extend(new_projectiles);
     world.acid_pools.extend(new_acid_pools);
 
-    // 2. Стрельба культистов-стрелков (Тир 3)
-    let mut cultist_shots = Vec::new();
+    // 2. Стрельба культистов (Тир 3), Огненных элементалей (Тир 7) и Жнеца Смерти (Тир 8)
+    let mut enemy_shots = Vec::new();
     for mob in &mut world.mobs {
         if mob.tier == 3 {
             mob.attack_timer -= dt;
             let dist_sq = mob.pos.distance_squared(boss_pos);
             if dist_sq < 310.0 * 310.0 && mob.attack_timer <= 0.0 {
                 mob.attack_timer = 2.0;
-                cultist_shots.push(mob.pos);
+                enemy_shots.push((mob.pos, 18.0, DamageType::Physical, 230.0, 8.0, None));
+            }
+        } else if mob.tier == 7 {
+            mob.attack_timer -= dt;
+            let dist_sq = mob.pos.distance_squared(boss_pos);
+            if dist_sq < 360.0 * 360.0 && mob.attack_timer <= 0.0 {
+                mob.attack_timer = 2.2;
+                enemy_shots.push((mob.pos, 35.0, DamageType::Fire, 260.0, 12.0, None));
+            }
+        } else if mob.tier == 8 {
+            mob.attack_timer -= dt;
+            let dist_sq = mob.pos.distance_squared(boss_pos);
+            if dist_sq < 420.0 * 420.0 && mob.attack_timer <= 0.0 {
+                mob.attack_timer = 2.8;
+                enemy_shots.push((mob.pos, 70.0, DamageType::True, 280.0, 18.0, Some(WeaponType::ExecutionerAxe)));
             }
         }
     }
 
-    for pos in cultist_shots {
+    for (pos, dmg, dmg_type, speed, rad, source_w) in enemy_shots {
         let id = world.alloc_id();
         let dir = (boss_pos - pos).normalize_or_zero();
         world.projectiles.push(ProjectileEntity {
             id,
             pos,
-            vel: dir * 230.0,
-            damage: 18.0,
-            damage_type: DamageType::Physical,
-            armor_penetration: 0.15,
+            vel: dir * speed,
+            damage: dmg,
+            damage_type: dmg_type,
+            armor_penetration: 0.20,
             lifetime: 2.5,
-            radius: 8.0,
+            radius: rad,
             pierce: 1,
             faction: Faction::Director,
-            source_weapon: None,
+            source_weapon: source_w,
         });
     }
 

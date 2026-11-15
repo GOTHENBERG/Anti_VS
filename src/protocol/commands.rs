@@ -20,10 +20,15 @@ impl From<NetVec2> for macroquad::prelude::Vec2 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Command {
-    /// Призыв отряда мобов Директором (клавиши 1-5)
+    /// Призыв отряда мобов Директором (клавиши 1-8)
     SpawnSquad {
         director_id: u8,
         tier: u8,
+    },
+    /// Улучшение грейда мобов Директором (клавиши F, G, H)
+    UpgradeDirectorGrade {
+        director_id: u8,
+        grade_type: u8, // 0: Fury, 1: Carapace, 2: Pestilence
     },
     /// Движение Босса (локальный ИИ или второй игрок в мультиплеере)
     BossMove {

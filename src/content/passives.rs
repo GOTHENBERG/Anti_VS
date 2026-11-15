@@ -38,5 +38,25 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Едкий Сосуд",
             description: "+15% к пробитию брони для всех атак. Нужен для Токсичного Мора.",
         },
+        PassiveType::BloodStone => PassiveDefinition {
+            kind,
+            name: "Кровавый Камень",
+            description: "+12% к общему урону и +2.5 HP/сек регенерации. Нужен для Вихревого Секача.",
+        },
+        PassiveType::EagleScope => PassiveDefinition {
+            kind,
+            name: "Орлиный Прицел",
+            description: "+20% к скорости и дальности полета всех снарядов. Нужен для Звездопадного Залпа.",
+        },
+        PassiveType::ChronoHourglass => PassiveDefinition {
+            kind,
+            name: "Песочные Часы",
+            description: "+25% к длительности заморозки, горения и яда. Нужен для Гнева Грозы.",
+        },
+        PassiveType::MagnetSphere => PassiveDefinition {
+            kind,
+            name: "Сфера Притяжения",
+            description: "+45px к радиусу притяжения кристаллов душ. Нужна для Кровавой Жатвы.",
+        },
     }
 }

@@ -44,6 +44,37 @@ pub fn update_movement(world: &mut World, dt: f32) {
                     mob.pos
                 }
             }
+            // Тир 6 (Демон теней): если далеко, телепортируется за спину босса!
+            6 => {
+                let diff = boss_pos - mob.pos;
+                let dist = diff.length();
+                mob.attack_timer -= dt;
+                if dist > 320.0 && mob.attack_timer <= 0.0 {
+                    mob.attack_timer = 4.5;
+                    let behind_dir = -boss_vel.normalize_or_zero();
+                    let offset = if behind_dir.length_squared() > 0.5 {
+                        behind_dir * 140.0
+                    } else {
+                        Vec2::new(120.0, 0.0)
+                    };
+                    mob.pos = boss_pos + offset;
+                }
+                boss_pos
+            }
+            // Тир 7 (Огненный элементаль): кружит вокруг босса на средней дистанции (180px)
+            7 => {
+                let diff = boss_pos - mob.pos;
+                let dist = diff.length();
+                if dist < 170.0 {
+                    mob.pos - diff.normalize_or_zero() * 80.0
+                } else if dist > 260.0 {
+                    boss_pos
+                } else {
+                    // Орбитальное движение
+                    let perp = Vec2::new(-diff.y, diff.x).normalize_or_zero();
+                    mob.pos + perp * 60.0
+                }
+            }
             // Остальные идут напролом
             _ => boss_pos,
         };
@@ -108,8 +139,9 @@ pub fn update_movement(world: &mut World, dt: f32) {
     }
     world.acid_pools.retain(|p| p.lifetime > 0.0);
 
-    // 5. Магнетизм кристаллов душ к боссу
-    let magnet_r_sq = world.boss_inventory.magnet_radius.powi(2);
+    // 5. Магнетизм кристаллов душ к боссу (с учетом пассивки MagnetSphere)
+    let effective_magnet_r = world.boss_inventory.get_effective_magnet_radius();
+    let magnet_r_sq = effective_magnet_r.powi(2);
     let mut magnet_active = false;
 
     // Проверяем, подобрал ли босс предмет "Магнит"

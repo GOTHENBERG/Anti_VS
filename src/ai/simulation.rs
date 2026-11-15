@@ -66,15 +66,14 @@ pub fn run_headless_simulation(
                     }
                 }
 
-                // 1.2 Призыв отрядов монстров (Тиры 1 - 5) на основе весов модели Директора
+                // 1.2 Призыв отрядов монстров (Тиры 1 - 8) на основе весов модели Директора
                 let remaining_points = if should_spawn_altar { points - BLOOD_ALTAR_COST } else { points };
                 let mut max_weight = 0.0;
-                for tier_idx in 0..5 {
+                for (tier_idx, &w) in director_model.squad_spawn_weights.iter().enumerate() {
                     let tier = (tier_idx + 1) as u8;
                     let config = get_squad_config(tier);
                     let is_unlocked = spent >= config.unlock_spent_threshold;
                     if is_unlocked && remaining_points >= config.cost {
-                        let w = director_model.squad_spawn_weights[tier_idx];
                         if w > max_weight {
                             max_weight = w;
                             tier_to_spawn = Some((tier, config.cost));

@@ -50,7 +50,7 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
             unlock_spent_threshold: 1000.0,
             description: "Тяжелая броня. Не отбрасываются. Иммунитет ко льду, уязвимы к огню.",
         },
-        _ => SquadConfig {
+        5 => SquadConfig {
             tier: 5,
             name: "Камикадзе",
             cost: 300.0,
@@ -58,6 +58,33 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
             cooldown: 8.0,
             unlock_spent_threshold: 2500.0,
             description: "Взрываются при контакте, нанося колоссальный урон по площади.",
+        },
+        6 => SquadConfig {
+            tier: 6,
+            name: "Демоны теней",
+            cost: 500.0,
+            count: 2,
+            cooldown: 10.0,
+            unlock_spent_threshold: 4000.0,
+            description: "Скрытные ассасины. Телепортируются за спину босса, сбивая прицел.",
+        },
+        7 => SquadConfig {
+            tier: 7,
+            name: "Огненные элементали",
+            cost: 850.0,
+            count: 2,
+            cooldown: 12.0,
+            unlock_spent_threshold: 6500.0,
+            description: "100% иммунитет к огню. Плюются огненными шарами и жгут землю.",
+        },
+        _ => SquadConfig {
+            tier: 8,
+            name: "Жнец Смерти (Титан)",
+            cost: 1800.0,
+            count: 1,
+            cooldown: 20.0,
+            unlock_spent_threshold: 10000.0,
+            description: "Мини-босс орды! 2800 HP, гигантская коса смерти, не отбрасывается.",
         },
     }
 }
@@ -86,13 +113,39 @@ pub fn spawn_squad_perimeter(world: &mut World, tier: u8) {
             raw_spawn_pos.y.clamp(20.0, map_h - 20.0),
         );
 
-        let (hp, speed, dmg, radius, flat_armor, phys_res, ice_res, fire_res, is_undead, knockback_immune) = match tier {
+        let (base_hp, base_spd, base_dmg, base_rad, mut flat_armor, mut phys_res, ice_res, fire_res, is_undead, knockback_immune) = match tier {
             1 => (32.0, 105.0, 7.0, 10.0, 0.0, 0.05, 0.0, 0.0, true, false), // Скелет
-            2 => (50.0, 160.0, 12.0, 11.0, 1.0, 0.10, 0.0, 0.0, false, false), // Чёрная гончая (160 скорость)
-            3 => (75.0, 80.0, 16.0, 13.0, 2.0, 0.15, 0.0, 0.0, true, false), // Культист (дальний бой)
-            4 => (380.0, 52.0, 32.0, 22.0, 14.0, 0.35, 1.0, -0.50, false, true), // Голем (броня, нет кб, -50% огонь)
-            _ => (130.0, 185.0, 0.0, 15.0, 2.0, 0.10, 0.0, 0.0, true, false), // Камикадзе (взрыв при контакте)
+            2 => (50.0, 160.0, 12.0, 11.0, 1.0, 0.10, 0.0, 0.0, false, false), // Чёрная гончая
+            3 => (75.0, 80.0, 16.0, 13.0, 2.0, 0.15, 0.0, 0.0, true, false), // Культист
+            4 => (380.0, 52.0, 32.0, 22.0, 14.0, 0.35, 1.0, -0.50, false, true), // Голем
+            5 => (130.0, 185.0, 0.0, 15.0, 2.0, 0.10, 0.0, 0.0, true, false), // Камикадзе
+            6 => (550.0, 140.0, 42.0, 18.0, 8.0, 0.25, 0.20, 0.20, false, false), // Демон теней
+            7 => (850.0, 95.0, 55.0, 20.0, 10.0, 0.20, -0.40, 1.00, false, false), // Огненный элементаль
+            _ => (2800.0, 68.0, 95.0, 28.0, 24.0, 0.45, 0.30, 0.30, true, true), // Жнец Смерти (Титан)
         };
+
+        // Применяем улучшения Директора (Mob Grades)
+        let (fury_lvl, carapace_lvl) = if let Some(d) = world.directors.first() {
+            (d.grade_fury, d.grade_carapace)
+        } else {
+            (0, 0)
+        };
+
+        let mut speed = base_spd * (1.0 + (fury_lvl as f32 * 0.06));
+        let mut damage = base_dmg * (1.0 + (fury_lvl as f32 * 0.12));
+        flat_armor += carapace_lvl as f32 * 2.5;
+        phys_res = (phys_res + (carapace_lvl as f32 * 0.05)).min(0.70);
+
+        // 12% шанс мутации в Элитного Чемпиона (Золотая аура, усиленные статы)
+        let is_elite = rand::gen_range(0.0, 1.0) < 0.12;
+        let mut hp = base_hp;
+        let mut radius = base_rad;
+        if is_elite {
+            hp *= 1.8;
+            damage *= 1.35;
+            radius *= 1.25;
+            speed *= 1.1;
+        }
 
         world.mobs.push(MobEntity {
             id,
@@ -105,14 +158,15 @@ pub fn spawn_squad_perimeter(world: &mut World, tier: u8) {
                 physical_res: phys_res,
                 fire_res,
                 ice_res,
-                poison_res: if tier == 4 { 0.5 } else { 0.0 },
+                poison_res: if tier == 4 || tier == 7 { 0.5 } else { 0.0 },
                 holy_res: if is_undead { -0.25 } else { 0.0 },
             },
             status: StatusEffects::default(),
-            damage: dmg,
+            damage,
             tier,
             radius,
             is_undead,
+            is_elite,
             knockback_immune,
             knockback_vel: Vec2::ZERO,
             attack_timer: rand::gen_range(0.5, 1.5),

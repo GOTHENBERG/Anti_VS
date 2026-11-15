@@ -377,6 +377,10 @@ fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             WeaponType::HolyHammer,
             WeaponType::IceShards,
             WeaponType::PoisonOrbs,
+            WeaponType::ExecutionerAxe,
+            WeaponType::CelestialBow,
+            WeaponType::ThunderOrb,
+            WeaponType::BloodDaggers,
         ];
         for bw in base_weapons {
             if !inventory.has_weapon(bw) {
@@ -401,6 +405,10 @@ fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             PassiveType::LightArmor,
             PassiveType::FrostRing,
             PassiveType::CorrosiveFlask,
+            PassiveType::BloodStone,
+            PassiveType::EagleScope,
+            PassiveType::ChronoHourglass,
+            PassiveType::MagnetSphere,
         ];
         for ap in all_passives {
             if !inventory.has_passive(ap) {
@@ -441,6 +449,10 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     WeaponType::DivineShield => "ПРАВЕДНЫЙ ЩИТ",
                     WeaponType::BlizzardStorm => "ЛЕДНИКОВАЯ БУРЯ",
                     WeaponType::ToxicPestilence => "ТОКСИЧНЫЙ МОР",
+                    WeaponType::WhirlwindCleaver => "ВИХРЕВОЙ СЕКАЧ",
+                    WeaponType::StarfallBarrage => "ЗВЕЗДОПАДНЫЙ ЗАЛП",
+                    WeaponType::ThunderstormWrath => "ГНЕВ ГРОЗЫ",
+                    WeaponType::BloodHarvest => "КРОВАВАЯ ЖАТВА",
                     _ => "ЭВОЛЮЦИЯ ОРУЖИЯ",
                 };
                 let text = format!("ЭВОЛЮЦИЯ: {}!", name);
@@ -467,12 +479,20 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     WeaponType::HolyHammer => 1.4,
                     WeaponType::IceShards => 1.0,
                     WeaponType::PoisonOrbs => 1.2,
+                    WeaponType::ExecutionerAxe => 1.3,
+                    WeaponType::CelestialBow => 0.85,
+                    WeaponType::ThunderOrb => 1.5,
+                    WeaponType::BloodDaggers => 0.65,
                     _ => 1.1,
                 };
                 let base_dmg = match kind {
                     WeaponType::HolyHammer => 45.0,
                     WeaponType::MagicWand => 32.0,
                     WeaponType::FireAura => 18.0,
+                    WeaponType::ExecutionerAxe => 42.0,
+                    WeaponType::CelestialBow => 32.0,
+                    WeaponType::ThunderOrb => 50.0,
+                    WeaponType::BloodDaggers => 24.0,
                     _ => 25.0,
                 };
                 world.boss_inventory.weapons.push(crate::ecs::components::inventory::WeaponSlot {
@@ -508,6 +528,10 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                 PassiveType::LightArmor => {
                     world.boss_resistances.flat_armor += 4.0;
                     world.boss_resistances.physical_res = (world.boss_resistances.physical_res + 0.06).min(0.60);
+                }
+                PassiveType::BloodStone => {
+                    world.boss_health.max += 150.0;
+                    world.boss_health.heal(150.0);
                 }
                 _ => {}
             }

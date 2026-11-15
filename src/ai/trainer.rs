@@ -253,8 +253,10 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             let mut child = p1.clone();
 
             child.altar_build_priority = ((p1.altar_build_priority + p2.altar_build_priority) * 0.5 + rand::gen_range(-0.08, 0.08)).clamp(0.1, 1.0);
-            for i in 0..5 {
-                child.squad_spawn_weights[i] = ((p1.squad_spawn_weights[i] + p2.squad_spawn_weights[i]) * 0.5 + rand::gen_range(-0.15, 0.15)).max(0.1);
+            for i in 0..child.squad_spawn_weights.len() {
+                let p1_w = p1.squad_spawn_weights.get(i).copied().unwrap_or(1.0);
+                let p2_w = p2.squad_spawn_weights.get(i).copied().unwrap_or(1.0);
+                child.squad_spawn_weights[i] = ((p1_w + p2_w) * 0.5 + rand::gen_range(-0.15, 0.15)).max(0.1);
             }
             next_dir_pop.push(child);
         }

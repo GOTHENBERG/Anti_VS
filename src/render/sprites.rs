@@ -227,6 +227,9 @@ pub fn draw_mob_sprite(mob: &MobEntity, time: f32, textures: &GameTextures) {
             3 => 32.0, // Культист
             4 => 48.0, // Ледяной голем
             5 => 30.0, // Камикадзе
+            6 => 38.0, // Демон теней
+            7 => 42.0, // Огненный элементаль
+            8 => 62.0, // Жнец Смерти (Титан)
             _ => 28.0,
         };
 
@@ -274,6 +277,24 @@ pub fn draw_mob_sprite(mob: &MobEntity, time: f32, textures: &GameTextures) {
             draw_rectangle(mob.pos.x - 20.0, mob.pos.y - 30.0, 40.0, 5.0, DARKGRAY);
             draw_rectangle(mob.pos.x - 20.0, mob.pos.y - 30.0, 40.0 * hp_pct, 5.0, SKYBLUE);
             draw_rectangle_lines(mob.pos.x - 20.0, mob.pos.y - 30.0, 40.0, 5.0, 1.0, WHITE);
+        }
+
+        // Полоска здоровья Жнеца Смерти (Тир 8)
+        if mob.tier == 8 {
+            let hp_pct = (mob.health.current / mob.health.max).clamp(0.0, 1.0);
+            draw_rectangle(mob.pos.x - 30.0, mob.pos.y - 42.0, 60.0, 6.0, DARKGRAY);
+            draw_rectangle(mob.pos.x - 30.0, mob.pos.y - 42.0, 60.0 * hp_pct, 6.0, RED);
+            draw_rectangle_lines(mob.pos.x - 30.0, mob.pos.y - 42.0, 60.0, 6.0, 1.5, GOLD);
+        }
+
+        // Элитный Чемпион (Золотая аура и корона)
+        if mob.is_elite {
+            let crown_y = mob.pos.y - draw_h / 2.0 - 6.0;
+            let pulse = (time * 8.0 + (mob.id as f32)).sin() * 2.0;
+            draw_circle_lines(mob.pos.x, mob.pos.y, mob.radius * 1.35 + pulse, 2.0, GOLD);
+            draw_circle(mob.pos.x, crown_y, 4.0, GOLD);
+            draw_circle(mob.pos.x - 5.0, crown_y + 1.0, 3.0, YELLOW);
+            draw_circle(mob.pos.x + 5.0, crown_y + 1.0, 3.0, YELLOW);
         }
 
         // Искрящийся фитиль камикадзе (Тир 5)
@@ -449,9 +470,56 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
     let norm = Vec2::new(-dir.y, dir.x);
     let angle = dir.y.atan2(dir.x);
 
-    // 1. Атаки сил Директора / мобов (Темные стрелы культистов-стрелков)
+    // 1. Атаки сил Директора / мобов
     if proj.faction == crate::ecs::components::combat::Faction::Director {
-        // Демоническая стрела крови и теней
+        // Огненный шар элементаля (Тир 7)
+        if proj.damage_type == crate::ecs::components::combat::DamageType::Fire {
+            if let Some(tex) = textures.proj_fire.as_ref() {
+                let size = radius * 3.0;
+                draw_texture_ex(
+                    tex,
+                    pos.x - size / 2.0,
+                    pos.y - size / 2.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(size, size)),
+                        rotation: angle,
+                        pivot: Some(pos),
+                        ..Default::default()
+                    },
+                );
+            } else {
+                draw_circle(pos.x, pos.y, radius, ORANGE);
+                draw_circle(pos.x, pos.y, radius * 0.5, YELLOW);
+            }
+            return;
+        }
+
+        // Взмах косы Жнеца Смерти (Тир 8)
+        if proj.damage_type == crate::ecs::components::combat::DamageType::True {
+            if let Some(tex) = textures.proj_scythe.as_ref() {
+                let rot = get_time() as f32 * 12.0;
+                let size = radius * 3.2;
+                draw_texture_ex(
+                    tex,
+                    pos.x - size / 2.0,
+                    pos.y - size / 2.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(size, size)),
+                        rotation: rot,
+                        pivot: Some(pos),
+                        ..Default::default()
+                    },
+                );
+            } else {
+                draw_circle(pos.x, pos.y, radius, PURPLE);
+                draw_circle_lines(pos.x, pos.y, radius, 2.0, RED);
+            }
+            return;
+        }
+
+        // Демоническая стрела крови и теней (Культисты, Тир 3)
         let tip = pos + dir * (radius * 2.2);
         let back_l = pos - dir * (radius * 1.2) + norm * (radius * 0.9);
         let back_r = pos - dir * (radius * 1.2) - norm * (radius * 0.9);
@@ -555,6 +623,84 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
                 draw_line(p_front.x, p_front.y, p_back.x, p_back.y, 1.5, WHITE);
                 draw_line(pos.x - dir.x * 14.0, pos.y - dir.y * 14.0, pos.x, pos.y, 2.0, Color::new(0.3, 0.7, 1.0, 0.35));
                 return;
+            }
+            // Топор Палача и Вихревой Секач: вращающиеся секиры
+            crate::ecs::components::inventory::WeaponType::ExecutionerAxe | crate::ecs::components::inventory::WeaponType::WhirlwindCleaver => {
+                if let Some(tex) = textures.proj_axe.as_ref() {
+                    let rot = get_time() as f32 * 14.0;
+                    let size = radius * 2.8;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: rot,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
+            }
+            // Небесный Лук и Звездопадный Залп: стрелы света
+            crate::ecs::components::inventory::WeaponType::CelestialBow | crate::ecs::components::inventory::WeaponType::StarfallBarrage => {
+                if let Some(tex) = textures.proj_arrow.as_ref() {
+                    let size = radius * 3.0;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: angle,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
+            }
+            // Грозовая Сфера и Гнев Грозы: сфера молнии
+            crate::ecs::components::inventory::WeaponType::ThunderOrb | crate::ecs::components::inventory::WeaponType::ThunderstormWrath => {
+                if let Some(tex) = textures.proj_lightning.as_ref() {
+                    let size = radius * 2.8;
+                    let rot = get_time() as f32 * 8.0;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: rot,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
+            }
+            // Кровавые Кинжалы и Кровавая Жатва: летящие кинжалы
+            crate::ecs::components::inventory::WeaponType::BloodDaggers | crate::ecs::components::inventory::WeaponType::BloodHarvest => {
+                if let Some(tex) = textures.proj_dagger.as_ref() {
+                    let size = radius * 2.8;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: angle,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
             }
             _ => {}
         }

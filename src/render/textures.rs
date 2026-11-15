@@ -9,6 +9,9 @@ pub struct GameTextures {
     pub cultist: Option<Texture2D>,
     pub golem: Option<Texture2D>,
     pub kamikaze: Option<Texture2D>,
+    pub shadow_demon: Option<Texture2D>,
+    pub fire_elemental: Option<Texture2D>,
+    pub bringer_death: Option<Texture2D>,
 
     // Boss (Knight)
     pub knight_idle: Vec<Texture2D>,
@@ -30,6 +33,11 @@ pub struct GameTextures {
     pub proj_holy: Option<Texture2D>,
     pub proj_ice: Option<Texture2D>,
     pub proj_poison: Option<Texture2D>,
+    pub proj_axe: Option<Texture2D>,
+    pub proj_arrow: Option<Texture2D>,
+    pub proj_lightning: Option<Texture2D>,
+    pub proj_dagger: Option<Texture2D>,
+    pub proj_scythe: Option<Texture2D>,
 
     // Equipment & Ability Icons
     pub icon_sword: Option<Texture2D>,
@@ -75,7 +83,10 @@ impl GameTextures {
 
         let cultist = load_filtered("assets/sprites/mob_cultist.png", p_filter).await;
         let golem = load_filtered("assets/sprites/mob_golem.png", p_filter).await;
-        let kamikaze = load_filtered("assets/sprites/mob_fire_elemental.png", p_filter).await;
+        let kamikaze = load_filtered("assets/sprites/mob_kamikaze.png", p_filter).await;
+        let shadow_demon = load_filtered("assets/sprites/mob_shadow_demon.png", p_filter).await;
+        let fire_elemental = load_filtered("assets/sprites/mob_fire_elemental.png", p_filter).await;
+        let bringer_death = load_filtered("assets/sprites/mob_bringer_death.png", p_filter).await;
 
         let mut knight_idle = Vec::new();
         for i in 0..4 {
@@ -104,6 +115,11 @@ impl GameTextures {
         let proj_holy = load_filtered("assets/sprites/proj_holy.png", p_filter).await;
         let proj_ice = load_filtered("assets/sprites/proj_ice.png", p_filter).await;
         let proj_poison = load_filtered("assets/sprites/proj_poison.png", p_filter).await;
+        let proj_axe = load_filtered("assets/sprites/proj_axe.png", p_filter).await;
+        let proj_arrow = load_filtered("assets/sprites/proj_arrow.png", p_filter).await;
+        let proj_lightning = load_filtered("assets/sprites/proj_lightning.png", p_filter).await;
+        let proj_dagger = load_filtered("assets/sprites/proj_dagger.png", p_filter).await;
+        let proj_scythe = load_filtered("assets/sprites/proj_scythe.png", p_filter).await;
 
         let icon_sword = load_filtered("assets/icons/sword_square_transparent.png", ui_filter).await;
         let icon_shield = load_filtered("assets/icons/shield_square_transparent.png", ui_filter).await;
@@ -126,6 +142,9 @@ impl GameTextures {
             cultist,
             golem,
             kamikaze,
+            shadow_demon,
+            fire_elemental,
+            bringer_death,
             knight_idle,
             knight_walk,
             altar,
@@ -139,6 +158,11 @@ impl GameTextures {
             proj_holy,
             proj_ice,
             proj_poison,
+            proj_axe,
+            proj_arrow,
+            proj_lightning,
+            proj_dagger,
+            proj_scythe,
             icon_sword,
             icon_shield,
             icon_wand,
@@ -161,9 +185,13 @@ impl GameTextures {
             WeaponType::WindBlade | WeaponType::BladeStorm => self.icon_sword.as_ref(),
             WeaponType::FireAura | WeaponType::Hellfire => self.icon_elixir.as_ref(),
             WeaponType::MagicWand | WeaponType::DeathRay => self.icon_wand.as_ref(),
-            WeaponType::HolyHammer | WeaponType::DivineShield => self.icon_ax.as_ref(),
-            WeaponType::IceShards | WeaponType::BlizzardStorm => self.icon_bow.as_ref(),
+            WeaponType::HolyHammer | WeaponType::DivineShield => self.icon_shield.as_ref(),
+            WeaponType::IceShards | WeaponType::BlizzardStorm => self.icon_ring.as_ref(),
             WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => self.icon_bottle.as_ref(),
+            WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver => self.icon_ax.as_ref(),
+            WeaponType::CelestialBow | WeaponType::StarfallBarrage => self.icon_bow.as_ref(),
+            WeaponType::ThunderOrb | WeaponType::ThunderstormWrath => self.icon_jewel.as_ref(),
+            WeaponType::BloodDaggers | WeaponType::BloodHarvest => self.icon_sword.as_ref(),
         }
     }
 
@@ -175,6 +203,10 @@ impl GameTextures {
             PassiveType::LightArmor => self.icon_armor.as_ref(),
             PassiveType::FrostRing => self.icon_ring.as_ref(),
             PassiveType::CorrosiveFlask => self.icon_bottle.as_ref(),
+            PassiveType::BloodStone => self.icon_bottle.as_ref(),
+            PassiveType::EagleScope => self.icon_ring.as_ref(),
+            PassiveType::ChronoHourglass => self.icon_hourglass.as_ref(),
+            PassiveType::MagnetSphere => self.icon_jewel.as_ref(),
         }
     }
 
@@ -191,6 +223,9 @@ impl GameTextures {
             3 => self.cultist.as_ref(),
             4 => self.golem.as_ref(),
             5 => self.kamikaze.as_ref(),
+            6 => self.shadow_demon.as_ref(),
+            7 => self.fire_elemental.as_ref(),
+            8 => self.bringer_death.as_ref(),
             _ => None,
         }
     }
@@ -204,5 +239,18 @@ impl GameTextures {
             DamageType::Poison => self.proj_poison.as_ref(),
             DamageType::True => self.proj_magic.as_ref(),
         }
+    }
+
+    pub fn get_weapon_projectile_texture(&self, weapon: Option<WeaponType>, damage_type: DamageType) -> Option<&Texture2D> {
+        if let Some(w) = weapon {
+            match w {
+                WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver => return self.proj_axe.as_ref(),
+                WeaponType::CelestialBow | WeaponType::StarfallBarrage => return self.proj_arrow.as_ref(),
+                WeaponType::ThunderOrb | WeaponType::ThunderstormWrath => return self.proj_lightning.as_ref(),
+                WeaponType::BloodDaggers | WeaponType::BloodHarvest => return self.proj_dagger.as_ref(),
+                _ => {}
+            }
+        }
+        self.get_projectile_texture(damage_type)
     }
 }

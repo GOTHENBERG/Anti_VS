@@ -79,6 +79,9 @@ async fn main() {
         if auto_screenshot && frame_count == 10 {
             spawn_squad_perimeter(&mut world, 1);
             spawn_squad_perimeter(&mut world, 3);
+            spawn_squad_perimeter(&mut world, 6);
+            spawn_squad_perimeter(&mut world, 7);
+            spawn_squad_perimeter(&mut world, 8);
         }
 
         // Пауза по P
@@ -230,25 +233,58 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam
         let screen_w = screen_width();
         let screen_h = screen_height();
 
-        // 1. Горячие клавиши 1, 2, 3, 4, 5 для спавна отрядов
-        let keys = [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4, KeyCode::Key5];
+        // 1. Горячие клавиши 1, 2, 3, 4, 5, 6, 7, 8 для спавна отрядов
+        let keys = [
+            KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4,
+            KeyCode::Key5, KeyCode::Key6, KeyCode::Key7, KeyCode::Key8,
+        ];
         for (i, key) in keys.iter().enumerate() {
             if is_key_pressed(*key) {
                 try_summon_squad(director, (i + 1) as u8, driver);
             }
         }
 
-        // 2. Клик левой кнопкой мыши по кнопкам на панели призыва
+        // 1.1 Горячие клавиши F, G, H для улучшений мобов Директора
+        if is_key_pressed(KeyCode::F) {
+            driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 0 });
+        }
+        if is_key_pressed(KeyCode::G) {
+            driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 1 });
+        }
+        if is_key_pressed(KeyCode::H) {
+            driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 2 });
+        }
+
+        // 2. Клик левой кнопкой мыши по кнопкам на панели призыва или улучшений
         if is_mouse_button_pressed(MouseButton::Left) {
             let (mx, my) = mouse_position();
-            let btn_width = 185.0;
-            let btn_height = 70.0;
-            let total_w = 5.0 * btn_width + 4.0 * 12.0;
-            let start_x = (screen_w - total_w) / 2.0;
-            let btn_y = screen_h - 85.0;
 
-            for i in 0..5 {
-                let bx = start_x + (i as f32) * (btn_width + 12.0);
+            // Проверка кнопок улучшений [F, G, H]
+            let g_btn_w = 230.0;
+            let g_btn_h = 34.0;
+            let g_total_w = 3.0 * g_btn_w + 2.0 * 12.0;
+            let g_start_x = (screen_w - g_total_w) / 2.0;
+            let g_y = screen_h - 128.0;
+
+            for i in 0..3 {
+                let gx = g_start_x + (i as f32) * (g_btn_w + 12.0);
+                if mx >= gx && mx <= gx + g_btn_w && my >= g_y && my <= g_y + g_btn_h {
+                    driver.send_command(Command::UpgradeDirectorGrade {
+                        director_id: director.id,
+                        grade_type: i as u8,
+                    });
+                }
+            }
+
+            // Проверка кнопок отрядов [1..8]
+            let btn_width = 138.0;
+            let btn_height = 72.0;
+            let total_w = 8.0 * btn_width + 7.0 * 8.0;
+            let start_x = (screen_w - total_w) / 2.0;
+            let btn_y = screen_h - 86.0;
+
+            for i in 0..8 {
+                let bx = start_x + (i as f32) * (btn_width + 8.0);
                 if mx >= bx && mx <= bx + btn_width && my >= btn_y && my <= btn_y + btn_height {
                     try_summon_squad(director, (i + 1) as u8, driver);
                 }
@@ -293,6 +329,38 @@ fn execute_command(world: &mut World, cmd: Command) {
                 if director.spend_points(config.cost) {
                     spawn_squad_perimeter(world, tier);
                 }
+            }
+        }
+        Command::UpgradeDirectorGrade { director_id, grade_type } => {
+            let mut notification = None;
+            if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
+                match grade_type {
+                    0 => {
+                        let cost = 100.0 * (director.grade_fury as f32 + 1.0);
+                        if director.spend_points(cost) {
+                            director.grade_fury += 1;
+                            notification = Some((format!("🔥 ЯРОСТЬ КРОВИ (Ур. {})", director.grade_fury), RED));
+                        }
+                    }
+                    1 => {
+                        let cost = 120.0 * (director.grade_carapace as f32 + 1.0);
+                        if director.spend_points(cost) {
+                            director.grade_carapace += 1;
+                            notification = Some((format!("🛡️ ПАНЦИРЬ (Ур. {})", director.grade_carapace), SKYBLUE));
+                        }
+                    }
+                    2 => {
+                        let cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+                        if director.spend_points(cost) {
+                            director.grade_pestilence += 1;
+                            notification = Some((format!("🧪 ЧУМНЫЕ СПОРЫ (Ур. {})", director.grade_pestilence), LIME));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let Some((text, col)) = notification {
+                world.add_floating_text(world.boss_pos, text, col, 1.4);
             }
         }
         Command::PlaceStructure { director_id, pos, .. } => {

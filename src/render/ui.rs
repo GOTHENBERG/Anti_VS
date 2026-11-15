@@ -283,20 +283,47 @@ pub fn render_ui(
             }
         }
 
-        // 9. Панель призыва отрядов (снизу экрана с превью монстров)
-        let btn_width = 195.0;
-        let btn_height = 74.0;
-        let total_w = 5.0 * btn_width + 4.0 * 12.0;
-        let start_x = (screen_w - total_w) / 2.0;
-        let btn_y = screen_h - 88.0;
+        // 9. Панель улучшений мобов Директора (Mob Grades) [F, G, H]
+        let g_btn_w = 230.0;
+        let g_btn_h = 34.0;
+        let g_total_w = 3.0 * g_btn_w + 2.0 * 12.0;
+        let g_start_x = (screen_w - g_total_w) / 2.0;
+        let g_y = screen_h - 128.0;
 
-        for i in 0..5 {
+        let grades = [
+            ("F", "Ярость Крови", director.grade_fury, 100.0 * (director.grade_fury as f32 + 1.0), "+12% урон, +6% скор."),
+            ("G", "Панцирь", director.grade_carapace, 120.0 * (director.grade_carapace as f32 + 1.0), "+2.5 брони, +5% рез."),
+            ("H", "Чумные Споры", director.grade_pestilence, 150.0 * (director.grade_pestilence as f32 + 1.0), "25% шанс лужи яда"),
+        ];
+
+        for (i, (key, name, lvl, cost, desc)) in grades.iter().enumerate() {
+            let gx = g_start_x + (i as f32) * (g_btn_w + 12.0);
+            let can_buy = director.points >= *cost;
+            let bg = if can_buy { Color::new(0.20, 0.15, 0.30, 0.95) } else { Color::new(0.10, 0.10, 0.15, 0.90) };
+            let border = if can_buy { PURPLE } else { GRAY };
+
+            draw_rectangle(gx, g_y, g_btn_w, g_btn_h, bg);
+            draw_rectangle_lines(gx, g_y, g_btn_w, g_btn_h, 1.5, border);
+
+            let title = format!("[{}] {} (Ур. {}) - {:.0} душ", key, name, lvl, cost);
+            fonts.draw_heading(&title, gx + 6.0, g_y + 15.0, 12.0, if can_buy { GOLD } else { LIGHTGRAY });
+            fonts.draw_text(desc, gx + 6.0, g_y + 28.0, 11.0, SKYBLUE);
+        }
+
+        // 10. Панель призыва отрядов (снизу экрана: 8 кнопок [1..8])
+        let btn_width = 138.0;
+        let btn_height = 72.0;
+        let total_w = 8.0 * btn_width + 7.0 * 8.0;
+        let start_x = (screen_w - total_w) / 2.0;
+        let btn_y = screen_h - 86.0;
+
+        for i in 0..8 {
             let tier = (i + 1) as u8;
             let config = get_squad_config(tier);
             let is_unlocked = director.total_points_spent >= config.unlock_spent_threshold;
             let can_afford = director.points >= config.cost;
 
-            let bx = start_x + (i as f32) * (btn_width + 12.0);
+            let bx = start_x + (i as f32) * (btn_width + 8.0);
 
             let bg_color = if !is_unlocked {
                 Color::new(0.14, 0.14, 0.17, 0.92)
@@ -319,9 +346,9 @@ pub fn render_ui(
 
             // Иконка монстра справа на кнопке
             if let Some(mob_tex) = textures.get_mob_texture(tier, 0) {
-                let preview_size = 40.0;
+                let preview_size = 32.0;
                 let (pw, ph) = if tier == 2 { (preview_size * 1.3, preview_size * 0.65) } else { (preview_size, preview_size) };
-                let px = bx + btn_width - pw - 6.0;
+                let px = bx + btn_width - pw - 4.0;
                 let py = btn_y + (btn_height - ph) / 2.0;
                 draw_texture_ex(
                     mob_tex,
@@ -337,21 +364,21 @@ pub fn render_ui(
 
             // Название отряда и горячая клавиша
             let header = format!("[{}] {}", i + 1, config.name);
-            fonts.draw_heading(&header, bx + 6.0, btn_y + 20.0, 14.0, WHITE);
+            fonts.draw_heading(&header, bx + 5.0, btn_y + 18.0, 12.0, WHITE);
 
             if !is_unlocked {
-                let lock_text = format!("Нужно: {:.0}", config.unlock_spent_threshold);
-                fonts.draw_text(&lock_text, bx + 6.0, btn_y + 40.0, 13.0, RED);
+                let lock_text = format!("Треб: {:.0}", config.unlock_spent_threshold);
+                fonts.draw_text(&lock_text, bx + 5.0, btn_y + 36.0, 11.0, RED);
 
                 let prog = (director.total_points_spent / config.unlock_spent_threshold).clamp(0.0, 1.0);
-                draw_rectangle(bx + 6.0, btn_y + 52.0, (btn_width - 56.0) * prog, 6.0, RED);
+                draw_rectangle(bx + 5.0, btn_y + 48.0, (btn_width - 44.0) * prog, 5.0, RED);
             } else {
                 let cost_text = format!("Цена: {:.0} ({} шт)", config.cost, config.count);
                 let cost_color = if can_afford { GOLD } else { GRAY };
-                fonts.draw_text(&cost_text, bx + 6.0, btn_y + 40.0, 13.0, cost_color);
+                fonts.draw_text(&cost_text, bx + 5.0, btn_y + 36.0, 12.0, cost_color);
 
-                let grow_text = format!("+ {:.2}/2c доход", config.cost * 0.02);
-                fonts.draw_text(&grow_text, bx + 6.0, btn_y + 58.0, 12.0, GREEN);
+                let grow_text = format!("+{:.2}/2c", config.cost * 0.02);
+                fonts.draw_text(&grow_text, bx + 5.0, btn_y + 54.0, 11.0, GREEN);
             }
 
             // Проверка наведения на кнопку призыва
@@ -534,6 +561,10 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
             WeaponType::HolyHammer => ("Броня Света", "Праведный Щит"),
             WeaponType::IceShards => ("Кольцо Заморозки", "Ледниковая Буря"),
             WeaponType::PoisonOrbs => ("Едкий Сосуд", "Токсичный Мор"),
+            WeaponType::ExecutionerAxe => ("Кровавый Камень", "Вихревой Секач"),
+            WeaponType::CelestialBow => ("Орлиный Прицел", "Звездопадный Залп"),
+            WeaponType::ThunderOrb => ("Песочные Часы", "Гнев Грозы"),
+            WeaponType::BloodDaggers => ("Сфера Притяжения", "Кровавая Жатва"),
             _ => ("-", "-"),
         };
         (format!("Эволюция (Ур. 8 + {}): -> {}", req_passive, evo_weapon), YELLOW)
@@ -564,6 +595,10 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::LightArmor => format!("Текущий бонус: +{:.0} к плоской броне, +{}% к защите", p.level as f32 * 8.0, p.level * 15),
         PassiveType::FrostRing => format!("Текущий бонус: +{}% к длительности замедления врагов", p.level * 20),
         PassiveType::CorrosiveFlask => format!("Текущий бонус: +{}% к пробитию брони всеми атаками", p.level * 15),
+        PassiveType::BloodStone => format!("Текущий бонус: +{}% к общему урону, +{:.1} HP/с реген", p.level * 12, p.level as f32 * 2.5),
+        PassiveType::EagleScope => format!("Текущий бонус: +{}% к скорости и дальности полета снарядов", p.level * 20),
+        PassiveType::ChronoHourglass => format!("Текущий бонус: +{}% к длительности эффектов", p.level * 25),
+        PassiveType::MagnetSphere => format!("Текущий бонус: +{} px к радиусу сбора кристаллов", p.level * 45),
     };
     fonts.draw_text(&bonus_text, card_x + 12.0, card_y + 44.0, 13.0, GREEN);
 
@@ -577,6 +612,10 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::LightArmor => "Связка для эволюции: Святой Молот -> Праведный Щит",
         PassiveType::FrostRing => "Связка для эволюции: Ледяные Осколки -> Ледниковая Буря",
         PassiveType::CorrosiveFlask => "Связка для эволюции: Чумные Сферы -> Токсичный Мор",
+        PassiveType::BloodStone => "Связка для эволюции: Топор Палача -> Вихревой Секач",
+        PassiveType::EagleScope => "Связка для эволюции: Небесный Лук -> Звездопадный Залп",
+        PassiveType::ChronoHourglass => "Связка для эволюции: Грозовая Сфера -> Гнев Грозы",
+        PassiveType::MagnetSphere => "Связка для эволюции: Кровавые Кинжалы -> Кровавая Жатва",
     };
     fonts.draw_text(evo_synergy, card_x + 12.0, card_y + 92.0, 12.0, YELLOW);
 }
@@ -608,13 +647,18 @@ fn draw_squad_tooltip(tier: u8, bx: f32, by: f32, screen_w: f32, fonts: &GameFon
         2 => (50.0, 160.0, 12.0, 1.0, "Физ: 10% | Огонь: 0% | Холод: 0% | Святость: -20%"),
         3 => (75.0, 80.0, 16.0, 2.0, "Физ: 15% | Огонь: 20% | Холод: -10% | Святость: -40%"),
         4 => (380.0, 52.0, 32.0, 14.0, "Физ: 35% | Холод: 100% (Иммун) | Огонь: -50% (Уязвим!)"),
-        _ => (130.0, 185.0, 220.0, 2.0, "Физ: 10% | Огонь: 50% | Холод: 0% | Взрыв по площади: 220"),
+        5 => (130.0, 185.0, 220.0, 2.0, "Физ: 10% | Огонь: 50% | Холод: 0% | Взрыв по площади: 220"),
+        6 => (550.0, 140.0, 42.0, 8.0, "Физ: 25% | Огонь: 20% | Холод: 20% | Телепортация за спину"),
+        7 => (850.0, 95.0, 55.0, 10.0, "Огонь: 100% (Иммун) | Физ: 20% | Холод: -40% | Огненный шар"),
+        _ => (2800.0, 68.0, 95.0, 24.0, "Физ: 45% | Огонь: 30% | Холод: 30% | Рассекающая коса титана"),
     };
 
     let combat_text = if tier == 5 {
         format!("HP: {:.0} | Скорость: {:.0} | Броня: {:.0} | Взрыв: 220 урона", hp_val, spd_val, arm_val)
-    } else if tier == 3 {
-        format!("HP: {:.0} | Скорость: {:.0} | Броня: {:.0} | Урон: {:.0} (Дальний бой 260px)", hp_val, spd_val, arm_val, dmg_val)
+    } else if tier == 3 || tier == 7 {
+        format!("HP: {:.0} | Скорость: {:.0} | Броня: {:.0} | Урон: {:.0} (Дальний бой)", hp_val, spd_val, arm_val, dmg_val)
+    } else if tier == 8 {
+        format!("HP: {:.0} | Скорость: {:.0} | Броня: {:.0} | Урон: {:.0} (Титан мини-босс)", hp_val, spd_val, arm_val, dmg_val)
     } else {
         format!("HP: {:.0} | Скорость: {:.0} | Броня: {:.0} | Урон: {:.0} (Ближний бой)", hp_val, spd_val, arm_val, dmg_val)
     };
@@ -628,7 +672,7 @@ fn draw_squad_tooltip(tier: u8, bx: f32, by: f32, screen_w: f32, fonts: &GameFon
         let req = format!("🔒 Откроется после траты еще {:.0} Душ", config.unlock_spent_threshold - director.map_or(0.0, |d| d.total_points_spent));
         fonts.draw_text(&req, card_x + 14.0, card_y + 146.0, 13.0, RED);
     } else {
-        fonts.draw_text("⚡ Нажмите [1..5] или кликните ЛКМ для призыва отряда кольцом вокруг арены", card_x + 14.0, card_y + 146.0, 11.0, LIGHTGRAY);
+        fonts.draw_text("⚡ Нажмите [1..8] или кликните ЛКМ для призыва отряда кольцом вокруг арены", card_x + 14.0, card_y + 146.0, 11.0, LIGHTGRAY);
         fonts.draw_text("Кулдаун призыва снят: призывайте мгновенно при наличии Очков Душ!", card_x + 14.0, card_y + 168.0, 11.0, GOLD);
     }
 }

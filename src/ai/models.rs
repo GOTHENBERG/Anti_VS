@@ -23,13 +23,25 @@ pub struct BossModel {
     pub retreat_hp_threshold: f32,      // Порог здоровья для панического отступления (0.20 - 0.45)
     pub sniper_engage_min_count: usize, // Сколько стрелков триггерят анти-снайперский натиск (1 - 4)
 
-    // Приоритеты выбора оружия при Level-Up (6 оружий)
-    // 0: WindBlade, 1: FireAura, 2: MagicWand, 3: HolyHammer, 4: IceShards, 5: PoisonOrbs
-    pub weapon_priorities: [f32; 6],
+    // Приоритеты выбора оружия при Level-Up (10 оружий)
+    #[serde(default = "default_weapon_priorities")]
+    pub weapon_priorities: Vec<f32>,
 
-    // Приоритеты выбора пассивок при Level-Up (6 пассивок)
-    // 0: SpeedGloves, 1: GiantHeart, 2: CooldownTome, 3: LightArmor, 4: FrostRing, 5: CorrosiveFlask
-    pub passive_priorities: [f32; 6],
+    // Приоритеты выбора пассивок при Level-Up (10 пассивок)
+    #[serde(default = "default_passive_priorities")]
+    pub passive_priorities: Vec<f32>,
+}
+
+fn default_weapon_priorities() -> Vec<f32> {
+    vec![1.2, 1.4, 1.5, 1.3, 1.3, 1.1, 1.4, 1.3, 1.5, 1.4]
+}
+
+fn default_passive_priorities() -> Vec<f32> {
+    vec![1.3, 1.5, 1.4, 1.4, 1.2, 1.2, 1.5, 1.3, 1.3, 1.4]
+}
+
+fn default_squad_weights() -> Vec<f32> {
+    vec![1.0, 1.5, 2.5, 1.8, 2.2, 2.0, 2.4, 2.8]
 }
 
 impl Default for BossModel {
@@ -51,8 +63,8 @@ impl Default for BossModel {
             dash_danger_threshold: 13,
             retreat_hp_threshold: 0.32,
             sniper_engage_min_count: 2,
-            weapon_priorities: [1.2, 1.4, 1.5, 1.3, 1.3, 1.1],
-            passive_priorities: [1.3, 1.5, 1.4, 1.4, 1.2, 1.2],
+            weapon_priorities: default_weapon_priorities(),
+            passive_priorities: default_passive_priorities(),
         }
     }
 }
@@ -64,9 +76,9 @@ pub struct DirectorModel {
     pub fitness: f32,
     pub avg_boss_kill_time: f32,
 
-    // Веса предпочтения призыва отрядов (Тиры 1 - 5)
-    // 0: Скелеты (15), 1: Гончие (35), 2: Культисты (70), 3: Големы (150), 4: Камикадзе (300)
-    pub squad_spawn_weights: [f32; 5],
+    // Веса предпочтения призыва отрядов (Тиры 1 - 8)
+    #[serde(default = "default_squad_weights")]
+    pub squad_spawn_weights: Vec<f32>,
 
     // Вес постройки Алтарей Крови
     pub altar_build_priority: f32,       // Шанс построить алтарь сразу при откате (0.0 - 1.0)
@@ -80,7 +92,7 @@ impl Default for DirectorModel {
             generation: 0,
             fitness: 0.0,
             avg_boss_kill_time: 0.0,
-            squad_spawn_weights: [1.0, 1.5, 2.5, 1.8, 2.2], // Особый фокус на Культистах и Камикадзе
+            squad_spawn_weights: default_squad_weights(),
             altar_build_priority: 0.85,
             soul_reserve_threshold: 40.0,
         }

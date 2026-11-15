@@ -197,6 +197,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
                         mob.health.take_damage(actual_dmg);
                         proj.pierce = proj.pierce.saturating_sub(1);
 
+                        // Вампиризм от Кровавой Жатвы (BloodHarvest)
+                        if proj.source_weapon == Some(WeaponType::BloodHarvest) {
+                            world.boss_health.heal(actual_dmg * 0.20);
+                        }
+
                         // Отбрасывание моба
                         if !mob.knockback_immune {
                             let push_dir = proj.vel.normalize_or_zero();
@@ -312,9 +317,12 @@ pub fn update_combat(world: &mut World, dt: f32) {
     // Удаляем израсходованные снаряды
     world.projectiles.retain(|p| p.lifetime > 0.0 && p.pierce > 0);
 
-    // 4. Смерть мобов, взрыв трупов (Hellfire) и дроп кристаллов душ
+    // 4. Смерть мобов, взрыв трупов (Hellfire), чумные споры и дроп кристаллов душ
     let mut corpse_explosions = Vec::new();
     let mut dropped_gems = Vec::new();
+    let mut pestilence_pools = Vec::new();
+
+    let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
 
     world.mobs.retain(|mob| {
         if !mob.health.is_alive() {
@@ -323,15 +331,38 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 corpse_explosions.push((mob.pos, 55.0, 75.0));
             }
 
-            // Шанс дропа особого артефакта "Магнит" (1.5%)
-            let is_magnet = rand::gen_range(0.0, 1.0) < 0.015;
-            let xp_value = match mob.tier {
+            // Улучшение Директора: Чумные Споры (Pestilence Spores)
+            if pestilence_lvl > 0 {
+                let chance = (pestilence_lvl as f32) * 0.25;
+                if rand::gen_range(0.0, 1.0) < chance {
+                    pestilence_pools.push(crate::ecs::world::AcidPoolEntity {
+                        pos: mob.pos,
+                        radius: 65.0,
+                        lifetime: 4.5,
+                        dps: 18.0,
+                        corrosive: false,
+                    });
+                }
+            }
+
+            // Шанс дропа особого артефакта "Магнит" (1.5%, а с элиты 8%)
+            let magnet_chance = if mob.is_elite { 0.08 } else { 0.015 };
+            let is_magnet = rand::gen_range(0.0, 1.0) < magnet_chance;
+
+            let mut xp_value = match mob.tier {
                 1 => 8.0,
                 2 => 20.0,
                 3 => 45.0,
                 4 => 130.0,
-                _ => 160.0,
+                5 => 160.0,
+                6 => 240.0,
+                7 => 420.0,
+                _ => 1200.0,
             };
+
+            if mob.is_elite {
+                xp_value *= 2.5;
+            }
 
             dropped_gems.push(SoulGemEntity {
                 id: mob.id,
@@ -345,6 +376,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
             true
         }
     });
+
+    world.acid_pools.extend(pestilence_pools);
 
     // 4.1 Разрушение Алтарей Крови
     let mut destroyed_altars = Vec::new();
