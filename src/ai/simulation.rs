@@ -21,6 +21,7 @@ pub struct MatchResult {
     pub altars_built: usize,
     pub altars_destroyed: usize,
     pub mobs_spawned_by_tier: [usize; 8],
+    pub director_grades: (u8, u8, u8),
 }
 
 /// Выполняет один раунд автономной ускоренной симуляции сражения без рендеринга
@@ -150,6 +151,9 @@ pub fn run_headless_simulation(
     let boss_won = world.boss_health.is_alive() && sim_time >= max_duration_seconds;
     let final_level = world.boss_inventory.level;
     let dmg_to_boss = world.total_damage_dealt_to_boss;
+    let director_grades = world.directors.first()
+        .map(|d| (d.grade_fury, d.grade_carapace, d.grade_pestilence))
+        .unwrap_or((0, 0, 0));
 
     MatchResult {
         survival_time: sim_time,
@@ -159,6 +163,7 @@ pub fn run_headless_simulation(
         altars_built,
         altars_destroyed: altars_built.saturating_sub(world.structures.len()),
         mobs_spawned_by_tier,
+        director_grades,
     }
 }
 

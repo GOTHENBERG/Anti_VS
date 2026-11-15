@@ -37,6 +37,7 @@ struct DirectorEval {
     avg_kill_speed: f32,
     avg_altars_built: usize,
     mobs_spawned: [usize; 8],
+    grades: (u8, u8, u8),
 }
 
 pub fn run_co_evolutionary_training(generations: usize, population_size: usize) {
@@ -175,6 +176,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                 let mut total_score = 0.0;
                 let mut total_altars_built = 0;
                 let mut total_mobs = [0usize; 8];
+                let mut last_grades = (0, 0, 0);
                 let matches_count = 3;
 
                 for match_i in 0..matches_count {
@@ -195,6 +197,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                     total_score += kill_score;
                     total_kill_speed += res.survival_time;
                     total_altars_built += res.altars_built;
+                    last_grades = res.director_grades;
                     for t in 0..8 {
                         total_mobs[t] += res.mobs_spawned_by_tier[t];
                     }
@@ -212,6 +215,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                     avg_kill_speed: total_kill_speed / m_f,
                     avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
                     mobs_spawned: avg_mobs,
+                    grades: last_grades,
                 }
             })
             .collect();
@@ -270,14 +274,21 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
         let total_mobs_spawned: usize = best_dir_eval.mobs_spawned.iter().sum();
 
         println!(
-            "🏆 Раунд {:02}/{:02} (Поколение #{:02}) | Босс: выжил {:.1}с (Ур. {}, Фитнес {:.0}) | Сломал алтарей: {} | Директор: сбрил за {:.1}с (Построил алтарей: {}, Фитнес {:.0})",
-            gen_idx, generations, current_gen_num,
-            best_boss_eval.avg_survival, best_boss_eval.avg_level, best_boss_eval.fitness,
-            best_boss_eval.avg_altars_destroyed,
-            best_dir_eval.avg_kill_speed, best_dir_eval.avg_altars_built, best_dir_eval.fitness,
+            "🏆 Раунд {:02}/{:02} (Поколение #{:02}) [🏛️ Зал Славы: {}]",
+            gen_idx, generations, current_gen_num, hof_bosses.len()
         );
         println!(
-            "   ↳ 👾 Призвано монстров ({} шт): [💀Скелеты: {}, 🐺Гончие: {}, 🔮Культисты: {}, 🗿Големы: {}, 💣Камикадзе: {}, 👤Демоны: {}, 🔥Огонь: {}, ☠️Жнецы: {}]",
+            "   👑 Лучший Босс: выжил {:.1}с (Ур. {}, Фитнес {:.0}) | Сломал алтарей: {}",
+            best_boss_eval.avg_survival, best_boss_eval.avg_level, best_boss_eval.fitness,
+            best_boss_eval.avg_altars_destroyed,
+        );
+        println!(
+            "   👁️ Лучший Директор: сбрил за {:.1}с (Фитнес {:.0}) | Построил алтарей: {} | Грейды армии: [🔥Ярость: {}, 🛡️Панцирь: {}, 🧪Мор: {}]",
+            best_dir_eval.avg_kill_speed, best_dir_eval.fitness, best_dir_eval.avg_altars_built,
+            best_dir_eval.grades.0, best_dir_eval.grades.1, best_dir_eval.grades.2,
+        );
+        println!(
+            "      ↳ 👾 Призвано монстров ({} шт): [💀Скелеты: {}, 🐺Гончие: {}, 🔮Культисты: {}, 🗿Големы: {}, 💣Камикадзе: {}, 👤Демоны: {}, 🔥Огонь: {}, ☠️Жнецы: {}]",
             total_mobs_spawned,
             best_dir_eval.mobs_spawned[0],
             best_dir_eval.mobs_spawned[1],
