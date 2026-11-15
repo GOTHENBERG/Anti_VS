@@ -18,10 +18,14 @@ pub fn update_meditation(world: &mut World, dt: f32) {
 
     // Если босс стоит на месте (скорость < 5 px/sec) и рядом нет угрозы
     if world.boss_vel.length_squared() < 25.0 && !has_nearby_mobs {
+        let prev_still = world.boss_still_time;
         world.boss_still_time += dt;
 
-        // Если стоит более 2.0 секунд подряд -> медитация активирована!
-        if world.boss_still_time >= 2.0 {
+        // Если стоит более 1.2 секунды подряд -> медитация активирована!
+        if world.boss_still_time >= 1.2 {
+            if prev_still < 1.2 {
+                world.add_floating_text(boss_pos + Vec2::new(0.0, -35.0), "МЕДИТАЦИЯ (+HP, +XP)".to_string(), GREEN, 1.2);
+            }
             // Восстановление 2% от максимального здоровья в секунду
             let heal_amount = world.boss_health.max * 0.02 * dt;
             world.boss_health.heal(heal_amount);
@@ -36,15 +40,15 @@ pub fn update_meditation(world: &mut World, dt: f32) {
                 handle_boss_level_up(world);
             }
 
-            // Визуальные частицы медитации
-            if rand::gen_range(0.0, 1.0) < 0.25 {
+            // Визуальные частицы медитации (зеленые и золотые искры вокруг босса)
+            if rand::gen_range(0.0, 1.0) < 0.40 {
                 world.particles.push(crate::ecs::world::ParticleEntity {
                     pos: boss_pos + Vec2::new(rand::gen_range(-25.0, 25.0), rand::gen_range(-25.0, 25.0)),
-                    vel: Vec2::new(0.0, -35.0),
-                    color: Color::new(0.2, 1.0, 0.4, 0.8),
-                    radius: 2.5,
-                    lifetime: 0.6,
-                    max_lifetime: 0.6,
+                    vel: Vec2::new(rand::gen_range(-10.0, 10.0), -40.0),
+                    color: Color::new(0.2, 1.0, 0.4, 0.85),
+                    radius: 3.0,
+                    lifetime: 0.7,
+                    max_lifetime: 0.7,
                 });
             }
         }

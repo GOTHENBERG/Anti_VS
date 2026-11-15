@@ -341,6 +341,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                         lifetime: 4.5,
                         dps: 18.0,
                         corrosive: false,
+                        is_director_source: true,
                     });
                 }
             }

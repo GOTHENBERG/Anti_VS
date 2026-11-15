@@ -1,18 +1,18 @@
 {
   "version": "v1.0-coev",
-  "generation": 67,
-  "fitness": 1173.8988,
-  "avg_boss_kill_time": 239.30876,
+  "generation": 61,
+  "fitness": 1216.9629,
+  "avg_boss_kill_time": 213.32942,
   "squad_spawn_weights": [
-    0.98754287,
-    2.0642629,
-    2.166921,
-    2.0474281,
-    1.370541,
-    2.2070487,
-    3.0556731,
-    1.9576833
+    1.0615511,
+    1.8733047,
+    2.378115,
+    1.9873546,
+    1.4553041,
+    2.0497065,
+    3.0075336,
+    2.234026
   ],
-  "altar_build_priority": 0.8837121,
+  "altar_build_priority": 0.7663902,
   "soul_reserve_threshold": 40.0
 }

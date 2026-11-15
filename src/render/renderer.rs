@@ -16,17 +16,30 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
     // 2. Кислотные лужи (Poison Pools)
     for pool in &world.acid_pools {
         let alpha = (pool.lifetime / 4.0).min(0.65);
-        let color = if pool.corrosive {
-            Color::new(0.1, 0.85, 0.2, alpha)
+        let (color, border_color) = if pool.is_director_source {
+            // Чумные споры Директора: ядовито-фиолетовая слизь (ранит босса)
+            (
+                Color::new(0.65, 0.12, 0.78, alpha * 0.85),
+                Color::new(0.95, 0.25, 0.95, alpha * 0.95),
+            )
+        } else if pool.corrosive {
+            // Разъедающая кислота босса: неоново-зеленая
+            (
+                Color::new(0.1, 0.85, 0.2, alpha),
+                Color::new(0.3, 0.95, 0.3, alpha * 0.9),
+            )
         } else {
-            Color::new(0.25, 0.75, 0.1, alpha)
+            (
+                Color::new(0.25, 0.75, 0.1, alpha),
+                Color::new(0.4, 0.95, 0.2, alpha * 0.9),
+            )
         };
         draw_circle(pool.pos.x, pool.pos.y, pool.radius, color);
-        draw_circle_lines(pool.pos.x, pool.pos.y, pool.radius, 2.0, Color::new(0.3, 0.95, 0.3, alpha * 0.9));
+        draw_circle_lines(pool.pos.x, pool.pos.y, pool.radius, 2.0, border_color);
 
         // Пузыри на поверхности лужи
         let bubble_angle = (time * 6.0 + pool.pos.x).sin() * 0.5 * pool.radius;
-        draw_circle(pool.pos.x + bubble_angle, pool.pos.y + (time * 4.0).cos() * 10.0, 4.0, Color::new(0.4, 1.0, 0.4, alpha));
+        draw_circle(pool.pos.x + bubble_angle, pool.pos.y + (time * 4.0).cos() * 10.0, 4.0, border_color);
     }
 
     // 3. Разрушаемые структуры (Алтари Крови)
@@ -127,11 +140,52 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
     let bx = world.boss_pos.x;
     let by = world.boss_pos.y;
 
-    // Аура медитации (если отдыхает)
-    if world.boss_still_time >= 2.0 {
+    // Аура медитации (если отдыхает и восстанавливается)
+    if world.boss_still_time >= 1.2 {
         let pulse = (time * 5.0).sin() * 6.0;
-        draw_circle_lines(bx, by, 45.0 + pulse, 3.5, Color::new(0.2, 1.0, 0.4, 0.9));
-        draw_circle_lines(bx, by, 60.0 + pulse * 1.5, 2.0, Color::new(0.2, 1.0, 0.4, 0.5));
+        draw_circle_lines(bx, by, 45.0 + pulse, 3.5, Color::new(0.2, 1.0, 0.4, 0.95));
+        draw_circle_lines(bx, by, 65.0 + pulse * 1.5, 2.0, Color::new(0.3, 1.0, 0.5, 0.6));
+        draw_circle(bx, by, 35.0, Color::new(0.1, 0.9, 0.3, 0.12));
+    }
+
+    // Способность: Огненная Аура / Адское Пекло (Fire Aura & Hellfire Inferno)
+    let has_fire_aura = world.boss_inventory.has_weapon(WeaponType::FireAura);
+    let has_hellfire = world.boss_inventory.has_weapon(WeaponType::Hellfire);
+    if has_fire_aura || has_hellfire {
+        let aura_radius = if has_hellfire { 150.0 } else { 110.0 };
+        let flame_count = if has_hellfire { 12 } else { 8 };
+        let pulse = (time * 6.0).sin() * 4.0;
+
+        // Пылающее поле под ногами
+        draw_circle(bx, by, aura_radius + pulse, Color::new(1.0, 0.25, 0.05, 0.15));
+        draw_circle_lines(bx, by, aura_radius + pulse, 2.5, Color::new(1.0, 0.5, 0.1, 0.75));
+
+        // Вращающиеся языки пламени по периметру
+        for i in 0..flame_count {
+            let angle = time * 3.5 + (i as f32) * std::f32::consts::PI * 2.0 / (flame_count as f32);
+            let fx = bx + angle.cos() * (aura_radius - 8.0);
+            let fy = by + angle.sin() * (aura_radius - 8.0);
+            let f_pulse = (time * 12.0 + (i as f32)).sin() * 3.0;
+
+            draw_circle(fx, fy, 7.0 + f_pulse, Color::new(1.0, 0.3, 0.05, 0.9));
+            draw_circle(fx, fy, 4.0, Color::new(1.0, 0.85, 0.2, 1.0));
+        }
+    }
+
+    // Способность: Ледниковая Буря (Blizzard Storm)
+    if world.boss_inventory.has_weapon(WeaponType::BlizzardStorm) {
+        let blizzard_radius = 160.0;
+        let pulse = (time * 4.0).sin() * 5.0;
+        draw_circle(bx, by, blizzard_radius + pulse, Color::new(0.2, 0.65, 1.0, 0.12));
+        draw_circle_lines(bx, by, blizzard_radius + pulse, 2.0, Color::new(0.5, 0.85, 1.0, 0.7));
+
+        for i in 0..8 {
+            let angle = -time * 2.8 + (i as f32) * std::f32::consts::PI / 4.0;
+            let sx = bx + angle.cos() * (blizzard_radius * 0.75);
+            let sy = by + angle.sin() * (blizzard_radius * 0.75);
+            draw_circle(sx, sy, 5.0, Color::new(0.8, 0.95, 1.0, 0.9));
+            draw_circle_lines(sx, sy, 8.0, 1.0, WHITE);
+        }
     }
 
     // Эволюция: Буря Клинков (BladeStorm) — вращающийся вихрь клинков

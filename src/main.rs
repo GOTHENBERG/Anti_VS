@@ -26,6 +26,8 @@ use crate::ecs::world::World;
 use crate::network::driver::{LocalDriver, NetworkDriver};
 use crate::protocol::commands::Command;
 use crate::render::codex::draw_codex;
+use crate::render::cursor::draw_overlord_cursor;
+use crate::render::dossier::draw_mob_dossier;
 use crate::render::font::GameFonts;
 use crate::render::textures::GameTextures;
 use crate::render::{renderer::render_world, ui::render_ui};
@@ -59,15 +61,23 @@ async fn main() {
     let textures = GameTextures::load().await;
     let mut is_paused = false;
 
+    // Скрываем стандартный системный курсор мыши (заменяем демонической дланью Повелителя)
+    show_mouse(false);
+
     // Камера свободной навигации по большой карте
     let mut cam_pos = world.boss_pos;
     let mut cam_zoom: f32 = 0.95;
     let mut follow_boss = true;
     let auto_screenshot = std::env::args().any(|a| a == "--screenshot");
     let auto_codex = std::env::args().any(|a| a == "--codex");
+    let auto_dossier = std::env::args().any(|a| a == "--dossier");
     let mut show_codex = auto_codex;
     let mut codex_tab: usize = 0;
     let mut frame_count = 0;
+
+    let mut last_mouse_pos = Vec2::from(mouse_position());
+    let mut is_dragging_map = false;
+    let mut active_dossier_tier: Option<u8> = if auto_dossier { Some(1) } else { None };
 
     // Начальный разрушаемый алтарь игрока
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
@@ -75,6 +85,8 @@ async fn main() {
     loop {
         let dt = get_frame_time().min(0.05);
         frame_count += 1;
+        let current_mpos = Vec2::from(mouse_position());
+        let mouse_delta = current_mpos - last_mouse_pos;
 
         if auto_screenshot && frame_count == 10 {
             spawn_squad_perimeter(&mut world, 1);
@@ -84,17 +96,25 @@ async fn main() {
             spawn_squad_perimeter(&mut world, 8);
         }
 
-        // Пауза по P
-        if is_key_pressed(KeyCode::P) {
+        // Пауза по Space или P
+        if is_key_pressed(KeyCode::P) || is_key_pressed(KeyCode::Space) {
             is_paused = !is_paused;
         }
 
-        // Инфернальный кодекс по I или Esc
+        // Инфернальный кодекс по I
         if is_key_pressed(KeyCode::I) {
             show_codex = !show_codex;
+            if show_codex {
+                active_dossier_tier = None;
+            }
         }
-        if is_key_pressed(KeyCode::Escape) && show_codex {
-            show_codex = false;
+        // Закрытие окон по Esc
+        if is_key_pressed(KeyCode::Escape) {
+            if active_dossier_tier.is_some() {
+                active_dossier_tier = None;
+            } else if show_codex {
+                show_codex = false;
+            }
         }
 
         // Скриншот по F12
@@ -112,9 +132,10 @@ async fn main() {
             spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
             is_paused = false;
             show_codex = false;
+            active_dossier_tier = None;
         }
 
-        // 1. Управление камерой на большой карте: WASD + колесо мыши + центрирование по C / Space
+        // 1. Управление камерой на большой карте: WASD + колесо мыши + центрирование по C
         handle_camera_input(&mut cam_pos, &mut cam_zoom, &mut follow_boss, world.boss_pos, dt);
 
         let screen_w = screen_width();
@@ -125,7 +146,7 @@ async fn main() {
             ..Default::default()
         };
 
-        let is_running = !is_game_over && !is_paused && !show_codex;
+        let is_running = !is_game_over && !is_paused && !show_codex && active_dossier_tier.is_none();
 
         // 2. Сбор ввода игрока-директора -> генерация Команд
         if is_running {
@@ -155,11 +176,61 @@ async fn main() {
 
         // 6. Отрисовка интерфейса на экране (screen-space)
         set_default_camera();
-        render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures);
+        let ui_interaction = render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures);
 
-        // 7. Отрисовка экрана паузы, кодекса или завершения игры
+        // Обработка интеракций из UI
+        if ui_interaction.clicked_pause {
+            is_paused = !is_paused;
+        }
+        if ui_interaction.clicked_codex {
+            show_codex = !show_codex;
+            if show_codex {
+                active_dossier_tier = None;
+            }
+        }
+        if let Some(target) = ui_interaction.map_click_world_pos {
+            cam_pos = target;
+            follow_boss = false;
+        }
+        if let Some(tier) = ui_interaction.open_dossier_tier {
+            active_dossier_tier = Some(tier);
+        }
+        if let Some(tier) = ui_interaction.direct_summon_tier {
+            if let Some(director) = world.directors.first() {
+                try_summon_squad(director, tier, &mut net_driver);
+            }
+        }
+
+        // Логика перемещения карты зажатием ЛКМ (если курсор не над UI и окна закрыты)
+        if is_mouse_button_pressed(MouseButton::Left) {
+            if !ui_interaction.is_mouse_over_ui && !show_codex && active_dossier_tier.is_none() && !is_paused && !is_game_over {
+                is_dragging_map = true;
+            }
+        }
+        if is_mouse_button_down(MouseButton::Left) && is_dragging_map {
+            cam_pos -= mouse_delta / cam_zoom;
+            cam_pos.x = cam_pos.x.clamp(200.0, MAP_WIDTH - 200.0);
+            cam_pos.y = cam_pos.y.clamp(200.0, MAP_HEIGHT - 200.0);
+            follow_boss = false;
+        }
+        if is_mouse_button_released(MouseButton::Left) {
+            is_dragging_map = false;
+        }
+        last_mouse_pos = current_mpos;
+
+        // 7. Отрисовка модальных окон (Кодекс, Вики-досье, Пауза или Завершение игры)
         if show_codex {
             draw_codex(&mut codex_tab, &fonts, &textures);
+        } else if let Some(tier) = active_dossier_tier {
+            let res = draw_mob_dossier(tier, &world, &fonts, &textures);
+            if res.close_requested {
+                active_dossier_tier = None;
+            }
+            if res.summon_requested {
+                if let Some(director) = world.directors.first() {
+                    try_summon_squad(director, tier, &mut net_driver);
+                }
+            }
         } else if is_paused && !is_game_over {
             draw_pause_screen(&fonts);
         } else if is_game_over {
@@ -167,9 +238,17 @@ async fn main() {
             draw_game_over(&world, &clock, victory, &fonts);
         }
 
+        // 8. Отрисовка тематичного курсора Повелителя поверх всех окон
+        let is_hovering = ui_interaction.is_mouse_over_ui || show_codex || active_dossier_tier.is_some();
+        draw_overlord_cursor(
+            current_mpos,
+            is_mouse_button_down(MouseButton::Left),
+            is_hovering,
+            get_time() as f32,
+        );
+
         // Авто-скриншот после отрисовки кадра
         if auto_screenshot && frame_count == 60 {
-            // Спавним отряд скелетов на 30-м кадре для наглядности
             get_screen_data().export_png("screenshot.png");
             break;
         }
@@ -206,8 +285,8 @@ fn handle_camera_input(
         *cam_pos += move_dir.normalize() * (speed * dt / *cam_zoom);
     }
 
-    // Центрирование камеры на боссе по клавише C или Space
-    if is_key_pressed(KeyCode::C) || is_key_pressed(KeyCode::Space) {
+    // Центрирование камеры на боссе по клавише C
+    if is_key_pressed(KeyCode::C) {
         *follow_boss = true;
     }
 
@@ -255,38 +334,25 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam
             driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 2 });
         }
 
-        // 2. Клик левой кнопкой мыши по кнопкам на панели призыва или улучшений
+        // 2. Клик левой кнопкой мыши по кнопкам улучшений [F, G, H]
         if is_mouse_button_pressed(MouseButton::Left) {
             let (mx, my) = mouse_position();
 
-            // Проверка кнопок улучшений [F, G, H]
-            let g_btn_w = 230.0;
-            let g_btn_h = 34.0;
-            let g_total_w = 3.0 * g_btn_w + 2.0 * 12.0;
+            let g_btn_w = 236.0;
+            let g_btn_h = 32.0;
+            let g_total_w = 3.0 * g_btn_w + 2.0 * 10.0;
             let g_start_x = (screen_w - g_total_w) / 2.0;
-            let g_y = screen_h - 128.0;
+            let card_h = 118.0;
+            let cards_y = screen_h - card_h - 20.0;
+            let g_y = cards_y - g_btn_h - 8.0;
 
             for i in 0..3 {
-                let gx = g_start_x + (i as f32) * (g_btn_w + 12.0);
+                let gx = g_start_x + (i as f32) * (g_btn_w + 10.0);
                 if mx >= gx && mx <= gx + g_btn_w && my >= g_y && my <= g_y + g_btn_h {
                     driver.send_command(Command::UpgradeDirectorGrade {
                         director_id: director.id,
                         grade_type: i as u8,
                     });
-                }
-            }
-
-            // Проверка кнопок отрядов [1..8]
-            let btn_width = 138.0;
-            let btn_height = 72.0;
-            let total_w = 8.0 * btn_width + 7.0 * 8.0;
-            let start_x = (screen_w - total_w) / 2.0;
-            let btn_y = screen_h - 86.0;
-
-            for i in 0..8 {
-                let bx = start_x + (i as f32) * (btn_width + 8.0);
-                if mx >= bx && mx <= bx + btn_width && my >= btn_y && my <= btn_y + btn_height {
-                    try_summon_squad(director, (i + 1) as u8, driver);
                 }
             }
         }
@@ -382,8 +448,8 @@ fn draw_pause_screen(fonts: &GameFonts) {
     let screen_h = screen_height();
 
     draw_rectangle(0.0, 0.0, screen_w, screen_h, Color::new(0.0, 0.0, 0.0, 0.65));
-    let text = "ПАУЗА (НАЖМИТЕ P ДЛЯ ПРОДОЛЖЕНИЯ)";
-    let font_size = 36.0;
+    let text = "ПАУЗА (НАЖМИТЕ ПРОБЕЛ ИЛИ P ДЛЯ ПРОДОЛЖЕНИЯ)";
+    let font_size = 34.0;
     let tw = fonts.measure_text(text, font_size).width;
     fonts.draw_text(text, (screen_w - tw) / 2.0, screen_h / 2.0, font_size, YELLOW);
 }
@@ -398,7 +464,7 @@ fn draw_game_over(world: &World, clock: &GameClock, victory: bool, fonts: &GameF
     let title = if victory {
         "ПОБЕДА ДИРЕКТОРА ЗЛА! БОСС УНИЧТОЖЕН!"
     } else {
-        "ПОРАЖЕНИЕ! БОСС ВЫЖИЛ 30 МИНУТ!"
+        "ПОРАЖЕНИЕ! БОСС ВЫЖИЛ 17 МИНУТ!"
     };
     let title_color = if victory { GREEN } else { RED };
     let title_font_size = 44.0;

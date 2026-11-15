@@ -345,6 +345,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         lifetime: 4.5,
                         dps: effective_damage * 0.7,
                         corrosive: false,
+                        is_director_source: false,
                     });
                 }
 
@@ -358,6 +359,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             lifetime: 6.0,
                             dps: effective_damage,
                             corrosive: true,
+                            is_director_source: false,
                         });
                     }
                 }

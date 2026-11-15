@@ -140,11 +140,11 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         }
     }
 
-    // 3. Потенциальные поля: Резкое отталкивание от границ карты ближе чем на 80 пикселей
+    // 3. Потенциальные поля: Плавное и заблаговременное отталкивание от границ карты (220 px)
     let map_w = crate::core::MAP_WIDTH;
     let map_h = crate::core::MAP_HEIGHT;
-    let wall_margin = 80.0;
-    let wall_push = 550.0;
+    let wall_margin = 220.0;
+    let wall_push = 650.0;
 
     if boss_pos.x < wall_margin {
         let factor = 1.0 - (boss_pos.x / wall_margin).clamp(0.0, 1.0);
@@ -181,13 +181,13 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
             let dir = Vec2::new(angle.cos(), angle.sin());
             let target_point = boss_pos + dir * 180.0;
 
-            // Штраф, если луч ведет в стену
+            // Строгий штраф за рывок в сторону стены
             let mut wall_penalty = 0.0;
-            if target_point.x < 50.0 || target_point.x > map_w - 50.0 {
-                wall_penalty += 100.0;
+            if target_point.x < 120.0 || target_point.x > map_w - 120.0 {
+                wall_penalty += 350.0;
             }
-            if target_point.y < 50.0 || target_point.y > map_h - 50.0 {
-                wall_penalty += 100.0;
+            if target_point.y < 120.0 || target_point.y > map_h - 120.0 {
+                wall_penalty += 350.0;
             }
 
             // Плотность мобов вдоль луча
@@ -212,7 +212,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         // Мгновенный рывок на 180 пикселей с неуязвимостью на 0.25 сек!
         let old_pos = world.boss_pos;
         let dash_target = (boss_pos + best_dir * 180.0)
-            .clamp(Vec2::new(40.0, 40.0), Vec2::new(map_w - 40.0, map_h - 40.0));
+            .clamp(Vec2::new(60.0, 60.0), Vec2::new(map_w - 60.0, map_h - 60.0));
 
         world.boss_pos = dash_target;
         world.boss_invulnerable_timer = 0.25;
@@ -244,9 +244,26 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
             }
         }
     } else {
+        // Проверяем возможность тактической медитации (если в радиусе 220px нет врагов)
+        let nearby_threats = world.spatial_grid.query_nearby(boss_pos, 220.0)
+            .iter()
+            .any(|&idx| {
+                if let Some(mob) = world.mobs.get(idx) {
+                    mob.pos.distance_squared(boss_pos) < 220.0 * 220.0
+                } else {
+                    false
+                }
+            });
+
+        let hp_ratio = world.boss_health.current / world.boss_health.max;
+        // Если вокруг безопасно и здоровье не полное (или босс уже начал медитировать) -> останавливается и медитирует!
+        let wants_meditation = !nearby_threats && (hp_ratio < 0.98 || world.boss_still_time > 0.0);
+
         // Обычное передвижение по вектору сил
         let max_speed = 160.0;
-        let desired_vel = if total_force.length_squared() > 4.0 {
+        let desired_vel = if wants_meditation {
+            Vec2::ZERO
+        } else if total_force.length_squared() > 4.0 {
             total_force.clamp_length_max(max_speed)
         } else {
             Vec2::ZERO

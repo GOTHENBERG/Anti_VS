@@ -1,4 +1,4 @@
-pub const GAME_DURATION_SECS: f32 = 1800.0; // 30 минут
+pub const GAME_DURATION_SECS: f32 = 1020.0; // 17 минут
 
 #[derive(Debug, Clone)]
 pub struct GameClock {

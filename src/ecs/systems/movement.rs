@@ -97,6 +97,11 @@ pub fn update_movement(world: &mut World, dt: f32) {
             mob.pos += mob.knockback_vel * dt;
             mob.knockback_vel *= 0.88; // Плавное затухание импульса
         }
+
+        // Ограничение координат мобов границами карты (защита от вылета за карту при отталкивании)
+        let margin = 20.0;
+        mob.pos.x = mob.pos.x.clamp(margin, crate::core::MAP_WIDTH - margin);
+        mob.pos.y = mob.pos.y.clamp(margin, crate::core::MAP_HEIGHT - margin);
     });
 
     // 2. Перестроение Пространственной Сетки (Spatial Grid) для мгновенных запросов O(1)
@@ -113,26 +118,39 @@ pub fn update_movement(world: &mut World, dt: f32) {
     world.projectiles.retain(|p| p.lifetime > 0.0);
 
     // 4. Обновление кислотных луж
+    let boss_pos = world.boss_pos;
     for pool in &mut world.acid_pools {
         pool.lifetime -= dt;
 
-        // Наносим периодический урон всем мобам в луже
-        let nearby = world.spatial_grid.query_nearby(pool.pos, pool.radius);
-        for idx in nearby {
-            if let Some(mob) = world.mobs.get_mut(idx) {
-                if mob.pos.distance_squared(pool.pos) < pool.radius * pool.radius {
-                    mob.status.apply_poison(2.5, pool.dps * 0.5);
-                    if pool.corrosive {
-                        // Разъедает плоскую броню
-                        mob.resistances.flat_armor = (mob.resistances.flat_armor - dt * 2.0).max(0.0);
+        if pool.is_director_source {
+            // Лужа Директора (Чумные Споры): наносит периодический урон БОССУ, а мобов игрока НЕ трогает!
+            if boss_pos.distance_squared(pool.pos) < pool.radius * pool.radius {
+                let poison_dmg = pool.dps * dt;
+                world.boss_health.take_damage(poison_dmg);
+                world.total_damage_dealt_to_boss += poison_dmg;
+                if pool.corrosive {
+                    world.boss_resistances.flat_armor = (world.boss_resistances.flat_armor - dt * 1.5).max(0.0);
+                }
+            }
+        } else {
+            // Лужа Босса (Чумные Сферы): наносит урон МОБАМ, а самого Босса НЕ трогает!
+            let nearby = world.spatial_grid.query_nearby(pool.pos, pool.radius);
+            for idx in nearby {
+                if let Some(mob) = world.mobs.get_mut(idx) {
+                    if mob.pos.distance_squared(pool.pos) < pool.radius * pool.radius {
+                        mob.status.apply_poison(2.5, pool.dps * 0.5);
+                        if pool.corrosive {
+                            // Разъедает плоскую броню
+                            mob.resistances.flat_armor = (mob.resistances.flat_armor - dt * 2.0).max(0.0);
+                        }
+                        world.damage_queue.push(DamagePacket {
+                            source_id: Some(0),
+                            target_id: mob.id,
+                            amount: pool.dps * dt,
+                            damage_type: DamageType::Poison,
+                            armor_penetration: 0.5,
+                        });
                     }
-                    world.damage_queue.push(DamagePacket {
-                        source_id: Some(0),
-                        target_id: mob.id,
-                        amount: pool.dps * dt,
-                        damage_type: DamageType::Poison,
-                        armor_penetration: 0.5,
-                    });
                 }
             }
         }

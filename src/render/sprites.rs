@@ -556,72 +556,138 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
     // 2. Атаки Босса (Соло-героя) по видам вооружения
     if let Some(w_kind) = proj.source_weapon {
         match w_kind {
-            // Клинок Ветра: светящийся серповидный ветряной клинок
+            // Клинок Ветра: светящийся ветряной клинок
             crate::ecs::components::inventory::WeaponType::WindBlade => {
-                let tip = pos + dir * (radius * 2.0);
-                let wing1 = pos + norm * (radius * 1.4) - dir * (radius * 0.4);
-                let wing2 = pos - norm * (radius * 1.4) - dir * (radius * 0.4);
+                if let Some(tex) = textures.proj_wind.as_ref() {
+                    let size = radius * 3.4;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: angle + std::f32::consts::PI / 2.0,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
+                let tip = pos + dir * (radius * 2.2);
+                let wing1 = pos + norm * (radius * 1.5) - dir * (radius * 0.4);
+                let wing2 = pos - norm * (radius * 1.5) - dir * (radius * 0.4);
                 let tail = pos - dir * radius;
 
-                draw_triangle(tip, wing1, tail, Color::new(0.6, 0.95, 0.85, 0.85));
-                draw_triangle(tip, wing2, tail, Color::new(0.6, 0.95, 0.85, 0.85));
-                draw_line(wing1.x, wing1.y, tip.x, tip.y, 2.0, WHITE);
-                draw_line(wing2.x, wing2.y, tip.x, tip.y, 2.0, WHITE);
-                draw_line(pos.x - dir.x * 20.0, pos.y - dir.y * 20.0, pos.x, pos.y, 2.5, Color::new(0.4, 0.9, 0.7, 0.4));
+                draw_triangle(tip, wing1, tail, Color::new(0.5, 1.0, 0.9, 0.95));
+                draw_triangle(tip, wing2, tail, Color::new(0.5, 1.0, 0.9, 0.95));
+                draw_line(wing1.x, wing1.y, tip.x, tip.y, 2.5, WHITE);
+                draw_line(wing2.x, wing2.y, tip.x, tip.y, 2.5, WHITE);
+                draw_line(pos.x - dir.x * 24.0, pos.y - dir.y * 24.0, pos.x, pos.y, 3.0, Color::new(0.3, 0.9, 0.8, 0.6));
                 return;
             }
-            // Магический Жезл: пульсирующая сфера тайной магии со звездой
+            // Магический Жезл: пульсирующая сфера тайной магии
             crate::ecs::components::inventory::WeaponType::MagicWand => {
-                draw_circle(pos.x, pos.y, radius * 1.3, Color::new(0.7, 0.2, 1.0, 0.35));
-                draw_circle(pos.x, pos.y, radius * 0.85, Color::new(0.85, 0.3, 1.0, 0.9));
+                if let Some(tex) = textures.proj_magic.as_ref() {
+                    let size = radius * 3.2;
+                    let rot = get_time() as f32 * 8.0;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: rot,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
+                draw_circle(pos.x, pos.y, radius * 1.3, Color::new(0.7, 0.2, 1.0, 0.5));
+                draw_circle(pos.x, pos.y, radius * 0.85, Color::new(0.9, 0.4, 1.0, 0.95));
                 draw_circle(pos.x, pos.y, radius * 0.4, WHITE);
-
-                // Магические лучи
-                let flare = radius * 1.8;
-                draw_line(pos.x - dir.x * flare, pos.y - dir.y * flare, pos.x + dir.x * flare, pos.y + dir.y * flare, 2.0, WHITE);
-                draw_line(pos.x - norm.x * (flare * 0.7), pos.y - norm.y * (flare * 0.7), pos.x + norm.x * (flare * 0.7), pos.y + norm.y * (flare * 0.7), 2.0, SKYBLUE);
                 return;
             }
-            // Святой Молот: вращающийся небесный молот
+            // Святой Молот: небесный молот
             crate::ecs::components::inventory::WeaponType::HolyHammer => {
+                if let Some(tex) = textures.proj_holy.as_ref() {
+                    let rot = get_time() as f32 * 12.0;
+                    let size = radius * 3.0;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: rot,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
                 let rot_time = get_time() as f32 * 12.0;
                 let h_dir = Vec2::new(rot_time.cos(), rot_time.sin());
                 let h_norm = Vec2::new(-h_dir.y, h_dir.x);
-
-                // Рукоять
-                draw_line(
-                    pos.x - h_dir.x * 12.0,
-                    pos.y - h_dir.y * 12.0,
-                    pos.x + h_dir.x * 8.0,
-                    pos.y + h_dir.y * 8.0,
-                    3.5,
-                    Color::new(0.55, 0.38, 0.18, 1.0),
-                );
-                // Навершие молота (золотой брусок)
-                let head_c = pos + h_dir * 8.0;
-                draw_line(
-                    head_c.x - h_norm.x * 10.0,
-                    head_c.y - h_norm.y * 10.0,
-                    head_c.x + h_norm.x * 10.0,
-                    head_c.y + h_norm.y * 10.0,
-                    7.0,
-                    GOLD,
-                );
-                draw_circle(head_c.x, head_c.y, 4.0, WHITE);
-                draw_circle_lines(pos.x, pos.y, radius * 1.4, 1.5, Color::new(1.0, 0.9, 0.3, 0.4));
+                draw_line(pos.x - h_dir.x * 14.0, pos.y - h_dir.y * 14.0, pos.x + h_dir.x * 10.0, pos.y + h_dir.y * 10.0, 4.0, Color::new(0.55, 0.38, 0.18, 1.0));
+                let head_c = pos + h_dir * 10.0;
+                draw_line(head_c.x - h_norm.x * 12.0, head_c.y - h_norm.y * 12.0, head_c.x + h_norm.x * 12.0, head_c.y + h_norm.y * 12.0, 8.0, GOLD);
+                draw_circle(head_c.x, head_c.y, 5.0, WHITE);
                 return;
             }
             // Ледяные Осколки: ограненные кристаллы льда
             crate::ecs::components::inventory::WeaponType::IceShards => {
-                let p_front = pos + dir * (radius * 1.8);
+                if let Some(tex) = textures.proj_ice.as_ref() {
+                    let size = radius * 3.2;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: angle,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
+                let p_front = pos + dir * (radius * 2.0);
                 let p_back = pos - dir * (radius * 1.5);
-                let p_left = pos + norm * (radius * 0.85);
-                let p_right = pos - norm * (radius * 0.85);
-
-                draw_triangle(p_front, p_left, p_back, Color::new(0.4, 0.8, 1.0, 0.85));
-                draw_triangle(p_front, p_right, p_back, Color::new(0.7, 0.9, 1.0, 0.9));
-                draw_line(p_front.x, p_front.y, p_back.x, p_back.y, 1.5, WHITE);
-                draw_line(pos.x - dir.x * 14.0, pos.y - dir.y * 14.0, pos.x, pos.y, 2.0, Color::new(0.3, 0.7, 1.0, 0.35));
+                let p_left = pos + norm * (radius * 0.9);
+                let p_right = pos - norm * (radius * 0.9);
+                draw_triangle(p_front, p_left, p_back, Color::new(0.4, 0.85, 1.0, 0.95));
+                draw_triangle(p_front, p_right, p_back, Color::new(0.7, 0.95, 1.0, 0.95));
+                draw_line(p_front.x, p_front.y, p_back.x, p_back.y, 2.0, WHITE);
+                return;
+            }
+            // Чумные Сферы и Токсичный Мор: ядовитые сгустки кислоты
+            crate::ecs::components::inventory::WeaponType::PoisonOrbs | crate::ecs::components::inventory::WeaponType::ToxicPestilence => {
+                if let Some(tex) = textures.proj_poison.as_ref() {
+                    let size = radius * 3.2;
+                    let rot = get_time() as f32 * 6.0;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: rot,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
+                draw_circle(pos.x, pos.y, radius * 1.2, Color::new(0.1, 0.95, 0.25, 0.85));
+                draw_circle(pos.x, pos.y, radius * 0.7, Color::new(0.4, 1.0, 0.3, 1.0));
+                draw_circle(pos.x, pos.y, radius * 0.35, WHITE);
+                draw_circle_lines(pos.x, pos.y, radius * 1.2, 1.5, LIME);
                 return;
             }
             // Топор Палача и Вихревой Секач: вращающиеся секиры

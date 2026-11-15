@@ -64,6 +64,7 @@ pub struct AcidPoolEntity {
     pub lifetime: f32,
     pub dps: f32,
     pub corrosive: bool, // Снимает ли броню
+    pub is_director_source: bool, // Принадлежит ли Директору (дамажит босса, а не мобов игрока!)
 }
 
 #[derive(Clone, Debug)]

@@ -1,4 +1,6 @@
 pub mod codex;
+pub mod cursor;
+pub mod dossier;
 pub mod font;
 pub mod renderer;
 pub mod sprites;
