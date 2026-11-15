@@ -5,12 +5,13 @@ use crate::render::font::GameFonts;
 use crate::render::sprites::{
     draw_blood_altar, draw_boss, draw_environment, draw_mob_sprite, draw_projectile_sprite,
 };
+use crate::render::textures::GameTextures;
 
-pub fn render_world(world: &World, fonts: &GameFonts) {
+pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) {
     let time = get_time() as f32;
 
     // 1. Отрисовка большой арены (плиты, разломы, колонны)
-    draw_environment(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT);
+    draw_environment(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT, textures);
 
     // 2. Кислотные лужи (Poison Pools)
     for pool in &world.acid_pools {
@@ -30,17 +31,53 @@ pub fn render_world(world: &World, fonts: &GameFonts) {
 
     // 3. Разрушаемые структуры (Алтари Крови)
     for structure in &world.structures {
-        draw_blood_altar(structure.pos, structure.health.current, structure.health.max, time);
+        draw_blood_altar(structure.pos, structure.health.current, structure.health.max, time, textures);
     }
 
     // 4. Кристаллы душ (Soul Gems & Magnet Orbs)
     for gem in &world.gems {
         if gem.is_magnet {
-            // Редкий артефакт "Магнит"
-            let pulse = (time * 6.0).sin() * 2.5;
-            draw_circle(gem.pos.x, gem.pos.y, 9.0 + pulse, GOLD);
-            draw_circle_lines(gem.pos.x, gem.pos.y, 14.0 + pulse, 1.5, SKYBLUE);
-            draw_circle(gem.pos.x, gem.pos.y, 4.0, WHITE);
+            if let Some(chest_tex) = textures.chest.as_ref() {
+                let pulse = (time * 6.0).sin() * 2.5;
+                let size = 26.0 + pulse;
+                draw_texture_ex(
+                    chest_tex,
+                    gem.pos.x - size / 2.0,
+                    gem.pos.y - size / 2.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(size, size)),
+                        ..Default::default()
+                    },
+                );
+            } else {
+                let pulse = (time * 6.0).sin() * 2.5;
+                draw_circle(gem.pos.x, gem.pos.y, 9.0 + pulse, GOLD);
+                draw_circle_lines(gem.pos.x, gem.pos.y, 14.0 + pulse, 1.5, SKYBLUE);
+                draw_circle(gem.pos.x, gem.pos.y, 4.0, WHITE);
+            }
+        } else if let Some(c_tex) = textures.soul_crystal.as_ref() {
+            let (tint, scale) = if gem.xp_value > 100.0 {
+                (GOLD, 1.3)
+            } else if gem.xp_value > 30.0 {
+                (LIME, 1.1)
+            } else {
+                (SKYBLUE, 0.9)
+            };
+            let size = 18.0 * scale;
+            let rot = time * 2.0 + (gem.pos.x * 0.1);
+            draw_texture_ex(
+                c_tex,
+                gem.pos.x - size / 2.0,
+                gem.pos.y - size / 2.0,
+                tint,
+                DrawTextureParams {
+                    dest_size: Some(Vec2::new(size, size)),
+                    rotation: rot,
+                    pivot: Some(gem.pos),
+                    ..Default::default()
+                },
+            );
         } else {
             let size = if gem.xp_value > 50.0 { 5.5 } else { 4.0 };
             let (color, border) = if gem.xp_value > 100.0 {
@@ -55,14 +92,14 @@ pub fn render_world(world: &World, fonts: &GameFonts) {
         }
     }
 
-    // 5. Отрисовка мобов с процедурными модельками
+    // 5. Отрисовка мобов со спрайтами
     for mob in &world.mobs {
-        draw_mob_sprite(mob, time);
+        draw_mob_sprite(mob, time, textures);
 
         // Наложение статусных эффектов (заморозка, горение, яд)
         if mob.status.is_frozen() {
-            draw_circle(mob.pos.x, mob.pos.y, mob.radius + 2.0, Color::new(0.5, 0.85, 1.0, 0.5));
-            draw_circle_lines(mob.pos.x, mob.pos.y, mob.radius + 2.0, 1.5, WHITE);
+            draw_circle(mob.pos.x, mob.pos.y, mob.radius + 3.0, Color::new(0.5, 0.85, 1.0, 0.4));
+            draw_circle_lines(mob.pos.x, mob.pos.y, mob.radius + 3.0, 1.5, WHITE);
         } else if mob.status.burn_timer > 0.0 {
             let flame_pulse = (time * 15.0 + (mob.id as f32)).sin() * 2.0;
             draw_circle_lines(mob.pos.x, mob.pos.y, mob.radius + flame_pulse, 1.5, ORANGE);
@@ -71,9 +108,9 @@ pub fn render_world(world: &World, fonts: &GameFonts) {
         }
     }
 
-    // 6. Отрисовка снарядов с уникальными модельками
+    // 6. Отрисовка снарядов
     for proj in &world.projectiles {
-        draw_projectile_sprite(proj.pos, proj.vel, proj.radius, proj.damage_type);
+        draw_projectile_sprite(proj.pos, proj.vel, proj.radius, proj.damage_type, textures);
     }
 
     // 7. Луч Смерти (Death Ray)
@@ -104,11 +141,26 @@ pub fn render_world(world: &World, fonts: &GameFonts) {
         for i in 0..blade_count {
             let angle = world.blade_storm_angle + (i as f32) * std::f32::consts::PI * 2.0 / (blade_count as f32);
             let b_pos = Vec2::new(bx + angle.cos() * radius, by + angle.sin() * radius);
-            draw_circle(b_pos.x, b_pos.y, 7.0, SKYBLUE);
-            draw_circle_lines(b_pos.x, b_pos.y, 7.0, 2.0, WHITE);
-            // Лезвие клинка
-            let tip = b_pos + Vec2::new(angle.cos(), angle.sin()) * 12.0;
-            draw_line(b_pos.x, b_pos.y, tip.x, tip.y, 3.5, WHITE);
+
+            if let Some(w_tex) = textures.proj_wind.as_ref() {
+                draw_texture_ex(
+                    w_tex,
+                    b_pos.x - 12.0,
+                    b_pos.y - 12.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(24.0, 24.0)),
+                        rotation: angle + std::f32::consts::PI / 2.0,
+                        pivot: Some(b_pos),
+                        ..Default::default()
+                    },
+                );
+            } else {
+                draw_circle(b_pos.x, b_pos.y, 7.0, SKYBLUE);
+                draw_circle_lines(b_pos.x, b_pos.y, 7.0, 2.0, WHITE);
+                let tip = b_pos + Vec2::new(angle.cos(), angle.sin()) * 12.0;
+                draw_line(b_pos.x, b_pos.y, tip.x, tip.y, 3.5, WHITE);
+            }
         }
     }
 
@@ -119,11 +171,24 @@ pub fn render_world(world: &World, fonts: &GameFonts) {
         for i in 0..shield_count {
             let angle = world.divine_shield_angle + (i as f32) * std::f32::consts::PI * 2.0 / (shield_count as f32);
             let s_pos = Vec2::new(bx + angle.cos() * radius, by + angle.sin() * radius);
-            draw_circle(s_pos.x, s_pos.y, 12.0, GOLD);
-            draw_circle_lines(s_pos.x, s_pos.y, 12.0, 2.5, WHITE);
-            // Крест на щите
-            draw_line(s_pos.x - 6.0, s_pos.y, s_pos.x + 6.0, s_pos.y, 2.0, WHITE);
-            draw_line(s_pos.x, s_pos.y - 6.0, s_pos.x, s_pos.y + 6.0, 2.0, WHITE);
+
+            if let Some(s_tex) = textures.icon_shield.as_ref() {
+                draw_texture_ex(
+                    s_tex,
+                    s_pos.x - 16.0,
+                    s_pos.y - 16.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(32.0, 32.0)),
+                        ..Default::default()
+                    },
+                );
+            } else {
+                draw_circle(s_pos.x, s_pos.y, 12.0, GOLD);
+                draw_circle_lines(s_pos.x, s_pos.y, 12.0, 2.5, WHITE);
+                draw_line(s_pos.x - 6.0, s_pos.y, s_pos.x + 6.0, s_pos.y, 2.0, WHITE);
+                draw_line(s_pos.x, s_pos.y - 6.0, s_pos.x, s_pos.y + 6.0, 2.0, WHITE);
+            }
         }
     }
 
@@ -133,6 +198,7 @@ pub fn render_world(world: &World, fonts: &GameFonts) {
         world.boss_vel,
         world.boss_invulnerable_timer > 0.0,
         time,
+        textures,
     );
 
     // 9. Отрисовка частиц
@@ -141,15 +207,5 @@ pub fn render_world(world: &World, fonts: &GameFonts) {
         let mut color = p.color;
         color.a = alpha;
         draw_circle(p.pos.x, p.pos.y, p.radius, color);
-    }
-
-    // 10. Отрисовка всплывающего текста урона (шрифтом с поддержкой кириллицы)
-    for text in &world.floating_texts {
-        let alpha = (text.lifetime / 0.8).clamp(0.0, 1.0);
-        let mut color = text.color;
-        color.a = alpha;
-        let font_size = 18.0 * text.scale;
-        let tw = fonts.measure_text(&text.text, font_size).width;
-        fonts.draw_text(&text.text, text.pos.x - tw / 2.0, text.pos.y, font_size, color);
     }
 }

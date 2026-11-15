@@ -25,6 +25,7 @@ use crate::ecs::world::World;
 use crate::network::driver::{LocalDriver, NetworkDriver};
 use crate::protocol::commands::Command;
 use crate::render::font::GameFonts;
+use crate::render::textures::GameTextures;
 use crate::render::{renderer::render_world, ui::render_ui};
 
 fn window_conf() -> Conf {
@@ -43,6 +44,7 @@ async fn main() {
     let mut clock = GameClock::new();
     let mut net_driver = LocalDriver::new();
     let fonts = GameFonts::load();
+    let textures = GameTextures::load().await;
     let mut is_paused = false;
 
     // Камера свободной навигации по большой карте
@@ -53,12 +55,25 @@ async fn main() {
     // Начальный разрушаемый алтарь игрока
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
 
+    let auto_screenshot = std::env::args().any(|a| a == "--screenshot");
+    let mut frame_count = 0;
+
     loop {
         let dt = get_frame_time().min(0.05);
+        frame_count += 1;
+
+        if auto_screenshot && frame_count == 10 {
+            spawn_squad_perimeter(&mut world, 1);
+        }
 
         // Пауза по P
         if is_key_pressed(KeyCode::P) {
             is_paused = !is_paused;
+        }
+
+        // Скриншот по F12
+        if is_key_pressed(KeyCode::F12) {
+            get_screen_data().export_png("screenshot.png");
         }
 
         // Перезапуск игры по R
@@ -107,11 +122,11 @@ async fn main() {
 
         // 5. Отрисовка мира через камеру
         set_camera(&world_cam);
-        render_world(&world, &fonts);
+        render_world(&world, &fonts, &textures);
 
         // 6. Отрисовка интерфейса на экране (screen-space)
         set_default_camera();
-        render_ui(&world, &clock, &fonts, cam_pos, cam_zoom);
+        render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures);
 
         // 7. Отрисовка экрана паузы или завершения игры
         if is_paused && !is_game_over {
@@ -119,6 +134,13 @@ async fn main() {
         } else if is_game_over {
             let victory = !world.boss_health.is_alive();
             draw_game_over(&world, &clock, victory, &fonts);
+        }
+
+        // Авто-скриншот после отрисовки кадра
+        if auto_screenshot && frame_count == 60 {
+            // Спавним отряд скелетов на 30-м кадре для наглядности
+            get_screen_data().export_png("screenshot.png");
+            break;
         }
 
         next_frame().await;

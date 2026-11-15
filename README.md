@@ -3,6 +3,8 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 
+![Reverse Survivor: The Director Screenshot](screenshot.png)
+
 **Reverse Survivor: The Director** — это игра в жанре Reverse Vampire Survivors / Auto-Battler на языке **Rust**.
 
 Вы играете не за героя, а за **Режиссёра зла**: наблюдаете за гигантской ареной сверху, управляете инфернальной экономикой и призываете орды мобов. Против вас сражается автономный **Соло-Босс** (аналог персонажа Vampire Survivors), управляемый детерминированными математическими алгоритмами потенциальных полей и 8-лучевым Context Steering.
