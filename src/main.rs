@@ -43,8 +43,12 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     // Режим автономного со-эволюционного обучения ботов (Self-Play Training)
-    if std::env::args().any(|a| a == "--train") {
-        crate::ai::trainer::run_co_evolutionary_training(8, 8);
+    // Поддерживает аргументы: cargo run --release -- --train [поколений] [размер популяции]
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(pos) = args.iter().position(|a| a == "--train") {
+        let generations = args.get(pos + 1).and_then(|s| s.parse().ok()).unwrap_or(8);
+        let population = args.get(pos + 2).and_then(|s| s.parse().ok()).unwrap_or(8);
+        crate::ai::trainer::run_co_evolutionary_training(generations, population);
         return;
     }
 
@@ -255,7 +259,6 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam
         if is_mouse_button_pressed(MouseButton::Right) {
             if director.points >= BLOOD_ALTAR_COST
                 && director.altar_cooldown <= 0.0
-                && world.structures.len() < director.max_active_altars
             {
                 let (mx, my) = mouse_position();
                 let world_click = world_cam.screen_to_world(Vec2::new(mx, my));
@@ -295,7 +298,6 @@ fn execute_command(world: &mut World, cmd: Command) {
         Command::PlaceStructure { director_id, pos, .. } => {
             if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
                 if director.altar_cooldown <= 0.0
-                    && world.structures.len() < director.max_active_altars
                     && director.spend_points(BLOOD_ALTAR_COST)
                 {
                     director.altar_cooldown = director.altar_max_cooldown;

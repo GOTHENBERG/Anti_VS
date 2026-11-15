@@ -95,7 +95,6 @@ pub struct DirectorState {
     pub squad_cooldowns: [f32; 5],
     pub altar_cooldown: f32,
     pub altar_max_cooldown: f32,
-    pub max_active_altars: usize,
     pub total_mobs_spawned: usize,
 }
 
@@ -109,8 +108,7 @@ impl DirectorState {
             income_timer: 0.0,
             squad_cooldowns: [0.0; 5],
             altar_cooldown: 0.0,
-            altar_max_cooldown: 14.0, // 14 секунд персональный кулдаун на постройку Алтаря
-            max_active_altars: 8,     // Лимит одновременных алтарей для предотвращения бесконечного спама
+            altar_max_cooldown: 60.0, // 60 секунд (1 минута) кулдаун на постройку Алтаря (без искусственного лимита)
             total_mobs_spawned: 0,
         }
     }

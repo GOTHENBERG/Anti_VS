@@ -10,34 +10,53 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
     println!("Директор обучается душить Босса, а Босс — выживать 30 минут!");
     println!("============================================================");
 
-    // 1. Инициализация стартовых популяций
+    let seed_boss = crate::ai::load_trained_boss_model().unwrap_or_default();
+    let seed_director = crate::ai::load_trained_director_model().unwrap_or_default();
+    let base_gen = seed_boss.generation;
+
+    if base_gen > 0 {
+        println!("🔄 Дообучение (Warm Start): продолжаем с Поколения {} (Фитнес Босса: {:.0})", base_gen, seed_boss.fitness);
+    } else {
+        println!("🌱 Начало нового цикла обучения с базовых параметров.");
+    }
+
+    // 1. Инициализация стартовых популяций (с сохранением лучших прошлых находок)
     let mut boss_pop: Vec<BossModel> = (0..population_size)
-        .map(|_i| {
-            let mut m = BossModel::default();
-            m.generation = 0;
-            // Небольшая начальная вариативность
-            m.mob_repulsion_weight += rand::gen_range(-40.0, 40.0);
-            m.gem_attraction_weight += rand::gen_range(-30.0, 30.0);
-            m.sniper_hunt_aggression += rand::gen_range(-40.0, 40.0);
-            m.altar_siege_aggression += rand::gen_range(-30.0, 30.0);
+        .map(|i| {
+            let mut m = seed_boss.clone();
+            if i > 0 {
+                // Небольшая начальная вариативность для поиска новых оптимумов
+                m.mob_repulsion_weight = (m.mob_repulsion_weight + rand::gen_range(-30.0, 30.0)).clamp(250.0, 700.0);
+                m.gem_attraction_weight = (m.gem_attraction_weight + rand::gen_range(-25.0, 25.0)).clamp(100.0, 400.0);
+                m.sniper_hunt_aggression = (m.sniper_hunt_aggression + rand::gen_range(-30.0, 30.0)).clamp(150.0, 500.0);
+                m.altar_siege_aggression = (m.altar_siege_aggression + rand::gen_range(-25.0, 25.0)).clamp(150.0, 450.0);
+            }
             m
         })
         .collect();
 
     let mut director_pop: Vec<DirectorModel> = (0..population_size)
-        .map(|_i| {
-            let mut d = DirectorModel::default();
-            d.generation = 0;
-            d.altar_build_priority = (d.altar_build_priority + rand::gen_range(-0.15, 0.15)).clamp(0.1, 1.0);
+        .map(|i| {
+            let mut d = seed_director.clone();
+            if i > 0 {
+                d.altar_build_priority = (d.altar_build_priority + rand::gen_range(-0.10, 0.10)).clamp(0.1, 1.0);
+                for w in d.squad_spawn_weights.iter_mut() {
+                    *w = (*w + rand::gen_range(-0.15, 0.15)).max(0.1);
+                }
+            }
             d
         })
         .collect();
 
     let mut best_overall_boss = boss_pop[0].clone();
+    best_overall_boss.fitness = 0.0;
     let mut best_overall_director = director_pop[0].clone();
+    best_overall_director.fitness = 0.0;
 
     // 2. Цикл поколений обучения
     for gen_idx in 1..=generations {
+        let current_gen_num = base_gen + gen_idx as u32;
+
         // Оценка фитнеса каждого кандидата в параллельных схватках
         let boss_results: Vec<(usize, f32, f32, u32)> = (0..population_size)
             .into_par_iter()
@@ -105,13 +124,13 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
         for (idx, score, avg_surv, _) in &boss_results {
             boss_pop[*idx].fitness = *score;
             boss_pop[*idx].avg_survival_time = *avg_surv;
-            boss_pop[*idx].generation = gen_idx as u32;
+            boss_pop[*idx].generation = current_gen_num;
         }
 
         for (idx, score, avg_kill) in &director_results {
             director_pop[*idx].fitness = *score;
             director_pop[*idx].avg_boss_kill_time = *avg_kill;
-            director_pop[*idx].generation = gen_idx as u32;
+            director_pop[*idx].generation = current_gen_num;
         }
 
         // Сортировка по фитнесу (лучшие сверху)
@@ -129,8 +148,8 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
         }
 
         println!(
-            "🏆 Поколение {:02}/{:02} | Босс: выжил {:.1}с (Фитнес {:.0}) | Директор: сбрил за {:.1}с (Фитнес {:.0})",
-            gen_idx, generations,
+            "🏆 Раунд {:02}/{:02} (Поколение #{:02}) | Босс: выжил {:.1}с (Фитнес {:.0}) | Директор: сбрил за {:.1}с (Фитнес {:.0})",
+            gen_idx, generations, current_gen_num,
             current_best_boss.avg_survival_time, current_best_boss.fitness,
             current_best_dir.avg_boss_kill_time, current_best_dir.fitness
         );

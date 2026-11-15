@@ -196,13 +196,10 @@ pub fn render_ui(
         let aw_h = 76.0;
 
         let on_cooldown = director.altar_cooldown > 0.0;
-        let is_at_limit = world.structures.len() >= director.max_active_altars;
         let can_afford_altar = director.points >= BLOOD_ALTAR_COST;
 
         let aw_border = if on_cooldown {
             Color::new(0.9, 0.25, 0.25, 0.95)
-        } else if is_at_limit {
-            YELLOW
         } else if can_afford_altar {
             PURPLE
         } else {
@@ -248,21 +245,17 @@ pub fn render_ui(
             draw_rectangle(content_x, aw_y + 46.0, bar_w * prog, bar_h, ORANGE);
             draw_rectangle_lines(content_x, aw_y + 46.0, bar_w, bar_h, 1.0, GRAY);
 
-            let count_text = format!("Активно: {}/{} алт. (+{:.0}/2с)", world.structures.len(), director.max_active_altars, world.structures.len() as f32 * 3.0);
+            let count_text = format!("Активно: {} алт. (+{:.0}/2с доход)", world.structures.len(), world.structures.len() as f32 * 3.0);
             fonts.draw_text(&count_text, content_x, aw_y + 67.0, 11.0, LIGHTGRAY);
-        } else if is_at_limit {
-            fonts.draw_text("ЛИМИТ АЛТАРЕЙ ДОСТИГНУТ!", content_x, aw_y + 38.0, 13.0, YELLOW);
-            let count_text = format!("Максимум {}/{} на арене (+{:.0}/2с)", world.structures.len(), director.max_active_altars, world.structures.len() as f32 * 3.0);
-            fonts.draw_text(&count_text, content_x, aw_y + 58.0, 12.0, LIGHTGRAY);
         } else if can_afford_altar {
             fonts.draw_text("ГОТОВ К ПОСТРОЙКЕ [50 душ]", content_x, aw_y + 38.0, 13.0, GREEN);
             let bar_w = 220.0;
             draw_rectangle(content_x, aw_y + 46.0, bar_w, 7.0, GREEN);
-            let count_text = format!("Активно: {}/{} алт. (+{:.0}/2с доход)", world.structures.len(), director.max_active_altars, world.structures.len() as f32 * 3.0);
+            let count_text = format!("Активно: {} алт. (+{:.0}/2с доход)", world.structures.len(), world.structures.len() as f32 * 3.0);
             fonts.draw_text(&count_text, content_x, aw_y + 67.0, 11.0, SKYBLUE);
         } else {
             fonts.draw_text("ГОТОВ (Не хватает душ: 50)", content_x, aw_y + 38.0, 12.0, GRAY);
-            let count_text = format!("Активно: {}/{} алт.", world.structures.len(), director.max_active_altars);
+            let count_text = format!("Активно: {} алт. (+{:.0}/2с доход)", world.structures.len(), world.structures.len() as f32 * 3.0);
             fonts.draw_text(&count_text, content_x, aw_y + 58.0, 12.0, LIGHTGRAY);
         }
 
@@ -478,17 +471,14 @@ fn draw_altar_widget_tooltip(aw_x: f32, aw_y: f32, screen_w: f32, fonts: &GameFo
     let card_x = (aw_x + 300.0).clamp(10.0, screen_w - card_w - 10.0);
     let card_y = aw_y;
 
-    let director = world.directors.first();
-    let max_altars = director.map_or(8, |d| d.max_active_altars);
-
     draw_rectangle(card_x, card_y, card_w, card_h, Color::new(0.06, 0.06, 0.12, 0.96));
     draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, PURPLE);
 
     fonts.draw_heading("🏛️ АЛТАРЬ КРОВИ (Инфернальная база)", card_x + 12.0, card_y + 22.0, 15.0, GOLD);
     fonts.draw_text("• Постройка: Клик ПКМ на свободной точке арены", card_x + 12.0, card_y + 44.0, 12.0, WHITE);
-    let cost_str = format!("• Стоимость: {:.0} Душ | Кулдаун: 14.0 сек (Лимит: {} шт)", BLOOD_ALTAR_COST, max_altars);
+    let cost_str = format!("• Стоимость: {:.0} Душ | Кулдаун: 60 сек (Без лимита шт)", BLOOD_ALTAR_COST);
     fonts.draw_text(&cost_str, card_x + 12.0, card_y + 64.0, 12.0, YELLOW);
-    let inc_str = format!("• Доход: +3.0 Очков Душ каждые 2 сек за каждый живой алтарь (Текущий: +{:.0}/2с)", world.structures.len() as f32 * 3.0);
+    let inc_str = format!("• Доход: +3.0 Очков Душ каждые 2 сек за каждый алтарь (Текущий: +{:.0}/2с)", world.structures.len() as f32 * 3.0);
     fonts.draw_text(&inc_str, card_x + 12.0, card_y + 84.0, 12.0, GREEN);
     fonts.draw_text("• Аура Крови: Восстанавливает +35 HP союзникам в радиусе 180px", card_x + 12.0, card_y + 104.0, 12.0, SKYBLUE);
     fonts.draw_text("• Здоровье: 650 HP (Броня: 12, уязвим к святому урону -60%)", card_x + 12.0, card_y + 124.0, 12.0, LIGHTGRAY);

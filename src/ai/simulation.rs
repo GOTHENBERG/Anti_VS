@@ -50,13 +50,12 @@ pub fn run_headless_simulation(
             let mut tier_to_spawn = None;
 
             if let Some(director) = world.directors.first() {
-                let max_altars = director.max_active_altars;
                 let cooldown = director.altar_cooldown;
                 let points = director.points;
                 let spent = director.total_points_spent;
 
-                // 1.1 Постройка Алтаря Крови
-                if cooldown <= 0.0 && points >= BLOOD_ALTAR_COST && world.structures.len() < max_altars {
+                // 1.1 Постройка Алтаря Крови (Кулдаун 60 сек, без искусственного лимита)
+                if cooldown <= 0.0 && points >= BLOOD_ALTAR_COST {
                     let build_roll = rand::gen_range(0.0, 1.0);
                     if build_roll < director_model.altar_build_priority {
                         should_spawn_altar = true;
