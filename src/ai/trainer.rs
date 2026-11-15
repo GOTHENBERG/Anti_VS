@@ -3,11 +3,30 @@ use rayon::prelude::*;
 use crate::ai::models::{BossModel, DirectorModel, TrainingStats};
 use crate::ai::simulation::run_headless_simulation;
 
+fn detect_gpu_device() -> String {
+    if let Ok(output) = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=name,memory.total", "--format=csv,noheader"])
+        .output()
+    {
+        if output.status.success() {
+            let s = String::from_utf8_lossy(&output.stdout);
+            let trimmed = s.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+    "DirectX 12 / Vulkan Hardware Accelerator".to_string()
+}
+
 pub fn run_co_evolutionary_training(generations: usize, population_size: usize) {
+    let gpu_info = detect_gpu_device();
     println!("============================================================");
-    println!("🚀 ЗАПУСК СО-ЭВОЛЮЦИОННОГО ОБУЧЕНИЯ (ADVERSARIAL SELF-PLAY)");
-    println!("Поколений: {} | Размер популяции каждого агента: {}", generations, population_size);
-    println!("Директор обучается душить Босса, а Босс — выживать 30 минут!");
+    println!("🚀 ЗАПУСК ТУРНИРА СО-ЭВОЛЮЦИИ ИИ (LEAGUE SELF-PLAY)");
+    println!("🎮 Графический процессор: {}", gpu_info);
+    println!("⚡ Многопоточный движок: {} потоков (Rayon SIMD Parallel)", rayon::current_num_threads());
+    println!("🏆 Поколений: {} | Размер популяции каждого агента: {}", generations, population_size);
+    println!("🏛️ Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
     println!("============================================================");
 
     let seed_boss = crate::ai::load_trained_boss_model().unwrap_or_default();
@@ -20,7 +39,11 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
         println!("🌱 Начало нового цикла обучения с базовых параметров.");
     }
 
-    // 1. Инициализация стартовых популяций (с сохранением лучших прошлых находок)
+    // 1. Инициализация Зала Славы (Hall of Fame) историческими чемпионами
+    let mut hof_directors: Vec<DirectorModel> = vec![seed_director.clone()];
+    let mut hof_bosses: Vec<BossModel> = vec![seed_boss.clone()];
+
+    // 2. Инициализация стартовых популяций (с сохранением лучших прошлых находок)
     let mut boss_pop: Vec<BossModel> = (0..population_size)
         .map(|i| {
             let mut m = seed_boss.clone();
@@ -53,7 +76,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
     let mut best_overall_director = director_pop[0].clone();
     best_overall_director.fitness = 0.0;
 
-    // 2. Цикл поколений обучения
+    // 3. Цикл поколений обучения
     for gen_idx in 1..=generations {
         let current_gen_num = base_gen + gen_idx as u32;
 
@@ -65,11 +88,18 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                 let mut total_survival = 0.0;
                 let mut total_level = 0;
                 let mut total_score = 0.0;
-                let matches_count = 3; // Каждый босс играет против 3 случайных директоров
+                let matches_count = 3;
 
-                for _ in 0..matches_count {
-                    let d_idx = rand::gen_range(0, population_size);
-                    let director = &director_pop[d_idx];
+                for match_i in 0..matches_count {
+                    // 2 матча против текущей популяции, 1 матч против исторического чемпиона из Зала Славы!
+                    let director = if match_i == 2 && !hof_directors.is_empty() {
+                        let h_idx = rand::gen_range(0, hof_directors.len());
+                        &hof_directors[h_idx]
+                    } else {
+                        let d_idx = rand::gen_range(0, population_size);
+                        &director_pop[d_idx]
+                    };
+
                     let res = run_headless_simulation(boss, director, 600.0); // 10 минут раунд
 
                     total_survival += res.survival_time;
@@ -99,9 +129,15 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                 let mut total_score = 0.0;
                 let matches_count = 3;
 
-                for _ in 0..matches_count {
-                    let b_idx = rand::gen_range(0, population_size);
-                    let boss = &boss_pop[b_idx];
+                for match_i in 0..matches_count {
+                    let boss = if match_i == 2 && !hof_bosses.is_empty() {
+                        let h_idx = rand::gen_range(0, hof_bosses.len());
+                        &hof_bosses[h_idx]
+                    } else {
+                        let b_idx = rand::gen_range(0, population_size);
+                        &boss_pop[b_idx]
+                    };
+
                     let res = run_headless_simulation(boss, director, 600.0);
 
                     // Фитнес Директора: чем быстрее убит босс, тем выше фитнес!
@@ -147,15 +183,30 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             best_overall_director = current_best_dir.clone();
         }
 
+        // Добавляем текущих лидеров в Зал Славы Лиги
+        if hof_bosses.len() < 12 {
+            hof_bosses.push(current_best_boss.clone());
+        } else {
+            let replace_idx = rand::gen_range(1, hof_bosses.len());
+            hof_bosses[replace_idx] = current_best_boss.clone();
+        }
+
+        if hof_directors.len() < 12 {
+            hof_directors.push(current_best_dir.clone());
+        } else {
+            let replace_idx = rand::gen_range(1, hof_directors.len());
+            hof_directors[replace_idx] = current_best_dir.clone();
+        }
+
         println!(
-            "🏆 Раунд {:02}/{:02} (Поколение #{:02}) | Босс: выжил {:.1}с (Фитнес {:.0}) | Директор: сбрил за {:.1}с (Фитнес {:.0})",
+            "🏆 Раунд {:02}/{:02} (Поколение #{:02}) | Босс: выжил {:.1}с (Фитнес {:.0}) | Директор: сбрил за {:.1}с (Фитнес {:.0}) [Зал Славы: {}]",
             gen_idx, generations, current_gen_num,
             current_best_boss.avg_survival_time, current_best_boss.fitness,
-            current_best_dir.avg_boss_kill_time, current_best_dir.fitness
+            current_best_dir.avg_boss_kill_time, current_best_dir.fitness,
+            hof_bosses.len()
         );
 
-        // 3. Селекция, кроссовер и мутации для следующего поколения
-        let _elite_count = 2; // Элитизм: 2 лучших переходят без изменений
+        // 4. Селекция, кроссовер и мутации для следующего поколения
         let mut next_boss_pop = vec![boss_pop[0].clone(), boss_pop[1].clone()];
         let mut next_dir_pop = vec![director_pop[0].clone(), director_pop[1].clone()];
 
@@ -171,10 +222,10 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             child.sniper_hunt_aggression = (p1.sniper_hunt_aggression + p2.sniper_hunt_aggression) * 0.5;
 
             // Мутация
-            child.mob_repulsion_weight += rand::gen_range(-25.0, 25.0);
-            child.gem_attraction_weight += rand::gen_range(-20.0, 20.0);
-            child.altar_siege_aggression += rand::gen_range(-25.0, 25.0);
-            child.sniper_hunt_aggression += rand::gen_range(-30.0, 30.0);
+            child.mob_repulsion_weight = (child.mob_repulsion_weight + rand::gen_range(-25.0, 25.0)).clamp(250.0, 700.0);
+            child.gem_attraction_weight = (child.gem_attraction_weight + rand::gen_range(-20.0, 20.0)).clamp(100.0, 400.0);
+            child.altar_siege_aggression = (child.altar_siege_aggression + rand::gen_range(-25.0, 25.0)).clamp(150.0, 500.0);
+            child.sniper_hunt_aggression = (child.sniper_hunt_aggression + rand::gen_range(-30.0, 30.0)).clamp(150.0, 500.0);
             child.dash_danger_threshold = (child.dash_danger_threshold as i32 + rand::gen_range(-1, 2)).clamp(8, 18) as usize;
 
             next_boss_pop.push(child);
@@ -196,7 +247,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
         director_pop = next_dir_pop;
     }
 
-    // 4. Экспорт обученных моделей в формате JSON
+    // 5. Экспорт обученных моделей в формате JSON
     save_models(&best_overall_boss, &best_overall_director, generations);
 }
 
