@@ -1,4 +1,6 @@
 pub mod models;
+pub mod neural_net;
+pub mod sensors;
 pub mod simulation;
 pub mod trainer;
 

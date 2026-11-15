@@ -24,20 +24,41 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     let boss_pos = world.boss_pos;
     let mut total_force = Vec2::ZERO;
 
-    // Параметры ИИ: используются веса обученной нейро-модели (если загружена из models/boss_policy.json)
-    let (repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp) =
+    // Извлекаем сенсорный вектор (36 входов) и пропускаем через глубокую нейросеть
+    let nn_steering_bias;
+    let (repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp, neural_dash_trigger) =
         if let Some(ref model) = world.boss_model {
-            (
-                model.mob_repulsion_weight,
-                model.gem_attraction_weight,
-                model.altar_siege_aggression,
-                model.sniper_hunt_aggression,
-                model.dash_danger_threshold,
-                model.retreat_hp_threshold,
-            )
+            if let Some(ref net) = model.neural_net {
+                let obs = crate::ai::sensors::extract_boss_observations(world);
+                let nn_out = net.forward(&obs);
+                nn_steering_bias = Vec2::new(nn_out[0], nn_out[1]) * 120.0;
+                (
+                    200.0 + nn_out[2] * 500.0,
+                    100.0 + nn_out[3] * 350.0,
+                    150.0 + nn_out[4] * 400.0,
+                    150.0 + nn_out[5] * 400.0,
+                    (8.0 + nn_out[6] * 10.0) as usize,
+                    0.15 + nn_out[7] * 0.35,
+                    nn_out[6] > 0.70,
+                )
+            } else {
+                nn_steering_bias = Vec2::ZERO;
+                (
+                    model.mob_repulsion_weight,
+                    model.gem_attraction_weight,
+                    model.altar_siege_aggression,
+                    model.sniper_hunt_aggression,
+                    model.dash_danger_threshold,
+                    model.retreat_hp_threshold,
+                    false,
+                )
+            }
         } else {
-            (440.0, 180.0, 260.0, 310.0, 13, 0.32)
+            nn_steering_bias = Vec2::ZERO;
+            (440.0, 180.0, 260.0, 310.0, 13, 0.32, false)
         };
+
+    total_force += nn_steering_bias;
 
     let mobs_in_close_radius = world.spatial_grid.query_nearby(boss_pos, 90.0)
         .iter()
@@ -142,11 +163,12 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     }
 
     // 4. Экстренный рывок: 8-лучевой Context Steering Dash
-    // Триггер: в радиусе 90px > dash_threshold мобов ИЛИ HP < retreat_hp ИЛИ плотный обстрел дальников
+    // Триггер: в радиусе 90px > dash_threshold мобов ИЛИ HP < retreat_hp ИЛИ плотный обстрел дальников ИЛИ импульс нейросети
     let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
     let should_dash = (mobs_in_close_radius >= dash_threshold
         || (is_critical_hp && mobs_in_close_radius >= 3)
-        || (heavy_ranged_fire && mobs_in_close_radius >= 4))
+        || (heavy_ranged_fire && mobs_in_close_radius >= 4)
+        || (neural_dash_trigger && mobs_in_close_radius >= 4))
         && world.boss_dash_cooldown <= 0.0;
 
     if should_dash {

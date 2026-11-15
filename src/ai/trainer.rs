@@ -29,14 +29,19 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
     println!("🏛️ Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
     println!("============================================================");
 
-    let seed_boss = crate::ai::load_trained_boss_model().unwrap_or_default();
+    let mut seed_boss = crate::ai::load_trained_boss_model().unwrap_or_default();
+    if seed_boss.neural_net.is_none() {
+        let net = crate::ai::neural_net::NeuralNet::new();
+        seed_boss.total_synapses = net.total_synapses();
+        seed_boss.neural_net = Some(net);
+    }
     let seed_director = crate::ai::load_trained_director_model().unwrap_or_default();
     let base_gen = seed_boss.generation;
 
     if base_gen > 0 {
-        println!("🔄 Дообучение (Warm Start): продолжаем с Поколения {} (Фитнес Босса: {:.0})", base_gen, seed_boss.fitness);
+        println!("🔄 Дообучение (Warm Start): продолжаем с Поколения {} (Фитнес Босса: {:.0}, Синапсов: {})", base_gen, seed_boss.fitness, seed_boss.total_synapses);
     } else {
-        println!("🌱 Начало нового цикла обучения с базовых параметров.");
+        println!("🌱 Начало нового цикла обучения: инициализирована глубокая нейросеть ({} синапсов).", seed_boss.total_synapses);
     }
 
     // 1. Инициализация Зала Славы (Hall of Fame) историческими чемпионами
@@ -49,6 +54,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             let mut m = seed_boss.clone();
             if i > 0 {
                 // Небольшая начальная вариативность для поиска новых оптимумов
+                if let Some(ref mut net) = m.neural_net {
+                    net.mutate(0.12, 0.20);
+                }
                 m.mob_repulsion_weight = (m.mob_repulsion_weight + rand::gen_range(-30.0, 30.0)).clamp(250.0, 700.0);
                 m.gem_attraction_weight = (m.gem_attraction_weight + rand::gen_range(-25.0, 25.0)).clamp(100.0, 400.0);
                 m.sniper_hunt_aggression = (m.sniper_hunt_aggression + rand::gen_range(-30.0, 30.0)).clamp(150.0, 500.0);
@@ -215,6 +223,14 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             let p2 = &boss_pop[rand::gen_range(0, population_size / 2)];
             let mut child = p1.clone();
 
+            // Кроссовер и мутация глубокой нейросети (2,176 синапсов!)
+            if let (Some(net1), Some(net2)) = (&p1.neural_net, &p2.neural_net) {
+                let mut child_net = net1.crossover(net2);
+                child_net.mutate(0.08, 0.20);
+                child.total_synapses = child_net.total_synapses();
+                child.neural_net = Some(child_net);
+            }
+
             // Кроссовер
             child.mob_repulsion_weight = (p1.mob_repulsion_weight + p2.mob_repulsion_weight) * 0.5;
             child.gem_attraction_weight = (p1.gem_attraction_weight + p2.gem_attraction_weight) * 0.5;
@@ -255,8 +271,15 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize) {
     println!("\n💾 СОХРАНЕНИЕ ОБУЧЕННЫХ МОДЕЛЕЙ...");
 
     if let Ok(boss_json) = serde_json::to_string_pretty(boss) {
-        if let Ok(_) = std::fs::write("models/boss_policy.json", boss_json) {
-            println!("  ✅ Модель Босса сохранена в: models/boss_policy.json");
+        if let Ok(_) = std::fs::write("models/boss_policy.json", &boss_json) {
+            println!("  ✅ Полная нейросетевая модель Босса ({} синапсов) сохранена в: models/boss_policy.json", boss.total_synapses);
+        }
+    }
+
+    if let Some(ref net) = boss.neural_net {
+        if let Ok(brain_json) = serde_json::to_string_pretty(net) {
+            let _ = std::fs::write("models/boss_brain_neural.json", brain_json);
+            println!("  🧠 Развернутая матрица синапсов (36 сенсоров, 2 скрытых слоя) сохранена в: models/boss_brain_neural.json");
         }
     }
 

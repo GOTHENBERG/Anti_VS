@@ -6,6 +6,10 @@ pub struct BossModel {
     pub generation: u32,
     pub fitness: f32,
     pub avg_survival_time: f32,
+    pub total_synapses: usize,
+
+    // Полносвязная глубокая нейросеть (36 сенсоров -> 32 -> 24 -> 8 выходов)
+    pub neural_net: Option<crate::ai::neural_net::NeuralNet>,
 
     // Поведенческие веса потенциальных полей
     pub mob_repulsion_weight: f32,      // Сила отталкивания от мобов (300.0 - 600.0)
@@ -30,11 +34,15 @@ pub struct BossModel {
 
 impl Default for BossModel {
     fn default() -> Self {
+        let net = crate::ai::neural_net::NeuralNet::new();
+        let synapses = net.total_synapses();
         Self {
-            version: "v1.0-coev".to_string(),
+            version: "v2.0-neural".to_string(),
             generation: 0,
             fitness: 0.0,
             avg_survival_time: 0.0,
+            total_synapses: synapses,
+            neural_net: Some(net),
             mob_repulsion_weight: 440.0,
             gem_attraction_weight: 220.0,
             altar_siege_aggression: 280.0,
