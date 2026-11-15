@@ -20,6 +20,7 @@ pub struct MatchResult {
     pub damage_dealt_to_boss: f32,
     pub altars_built: usize,
     pub altars_destroyed: usize,
+    pub mobs_spawned_by_tier: [usize; 8],
 }
 
 /// Выполняет один раунд автономной ускоренной симуляции сражения без рендеринга
@@ -33,6 +34,7 @@ pub fn run_headless_simulation(
     let mut sim_time = 0.0f32;
     let mut director_decision_timer = 0.0f32;
     let mut altars_built = 1;
+    let mut mobs_spawned_by_tier = [0usize; 8];
 
     // Начальный алтарь
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
@@ -66,18 +68,29 @@ pub fn run_headless_simulation(
                     }
                 }
 
-                // 1.2 Призыв отрядов монстров (Тиры 1 - 8) на основе весов модели Директора
+                // 1.2 Призыв отрядов монстров (Тиры 1 - 8) на основе вероятностных весов (Рулетка)
                 let remaining_points = if should_spawn_altar { points - BLOOD_ALTAR_COST } else { points };
-                let mut max_weight = 0.0;
+                let mut eligible_squads = Vec::with_capacity(8);
+                let mut total_weight = 0.0f32;
+
                 for (tier_idx, &w) in director_model.squad_spawn_weights.iter().enumerate() {
                     let tier = (tier_idx + 1) as u8;
                     let config = get_squad_config(tier);
                     let is_unlocked = spent >= config.unlock_spent_threshold;
-                    if is_unlocked && remaining_points >= config.cost {
-                        if w > max_weight {
-                            max_weight = w;
-                            tier_to_spawn = Some((tier, config.cost));
+                    if is_unlocked && remaining_points >= config.cost && w > 0.0 {
+                        eligible_squads.push((tier, config.cost, w));
+                        total_weight += w;
+                    }
+                }
+
+                if !eligible_squads.is_empty() && total_weight > 0.0 {
+                    let mut roll = rand::gen_range(0.0, total_weight);
+                    for (tier, cost, w) in eligible_squads {
+                        if roll <= w {
+                            tier_to_spawn = Some((tier, cost));
+                            break;
                         }
+                        roll -= w;
                     }
                 }
             }
@@ -95,6 +108,10 @@ pub fn run_headless_simulation(
                 if let Some(director) = world.directors.first_mut() {
                     if director.spend_points(cost) {
                         spawn_squad_perimeter(&mut world, tier);
+                        if tier >= 1 && tier <= 8 {
+                            let count = get_squad_config(tier).count;
+                            mobs_spawned_by_tier[(tier - 1) as usize] += count;
+                        }
                     }
                 }
             }
@@ -141,6 +158,7 @@ pub fn run_headless_simulation(
         damage_dealt_to_boss: dmg_to_boss,
         altars_built,
         altars_destroyed: altars_built.saturating_sub(world.structures.len()),
+        mobs_spawned_by_tier,
     }
 }
 

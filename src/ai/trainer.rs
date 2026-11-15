@@ -19,6 +19,26 @@ fn detect_gpu_device() -> String {
     "DirectX 12 / Vulkan Hardware Accelerator".to_string()
 }
 
+#[derive(Clone, Debug)]
+struct BossEval {
+    idx: usize,
+    fitness: f32,
+    avg_survival: f32,
+    avg_level: u32,
+    avg_altars_destroyed: usize,
+    avg_altars_built: usize,
+    mobs_spawned: [usize; 8],
+}
+
+#[derive(Clone, Debug)]
+struct DirectorEval {
+    idx: usize,
+    fitness: f32,
+    avg_kill_speed: f32,
+    avg_altars_built: usize,
+    mobs_spawned: [usize; 8],
+}
+
 pub fn run_co_evolutionary_training(generations: usize, population_size: usize) {
     let gpu_info = detect_gpu_device();
     println!("============================================================");
@@ -89,13 +109,16 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
         let current_gen_num = base_gen + gen_idx as u32;
 
         // Оценка фитнеса каждого кандидата в параллельных схватках
-        let boss_results: Vec<(usize, f32, f32, u32)> = (0..population_size)
+        let boss_results: Vec<BossEval> = (0..population_size)
             .into_par_iter()
             .map(|b_idx| {
                 let boss = &boss_pop[b_idx];
                 let mut total_survival = 0.0;
                 let mut total_level = 0;
                 let mut total_score = 0.0;
+                let mut total_altars_destroyed = 0;
+                let mut total_altars_built = 0;
+                let mut total_mobs = [0usize; 8];
                 let matches_count = 3;
 
                 for match_i in 0..matches_count {
@@ -112,6 +135,12 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
 
                     total_survival += res.survival_time;
                     total_level += res.boss_level;
+                    total_altars_destroyed += res.altars_destroyed;
+                    total_altars_built += res.altars_built;
+                    for t in 0..8 {
+                        total_mobs[t] += res.mobs_spawned_by_tier[t];
+                    }
+
                     // Фитнес Босса: время жизни + уровень + уничтоженные алтари
                     let score = res.survival_time * 1.5
                         + (res.boss_level as f32 * 35.0)
@@ -119,22 +148,33 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                     total_score += score;
                 }
 
-                (
-                    b_idx,
-                    total_score / (matches_count as f32),
-                    total_survival / (matches_count as f32),
-                    total_level / (matches_count as u32),
-                )
+                let m_f = matches_count as f32;
+                let mut avg_mobs = [0usize; 8];
+                for t in 0..8 {
+                    avg_mobs[t] = ((total_mobs[t] as f32) / m_f).round() as usize;
+                }
+
+                BossEval {
+                    idx: b_idx,
+                    fitness: total_score / m_f,
+                    avg_survival: total_survival / m_f,
+                    avg_level: (total_level as f32 / m_f).round() as u32,
+                    avg_altars_destroyed: ((total_altars_destroyed as f32) / m_f).round() as usize,
+                    avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
+                    mobs_spawned: avg_mobs,
+                }
             })
             .collect();
 
         // Оценка директоров
-        let director_results: Vec<(usize, f32, f32)> = (0..population_size)
+        let director_results: Vec<DirectorEval> = (0..population_size)
             .into_par_iter()
             .map(|d_idx| {
                 let director = &director_pop[d_idx];
                 let mut total_kill_speed = 0.0;
                 let mut total_score = 0.0;
+                let mut total_altars_built = 0;
+                let mut total_mobs = [0usize; 8];
                 let matches_count = 3;
 
                 for match_i in 0..matches_count {
@@ -154,27 +194,39 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                         + (res.altars_built as f32 * 25.0);
                     total_score += kill_score;
                     total_kill_speed += res.survival_time;
+                    total_altars_built += res.altars_built;
+                    for t in 0..8 {
+                        total_mobs[t] += res.mobs_spawned_by_tier[t];
+                    }
                 }
 
-                (
-                    d_idx,
-                    total_score / (matches_count as f32),
-                    total_kill_speed / (matches_count as f32),
-                )
+                let m_f = matches_count as f32;
+                let mut avg_mobs = [0usize; 8];
+                for t in 0..8 {
+                    avg_mobs[t] = ((total_mobs[t] as f32) / m_f).round() as usize;
+                }
+
+                DirectorEval {
+                    idx: d_idx,
+                    fitness: total_score / m_f,
+                    avg_kill_speed: total_kill_speed / m_f,
+                    avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
+                    mobs_spawned: avg_mobs,
+                }
             })
             .collect();
 
         // Обновляем фитнес в моделях
-        for (idx, score, avg_surv, _) in &boss_results {
-            boss_pop[*idx].fitness = *score;
-            boss_pop[*idx].avg_survival_time = *avg_surv;
-            boss_pop[*idx].generation = current_gen_num;
+        for eval in &boss_results {
+            boss_pop[eval.idx].fitness = eval.fitness;
+            boss_pop[eval.idx].avg_survival_time = eval.avg_survival;
+            boss_pop[eval.idx].generation = current_gen_num;
         }
 
-        for (idx, score, avg_kill) in &director_results {
-            director_pop[*idx].fitness = *score;
-            director_pop[*idx].avg_boss_kill_time = *avg_kill;
-            director_pop[*idx].generation = current_gen_num;
+        for eval in &director_results {
+            director_pop[eval.idx].fitness = eval.fitness;
+            director_pop[eval.idx].avg_boss_kill_time = eval.avg_kill_speed;
+            director_pop[eval.idx].generation = current_gen_num;
         }
 
         // Сортировка по фитнесу (лучшие сверху)
@@ -206,12 +258,35 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             hof_directors[replace_idx] = current_best_dir.clone();
         }
 
+        let best_boss_eval = boss_results
+            .iter()
+            .max_by(|a, b| a.fitness.partial_cmp(&b.fitness).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap();
+        let best_dir_eval = director_results
+            .iter()
+            .max_by(|a, b| a.fitness.partial_cmp(&b.fitness).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap();
+
+        let total_mobs_spawned: usize = best_dir_eval.mobs_spawned.iter().sum();
+
         println!(
-            "🏆 Раунд {:02}/{:02} (Поколение #{:02}) | Босс: выжил {:.1}с (Фитнес {:.0}) | Директор: сбрил за {:.1}с (Фитнес {:.0}) [Зал Славы: {}]",
+            "🏆 Раунд {:02}/{:02} (Поколение #{:02}) | Босс: выжил {:.1}с (Ур. {}, Фитнес {:.0}) | Сломал алтарей: {} | Директор: сбрил за {:.1}с (Построил алтарей: {}, Фитнес {:.0})",
             gen_idx, generations, current_gen_num,
-            current_best_boss.avg_survival_time, current_best_boss.fitness,
-            current_best_dir.avg_boss_kill_time, current_best_dir.fitness,
-            hof_bosses.len()
+            best_boss_eval.avg_survival, best_boss_eval.avg_level, best_boss_eval.fitness,
+            best_boss_eval.avg_altars_destroyed,
+            best_dir_eval.avg_kill_speed, best_dir_eval.avg_altars_built, best_dir_eval.fitness,
+        );
+        println!(
+            "   ↳ 👾 Призвано монстров ({} шт): [💀Скелеты: {}, 🐺Гончие: {}, 🔮Культисты: {}, 🗿Големы: {}, 💣Камикадзе: {}, 👤Демоны: {}, 🔥Огонь: {}, ☠️Жнецы: {}]",
+            total_mobs_spawned,
+            best_dir_eval.mobs_spawned[0],
+            best_dir_eval.mobs_spawned[1],
+            best_dir_eval.mobs_spawned[2],
+            best_dir_eval.mobs_spawned[3],
+            best_dir_eval.mobs_spawned[4],
+            best_dir_eval.mobs_spawned[5],
+            best_dir_eval.mobs_spawned[6],
+            best_dir_eval.mobs_spawned[7],
         );
 
         // 4. Селекция, кроссовер и мутации для следующего поколения
