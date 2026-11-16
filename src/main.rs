@@ -63,7 +63,11 @@ async fn main() {
     let fonts = GameFonts::load();
     let textures = GameTextures::load().await;
     let mut audio = AudioManager::load().await;
-    let mut is_paused = false;
+    let auto_screenshot = std::env::args().any(|a| a == "--screenshot");
+    let auto_codex = std::env::args().any(|a| a == "--codex");
+    let auto_dossier = std::env::args().any(|a| a == "--dossier");
+    let auto_settings = std::env::args().any(|a| a == "--settings" || a == "--pause");
+    let mut is_paused = auto_settings;
     let mut boss_death_sound_played = false;
 
     // Скрываем стандартный системный курсор мыши (заменяем демонической дланью Повелителя)
@@ -73,9 +77,6 @@ async fn main() {
     let mut cam_pos = world.boss_pos;
     let mut cam_zoom: f32 = 0.95;
     let mut follow_boss = true;
-    let auto_screenshot = std::env::args().any(|a| a == "--screenshot");
-    let auto_codex = std::env::args().any(|a| a == "--codex");
-    let auto_dossier = std::env::args().any(|a| a == "--dossier");
     let mut show_codex = auto_codex;
     let mut codex_tab: usize = 0;
     let mut frame_count = 0;
@@ -89,7 +90,7 @@ async fn main() {
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
 
     // Запуск фоновой боевой темы (Symphonic Metal / Dark Gothic)
-    if !auto_screenshot && !auto_codex && !auto_dossier {
+    if !auto_screenshot && !auto_codex && !auto_dossier && !auto_settings {
         audio.start_music();
     }
 
@@ -182,7 +183,7 @@ async fn main() {
                 }
             }
         }
-        // Закрытие окон по Esc
+        // Закрытие окон или открытие настроек по Esc
         if is_key_pressed(KeyCode::Escape) {
             if active_dossier_tier.is_some() {
                 active_dossier_tier = None;
@@ -194,6 +195,9 @@ async fn main() {
             } else if show_codex {
                 show_codex = false;
                 audio.handle_event(crate::audio::AudioEvent::BookClose);
+            } else {
+                is_paused = !is_paused;
+                audio.handle_event(crate::audio::AudioEvent::UiClick);
             }
         }
 
@@ -357,14 +361,39 @@ async fn main() {
                 }
             }
         } else if is_paused && !is_game_over {
-            draw_pause_screen(&fonts);
+            let action = crate::render::settings::draw_pause_settings(&fonts, &mut audio);
+            match action {
+                crate::render::settings::SettingsAction::Resume => {
+                    is_paused = false;
+                }
+                crate::render::settings::SettingsAction::Restart => {
+                    world = World::new();
+                    clock = GameClock::new();
+                    cam_pos = world.boss_pos;
+                    follow_boss = true;
+                    spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
+                    is_paused = false;
+                    show_codex = false;
+                    active_dossier_tier = None;
+                    boss_death_sound_played = false;
+                    if !audio.is_muted && !audio.is_music_playing {
+                        audio.start_music();
+                    }
+                }
+                crate::render::settings::SettingsAction::OpenCodex => {
+                    is_paused = false;
+                    show_codex = true;
+                    active_dossier_tier = None;
+                }
+                crate::render::settings::SettingsAction::None => {}
+            }
         } else if is_game_over {
             let victory = !world.boss_health.is_alive();
             draw_game_over(&world, &clock, victory, &fonts);
         }
 
         // 8. Отрисовка тематичного курсора Повелителя поверх всех окон
-        let is_hovering = ui_interaction.is_mouse_over_ui || show_codex || active_dossier_tier.is_some();
+        let is_hovering = ui_interaction.is_mouse_over_ui || show_codex || active_dossier_tier.is_some() || is_paused;
         draw_overlord_cursor(
             current_mpos,
             is_mouse_button_down(MouseButton::Left),
@@ -374,7 +403,9 @@ async fn main() {
 
         // Авто-скриншот после отрисовки кадра
         if auto_screenshot && frame_count == 60 {
-            if auto_dossier {
+            if auto_settings {
+                get_screen_data().export_png("screenshot_settings.png");
+            } else if auto_dossier {
                 get_screen_data().export_png("screenshot_dossier.png");
             } else if auto_codex {
                 get_screen_data().export_png("screenshot_codex.png");
@@ -650,17 +681,6 @@ fn execute_command(world: &mut World, cmd: Command) {
         }
         _ => {}
     }
-}
-
-fn draw_pause_screen(fonts: &GameFonts) {
-    let screen_w = screen_width();
-    let screen_h = screen_height();
-
-    draw_rectangle(0.0, 0.0, screen_w, screen_h, Color::new(0.0, 0.0, 0.0, 0.65));
-    let text = "ПАУЗА (НАЖМИТЕ ПРОБЕЛ ИЛИ P ДЛЯ ПРОДОЛЖЕНИЯ)";
-    let font_size = 34.0;
-    let tw = fonts.measure_text(text, font_size).width;
-    fonts.draw_text(text, (screen_w - tw) / 2.0, screen_h / 2.0, font_size, YELLOW);
 }
 
 fn draw_game_over(world: &World, clock: &GameClock, victory: bool, fonts: &GameFonts) {

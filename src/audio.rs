@@ -1,4 +1,4 @@
-use macroquad::audio::{load_sound, play_sound, PlaySoundParams, Sound, stop_sound};
+use macroquad::audio::{load_sound, play_sound, set_sound_volume, stop_sound, PlaySoundParams, Sound};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioEvent {
@@ -42,6 +42,8 @@ pub struct AudioManager {
     pub book_close: Option<Sound>,
     pub is_music_playing: bool,
     pub is_muted: bool,
+    pub sfx_volume: f32,    // По умолчанию 10% (0.10)
+    pub music_volume: f32,  // По умолчанию 3% (0.03)
 }
 
 impl AudioManager {
@@ -86,17 +88,18 @@ impl AudioManager {
             book_close,
             is_music_playing: false,
             is_muted: false,
+            sfx_volume: 0.10,   // Звуки по умолчанию на 10%
+            music_volume: 0.03, // Музыка по умолчанию на 3%
         }
     }
 
     pub fn start_music(&mut self) {
-        if self.is_muted { return; }
         if let Some(sound) = &self.music_battle {
             play_sound(
                 sound,
                 PlaySoundParams {
                     looped: true,
-                    volume: 0.50,
+                    volume: if self.is_muted { 0.0 } else { self.music_volume },
                 },
             );
             self.is_music_playing = true;
@@ -112,11 +115,30 @@ impl AudioManager {
 
     pub fn toggle_mute(&mut self) {
         self.is_muted = !self.is_muted;
-        if self.is_muted {
-            self.stop_music();
-        } else {
-            self.start_music();
+        if let Some(sound) = &self.music_battle {
+            if self.is_muted {
+                set_sound_volume(sound, 0.0);
+            } else {
+                if !self.is_music_playing {
+                    self.start_music();
+                } else {
+                    set_sound_volume(sound, self.music_volume);
+                }
+            }
         }
+    }
+
+    pub fn set_music_volume(&mut self, vol: f32) {
+        self.music_volume = vol.clamp(0.0, 1.0);
+        if let Some(sound) = &self.music_battle {
+            if self.is_music_playing && !self.is_muted {
+                set_sound_volume(sound, self.music_volume);
+            }
+        }
+    }
+
+    pub fn set_sfx_volume(&mut self, vol: f32) {
+        self.sfx_volume = vol.clamp(0.0, 1.0);
     }
 
     pub fn handle_event(&self, event: AudioEvent) {
@@ -158,13 +180,16 @@ impl AudioManager {
 
     fn play_sfx(&self, sound: Option<&Sound>, volume: f32) {
         if let Some(s) = sound {
-            play_sound(
-                s,
-                PlaySoundParams {
-                    looped: false,
-                    volume,
-                },
-            );
+            let final_vol = (volume * self.sfx_volume).clamp(0.0, 1.0);
+            if final_vol > 0.0005 {
+                play_sound(
+                    s,
+                    PlaySoundParams {
+                        looped: false,
+                        volume: final_vol,
+                    },
+                );
+            }
         }
     }
 }
