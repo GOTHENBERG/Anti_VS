@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::core::rand;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction};
 use crate::ecs::components::inventory::WeaponType;
 use crate::ecs::world::{AcidPoolEntity, ProjectileEntity, World};
@@ -89,6 +90,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
     let spd_mult = world.boss_inventory.get_projectile_speed_multiplier();
 
     // Вращение орбит для Бури Клинков и Праведного Щита
+    world.game_time += dt;
     world.blade_storm_angle = (world.blade_storm_angle + dt * 6.0) % (std::f32::consts::PI * 2.0);
     world.divine_shield_angle = (world.divine_shield_angle + dt * 4.0) % (std::f32::consts::PI * 2.0);
 
@@ -949,7 +951,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                 WeaponType::AegisOrbiters => {
                     let count = 2 + weapon.bonus_projectiles as usize;
                     for i in 0..count {
-                        let base_angle = (get_time() as f32 * 3.5) + (i as f32 * std::f32::consts::PI * 2.0 / count as f32);
+                        let base_angle = (world.game_time * 3.5) + (i as f32 * std::f32::consts::PI * 2.0 / count as f32);
                         let dir = Vec2::new(base_angle.cos(), base_angle.sin());
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
@@ -971,7 +973,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                 WeaponType::InvincibleBastion => {
                     let count = 4 + weapon.bonus_projectiles as usize;
                     for i in 0..count {
-                        let base_angle = (get_time() as f32 * 4.0) + (i as f32 * std::f32::consts::PI * 0.5);
+                        let base_angle = (world.game_time * 4.0) + (i as f32 * std::f32::consts::PI * 0.5);
                         let dir = Vec2::new(base_angle.cos(), base_angle.sin());
                         new_projectiles.push(ProjectileEntity {
                             id: 0,

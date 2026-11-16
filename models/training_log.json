@@ -1,8 +1,8 @@
 {
-  "total_generations": 150,
-  "total_matches_played": 5400,
-  "best_boss_survival_time": 488.30432,
+  "total_generations": 1,
+  "total_matches_played": 36,
+  "best_boss_survival_time": 565.90204,
   "best_boss_level": 28,
-  "best_director_kill_time": 168.79128,
+  "best_director_kill_time": 589.74615,
   "timestamp": "2026-11-16"
 }

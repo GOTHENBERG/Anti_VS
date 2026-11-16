@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::core::rand;
 use crate::core::spatial_grid::SpatialGrid;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction, Health, Resistances, StatusEffects};
 use crate::ecs::components::inventory::{BossInventory, WeaponType};
@@ -146,6 +147,7 @@ pub struct World {
     pub boss_dash_cooldown: f32,
     pub boss_invulnerable_timer: f32,
     pub boss_still_time: f32, // Время стояния на месте (для медитации)
+    pub game_time: f32, // Игровое время симуляции / сессии
 
     // Углы вращения для эволюций
     pub blade_storm_angle: f32,
@@ -201,6 +203,7 @@ impl World {
             boss_dash_cooldown: 0.0,
             boss_invulnerable_timer: 0.0,
             boss_still_time: 0.0,
+            game_time: 0.0,
             blade_storm_angle: 0.0,
             divine_shield_angle: 0.0,
             death_ray_active: None,

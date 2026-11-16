@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::core::rand;
 use crate::core::math::{calculate_attract_force, calculate_repel_force};
 use crate::ecs::components::inventory::{
     BossInventory, PassiveType, PerkChoice, WeaponType, MAX_PASSIVE_LEVEL, MAX_PASSIVE_SLOTS,

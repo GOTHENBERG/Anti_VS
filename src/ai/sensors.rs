@@ -90,12 +90,12 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     obs[30] = altar_vec.x;
     obs[31] = altar_vec.y;
 
-    // 6. [32..34] Вектор к ближайшему кластеру культистов-стрелков
+    // 6. [32..34] Вектор к ближайшему кластеру снайперов-стрелков (Тир 3 и Тир 11)
     let mut closest_sniper_dist = 450.0f32;
     let mut sniper_vec = Vec2::ZERO;
     for idx in &world.spatial_grid.query_nearby(boss_pos, 450.0) {
         if let Some(mob) = world.mobs.get(*idx) {
-            if mob.tier == 3 {
+            if mob.tier == 3 || mob.tier == 11 {
                 let dist = mob.pos.distance(boss_pos);
                 if dist < closest_sniper_dist {
                     closest_sniper_dist = dist;

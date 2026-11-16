@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::core::rand;
 use crate::ecs::components::combat::{Health, Resistances, StatusEffects};
 use crate::ecs::world::{MobEntity, World};
 

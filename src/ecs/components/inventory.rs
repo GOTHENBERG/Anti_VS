@@ -263,11 +263,11 @@ impl BossInventory {
     /// Ткач Судьбы (57-листный клевер): перебрасывает неудачные шансы
     pub fn roll_luck(&self, chance: f32) -> bool {
         let has_clover = self.has_passive(PassiveType::FateWeaver);
-        let roll1 = macroquad::rand::gen_range(0.0, 1.0) < chance;
+        let roll1 = crate::core::rand::gen_range(0.0, 1.0) < chance;
         if roll1 || !has_clover {
             roll1
         } else {
-            macroquad::rand::gen_range(0.0, 1.0) < chance
+            crate::core::rand::gen_range(0.0, 1.0) < chance
         }
     }
 

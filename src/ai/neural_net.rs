@@ -1,4 +1,4 @@
-use macroquad::rand;
+use crate::core::rand;
 use serde::{Deserialize, Serialize};
 
 pub const INPUT_SIZE: usize = 36;

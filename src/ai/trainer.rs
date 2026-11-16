@@ -1,4 +1,4 @@
-use macroquad::rand;
+use crate::core::rand;
 use rayon::prelude::*;
 use crate::ai::models::{BossModel, DirectorModel, TrainingStats};
 use crate::ai::simulation::run_headless_simulation;
@@ -28,7 +28,7 @@ struct BossEval {
     avg_damage_taken: f32,
     avg_altars_destroyed: usize,
     avg_altars_built: usize,
-    mobs_spawned: [usize; 8],
+    mobs_spawned: [usize; 16],
 }
 
 #[derive(Clone, Debug)]
@@ -38,7 +38,7 @@ struct DirectorEval {
     avg_kill_speed: f32,
     avg_damage_dealt: f32,
     avg_altars_built: usize,
-    mobs_spawned: [usize; 8],
+    mobs_spawned: [usize; 16],
     grades: (u32, u32, u32),
 }
 
@@ -122,7 +122,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                 let mut total_damage_taken = 0.0;
                 let mut total_altars_destroyed = 0;
                 let mut total_altars_built = 0;
-                let mut total_mobs = [0usize; 8];
+                let mut total_mobs = [0usize; 16];
                 let matches_count = 3;
 
                 for match_i in 0..matches_count {
@@ -142,7 +142,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                     total_damage_taken += res.damage_dealt_to_boss;
                     total_altars_destroyed += res.altars_destroyed;
                     total_altars_built += res.altars_built;
-                    for t in 0..8 {
+                    for t in 0..16 {
                         total_mobs[t] += res.mobs_spawned_by_tier[t];
                     }
 
@@ -163,8 +163,8 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                 }
 
                 let m_f = matches_count as f32;
-                let mut avg_mobs = [0usize; 8];
-                for t in 0..8 {
+                let mut avg_mobs = [0usize; 16];
+                for t in 0..16 {
                     avg_mobs[t] = ((total_mobs[t] as f32) / m_f).round() as usize;
                 }
 
@@ -190,7 +190,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                 let mut total_score = 0.0;
                 let mut total_damage_dealt = 0.0;
                 let mut total_altars_built = 0;
-                let mut total_mobs = [0usize; 8];
+                let mut total_mobs = [0usize; 16];
                 let mut last_grades = (0, 0, 0);
                 let matches_count = 3;
 
@@ -231,14 +231,14 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                     total_damage_dealt += res.damage_dealt_to_boss;
                     total_altars_built += res.altars_built;
                     last_grades = res.director_grades;
-                    for t in 0..8 {
+                    for t in 0..16 {
                         total_mobs[t] += res.mobs_spawned_by_tier[t];
                     }
                 }
 
                 let m_f = matches_count as f32;
-                let mut avg_mobs = [0usize; 8];
-                for t in 0..8 {
+                let mut avg_mobs = [0usize; 16];
+                for t in 0..16 {
                     avg_mobs[t] = ((total_mobs[t] as f32) / m_f).round() as usize;
                 }
 
@@ -336,8 +336,11 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             best_dir_eval.grades.0, best_dir_eval.grades.1, best_dir_eval.grades.2,
         );
         println!(
-            "      ↳ 👾 Призвано монстров ({} шт): [💀Скелеты: {}, 🐺Гончие: {}, 🔮Культисты: {}, 🗿Големы: {}, 💣Камикадзе: {}, 👤Демоны: {}, 🔥Огонь: {}, ☠️Жнецы: {}]",
+            "      ↳ 👾 Всего призвано монстров: {} шт",
             total_mobs_spawned,
+        );
+        println!(
+            "      ↳ ⚔️ Орда (Тир 1-8): [💀Скелеты: {}, 🐺Гончие: {}, 🔮Культисты: {}, 🗿Големы: {}, 💣Камикадзе: {}, 👤Демоны: {}, 🔥Огонь: {}, ☠️Жнецы: {}]",
             best_dir_eval.mobs_spawned[0],
             best_dir_eval.mobs_spawned[1],
             best_dir_eval.mobs_spawned[2],
@@ -347,6 +350,20 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             best_dir_eval.mobs_spawned[6],
             best_dir_eval.mobs_spawned[7],
         );
+        let legion_total: usize = best_dir_eval.mobs_spawned[8..16].iter().sum();
+        if legion_total > 0 {
+            println!(
+                "      ↳ 🔥 Легион (Тир 9-16): [🛡️Фаланга: {}, 🐕Церберы: {}, 🌌Архикультисты: {}, 🏰Колоссы: {}, ☢️Мучители: {}, 👥Ловчие: {}, ☀️Архонты: {}, 🌑Аватар: {}]",
+                best_dir_eval.mobs_spawned[8],
+                best_dir_eval.mobs_spawned[9],
+                best_dir_eval.mobs_spawned[10],
+                best_dir_eval.mobs_spawned[11],
+                best_dir_eval.mobs_spawned[12],
+                best_dir_eval.mobs_spawned[13],
+                best_dir_eval.mobs_spawned[14],
+                best_dir_eval.mobs_spawned[15],
+            );
+        }
 
         // 4. Селекция, кроссовер и мутации для следующего поколения
         let mut next_boss_pop = vec![boss_pop[0].clone(), boss_pop[1].clone()];

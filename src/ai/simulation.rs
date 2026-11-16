@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::core::rand;
 use crate::ai::models::{BossModel, DirectorModel};
 use crate::content::mobs::{get_squad_config, spawn_squad_perimeter};
 use crate::content::structures::{spawn_blood_altar, BLOOD_ALTAR_COST};
@@ -20,7 +21,7 @@ pub struct MatchResult {
     pub damage_dealt_to_boss: f32,
     pub altars_built: usize,
     pub altars_destroyed: usize,
-    pub mobs_spawned_by_tier: [usize; 8],
+    pub mobs_spawned_by_tier: [usize; 16],
     pub director_grades: (u32, u32, u32),
 }
 
@@ -35,7 +36,7 @@ pub fn run_headless_simulation(
     let mut sim_time = 0.0f32;
     let mut director_decision_timer = 0.0f32;
     let mut altars_built = 1;
-    let mut mobs_spawned_by_tier = [0usize; 8];
+    let mut mobs_spawned_by_tier = [0usize; 16];
 
     // Начальный алтарь
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
@@ -109,7 +110,7 @@ pub fn run_headless_simulation(
                 if let Some(director) = world.directors.first_mut() {
                     if director.spend_points(cost) {
                         spawn_squad_perimeter(&mut world, tier);
-                        if tier >= 1 && tier <= 8 {
+                        if tier >= 1 && tier <= 16 {
                             let count = get_squad_config(tier).count;
                             mobs_spawned_by_tier[(tier - 1) as usize] += count;
                         }
@@ -248,7 +249,7 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
     let cultists: Vec<Vec2> = world.spatial_grid.query_nearby(boss_pos, 420.0)
         .iter()
         .filter_map(|&idx| world.mobs.get(idx))
-        .filter(|m| m.tier == 3)
+        .filter(|m| m.tier == 3 || m.tier == 11)
         .map(|m| m.pos)
         .collect();
 

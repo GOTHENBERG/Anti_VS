@@ -186,7 +186,7 @@ impl AudioManager {
     pub fn shuffle_start(&mut self) {
         if self.playlist.is_empty() { return; }
         self.stop_music();
-        self.current_track_idx = macroquad::rand::gen_range(0, self.playlist.len());
+        self.current_track_idx = crate::core::rand::gen_range(0, self.playlist.len());
         self.track_elapsed = 0.0;
         if !self.is_muted {
             self.start_music();

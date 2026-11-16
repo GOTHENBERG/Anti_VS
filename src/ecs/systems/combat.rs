@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::core::rand;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction};
 use crate::ecs::components::inventory::{PassiveType, WeaponType};
 use crate::ecs::systems::boss_ai::handle_boss_level_up;
