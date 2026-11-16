@@ -21,8 +21,21 @@ pub enum AudioEvent {
     BookClose,
 }
 
+pub struct MusicTrack {
+    pub title: &'static str,
+    pub sound: Sound,
+    pub duration: f32,
+}
+
 pub struct AudioManager {
-    pub music_battle: Option<Sound>,
+    pub playlist: Vec<MusicTrack>,
+    pub current_track_idx: usize,
+    pub track_elapsed: f32,
+    pub is_music_playing: bool,
+    pub is_muted: bool,
+    pub sfx_volume: f32,    // По умолчанию 10% (0.10)
+    pub music_volume: f32,  // По умолчанию 3% (0.03)
+
     pub boss_hit: Option<Sound>,
     pub boss_dash: Option<Sound>,
     pub boss_level_up: Option<Sound>,
@@ -40,15 +53,45 @@ pub struct AudioManager {
     pub ui_click: Option<Sound>,
     pub book_open: Option<Sound>,
     pub book_close: Option<Sound>,
-    pub is_music_playing: bool,
-    pub is_muted: bool,
-    pub sfx_volume: f32,    // По умолчанию 10% (0.10)
-    pub music_volume: f32,  // По умолчанию 3% (0.03)
 }
 
 impl AudioManager {
     pub async fn load() -> Self {
-        let music_battle = load_sound("assets/audio/music_battle.ogg").await.ok();
+        // Динамичный, энергичный джазовый и симфонический плейлист для долгих матчей (17+ минут)
+        let tracks_def: [(&'static str, &'static str, f32); 9] = [
+            ("Faster Does It (Big Band Swing)", "assets/audio/playlist/track_01_faster_does_it.ogg", 181.8),
+            ("Fast Talkin (Speakeasy Swing)", "assets/audio/playlist/track_02_fast_talkin.ogg", 59.2),
+            ("Hot Swing (Dixie Brass Rush)", "assets/audio/playlist/track_03_hot_swing.ogg", 50.1),
+            ("Hep Cats (Uptempo Swing)", "assets/audio/playlist/track_04_hep_cats.ogg", 250.7),
+            ("Awesome Call (Funk Jazz Fusion)", "assets/audio/playlist/track_05_awesome_call.ogg", 152.1),
+            ("George Street (Shuffle Jazz)", "assets/audio/playlist/track_06_george_street.ogg", 268.3),
+            ("In Your Arms (Happy Swing)", "assets/audio/playlist/track_07_in_your_arms.ogg", 168.8),
+            ("Cool Blast (Brass Battle)", "assets/audio/playlist/track_08_cool_blast.ogg", 76.6),
+            ("Strength Of The Titans (Symphonic)", "assets/audio/playlist/track_09_titans.ogg", 61.9),
+        ];
+
+        let mut playlist = Vec::new();
+        for (title, path, duration) in tracks_def {
+            if let Ok(sound) = load_sound(path).await {
+                playlist.push(MusicTrack {
+                    title,
+                    sound,
+                    duration,
+                });
+            }
+        }
+
+        // Резервный fallback на базовую тему, если папка playlist отсутствует
+        if playlist.is_empty() {
+            if let Ok(sound) = load_sound("assets/audio/music_battle.ogg").await {
+                playlist.push(MusicTrack {
+                    title: "Catchy Swing (Fallback)",
+                    sound,
+                    duration: 120.0,
+                });
+            }
+        }
+
         let boss_hit = load_sound("assets/audio/boss_hit.ogg").await.ok();
         let boss_dash = load_sound("assets/audio/boss_dash.wav").await.ok();
         let boss_level_up = load_sound("assets/audio/boss_level_up.ogg").await.ok();
@@ -68,7 +111,13 @@ impl AudioManager {
         let book_close = load_sound("assets/audio/book_close.ogg").await.ok();
 
         Self {
-            music_battle,
+            playlist,
+            current_track_idx: 0,
+            track_elapsed: 0.0,
+            is_music_playing: false,
+            is_muted: false,
+            sfx_volume: 0.10,   // Звуки по умолчанию на 10%
+            music_volume: 0.03, // Музыка по умолчанию на 3%
             boss_hit,
             boss_dash,
             boss_level_up,
@@ -86,19 +135,16 @@ impl AudioManager {
             ui_click,
             book_open,
             book_close,
-            is_music_playing: false,
-            is_muted: false,
-            sfx_volume: 0.10,   // Звуки по умолчанию на 10%
-            music_volume: 0.03, // Музыка по умолчанию на 3%
         }
     }
 
     pub fn start_music(&mut self) {
-        if let Some(sound) = &self.music_battle {
+        if self.playlist.is_empty() { return; }
+        if let Some(track) = self.playlist.get(self.current_track_idx) {
             play_sound(
-                sound,
+                &track.sound,
                 PlaySoundParams {
-                    looped: true,
+                    looped: false,
                     volume: if self.is_muted { 0.0 } else { self.music_volume },
                 },
             );
@@ -107,22 +153,56 @@ impl AudioManager {
     }
 
     pub fn stop_music(&mut self) {
-        if let Some(sound) = &self.music_battle {
-            stop_sound(sound);
+        if let Some(track) = self.playlist.get(self.current_track_idx) {
+            stop_sound(&track.sound);
             self.is_music_playing = false;
+        }
+    }
+
+    pub fn next_track(&mut self) {
+        if self.playlist.is_empty() { return; }
+        self.stop_music();
+        self.current_track_idx = (self.current_track_idx + 1) % self.playlist.len();
+        self.track_elapsed = 0.0;
+        if !self.is_muted {
+            self.start_music();
+        }
+    }
+
+    pub fn prev_track(&mut self) {
+        if self.playlist.is_empty() { return; }
+        self.stop_music();
+        self.current_track_idx = if self.current_track_idx == 0 {
+            self.playlist.len() - 1
+        } else {
+            self.current_track_idx - 1
+        };
+        self.track_elapsed = 0.0;
+        if !self.is_muted {
+            self.start_music();
+        }
+    }
+
+    pub fn shuffle_start(&mut self) {
+        if self.playlist.is_empty() { return; }
+        self.stop_music();
+        self.current_track_idx = macroquad::rand::gen_range(0, self.playlist.len());
+        self.track_elapsed = 0.0;
+        if !self.is_muted {
+            self.start_music();
         }
     }
 
     pub fn toggle_mute(&mut self) {
         self.is_muted = !self.is_muted;
-        if let Some(sound) = &self.music_battle {
+        if let Some(track) = self.playlist.get(self.current_track_idx) {
             if self.is_muted {
-                set_sound_volume(sound, 0.0);
+                set_sound_volume(&track.sound, 0.0);
             } else {
                 if !self.is_music_playing {
                     self.start_music();
                 } else {
-                    set_sound_volume(sound, self.music_volume);
+                    set_sound_volume(&track.sound, self.music_volume);
                 }
             }
         }
@@ -130,9 +210,9 @@ impl AudioManager {
 
     pub fn set_music_volume(&mut self, vol: f32) {
         self.music_volume = vol.clamp(0.0, 1.0);
-        if let Some(sound) = &self.music_battle {
+        if let Some(track) = self.playlist.get(self.current_track_idx) {
             if self.is_music_playing && !self.is_muted {
-                set_sound_volume(sound, self.music_volume);
+                set_sound_volume(&track.sound, self.music_volume);
             }
         }
     }
@@ -141,11 +221,40 @@ impl AudioManager {
         self.sfx_volume = vol.clamp(0.0, 1.0);
     }
 
-    /// Пространственное позиционирование музыки: джаз исходит от босса.
-    /// Чем ближе камера к боссу, тем ярче и сочнее звучит джаз;
+    pub fn get_current_track_title(&self) -> &str {
+        self.playlist.get(self.current_track_idx)
+            .map(|t| t.title)
+            .unwrap_or("Нет трека")
+    }
+
+    pub fn get_current_track_progress(&self) -> (f32, f32) {
+        if let Some(track) = self.playlist.get(self.current_track_idx) {
+            (self.track_elapsed.min(track.duration), track.duration)
+        } else {
+            (0.0, 1.0)
+        }
+    }
+
+    pub fn get_current_track_index_and_total(&self) -> (usize, usize) {
+        (self.current_track_idx + 1, self.playlist.len())
+    }
+
+    /// Обновление времени воспроизведения и пространственное позиционирование:
+    /// Музыка исходит от босса. Чем ближе камера к боссу, тем ярче и сочнее звучит музыка;
     /// при удалении камеры на край арены музыка плавно затухает.
-    pub fn update_spatial_music(&mut self, cam_pos: macroquad::prelude::Vec2, boss_pos: macroquad::prelude::Vec2) {
-        if self.is_muted || !self.is_music_playing { return; }
+    /// Когда трек завершается, автоматически стартует следующий трек плейлиста!
+    pub fn update_music(&mut self, dt: f32, cam_pos: macroquad::prelude::Vec2, boss_pos: macroquad::prelude::Vec2) {
+        if self.playlist.is_empty() { return; }
+        if !self.is_music_playing { return; }
+
+        self.track_elapsed += dt;
+        let track_dur = self.playlist[self.current_track_idx].duration;
+        if self.track_elapsed >= track_dur {
+            self.next_track();
+            return;
+        }
+
+        if self.is_muted { return; }
         let dist = cam_pos.distance(boss_pos);
         let max_dist = 1800.0;
         let factor = if dist <= 300.0 {
@@ -155,8 +264,24 @@ impl AudioManager {
             1.0 - t * 0.82
         };
         let effective_vol = (self.music_volume * factor).clamp(0.0, 1.0);
-        if let Some(sound) = &self.music_battle {
-            set_sound_volume(sound, effective_vol);
+        if let Some(track) = self.playlist.get(self.current_track_idx) {
+            set_sound_volume(&track.sound, effective_vol);
+        }
+    }
+
+    pub fn update_spatial_music(&mut self, cam_pos: macroquad::prelude::Vec2, boss_pos: macroquad::prelude::Vec2) {
+        if self.is_muted || !self.is_music_playing { return; }
+        if let Some(track) = self.playlist.get(self.current_track_idx) {
+            let dist = cam_pos.distance(boss_pos);
+            let max_dist = 1800.0;
+            let factor = if dist <= 300.0 {
+                1.0
+            } else {
+                let t = ((dist - 300.0) / (max_dist - 300.0)).clamp(0.0, 1.0);
+                1.0 - t * 0.82
+            };
+            let effective_vol = (self.music_volume * factor).clamp(0.0, 1.0);
+            set_sound_volume(&track.sound, effective_vol);
         }
     }
 

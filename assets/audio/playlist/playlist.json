@@ -1,0 +1,56 @@
+[
+  {
+    "id": "faster_does_it",
+    "title": "Faster Does It (Big Band Swing)",
+    "file": "track_01_faster_does_it.ogg",
+    "duration": 181.838367
+  },
+  {
+    "id": "fast_talkin",
+    "title": "Fast Talkin (Speakeasy Swing)",
+    "file": "track_02_fast_talkin.ogg",
+    "duration": 59.219592
+  },
+  {
+    "id": "hot_swing",
+    "title": "Hot Swing (Dixie Brass Rush)",
+    "file": "track_03_hot_swing.ogg",
+    "duration": 50.064014
+  },
+  {
+    "id": "hep_cats",
+    "title": "Hep Cats (Uptempo Swing)",
+    "file": "track_04_hep_cats.ogg",
+    "duration": 250.723265
+  },
+  {
+    "id": "awesome_call",
+    "title": "Awesome Call (Funk Jazz Fusion)",
+    "file": "track_05_awesome_call.ogg",
+    "duration": 152.058776
+  },
+  {
+    "id": "george_street",
+    "title": "George Street (Shuffle Jazz)",
+    "file": "track_06_george_street.ogg",
+    "duration": 268.303673
+  },
+  {
+    "id": "in_your_arms",
+    "title": "In Your Arms (Happy Swing)",
+    "file": "track_07_in_your_arms.ogg",
+    "duration": 168.75102
+  },
+  {
+    "id": "cool_blast",
+    "title": "Cool Blast (Brass Battle)",
+    "file": "track_08_cool_blast.ogg",
+    "duration": 76.617143
+  },
+  {
+    "id": "titans",
+    "title": "Strength Of The Titans (Symphonic)",
+    "file": "track_09_titans.ogg",
+    "duration": 61.885147
+  }
+]

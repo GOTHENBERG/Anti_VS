@@ -89,9 +89,9 @@ async fn main() {
     // Начальный разрушаемый алтарь игрока
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
 
-    // Запуск фоновой боевой темы (Symphonic Metal / Dark Gothic)
+    // Запуск динамичного джазового / симфонического плейлиста (со случайного трека)
     if !auto_screenshot && !auto_codex && !auto_dossier && !auto_settings {
-        audio.start_music();
+        audio.shuffle_start();
     }
 
     loop {
@@ -217,6 +217,16 @@ async fn main() {
             boss_death_sound_played = true;
         }
 
+        // Управление плейлистом: N — след. трек, P — пред. трек
+        if is_key_pressed(KeyCode::N) {
+            audio.next_track();
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
+        }
+        if is_key_pressed(KeyCode::P) {
+            audio.prev_track();
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
+        }
+
         if is_key_pressed(KeyCode::R) {
             world = World::new();
             clock = GameClock::new();
@@ -227,9 +237,7 @@ async fn main() {
             show_codex = false;
             active_dossier_tier = None;
             boss_death_sound_played = false;
-            if !audio.is_muted && !audio.is_music_playing {
-                audio.start_music();
-            }
+            audio.shuffle_start();
         }
 
         // 1. Управление камерой на большой карте: WASD + колесо мыши + центрирование по C
@@ -266,7 +274,9 @@ async fn main() {
             update_movement(&mut world, dt);
             update_combat(&mut world, dt);
             audio.process_events(&mut world);
-            audio.update_spatial_music(cam_pos, world.boss_pos);
+            audio.update_music(dt, cam_pos, world.boss_pos);
+        } else {
+            audio.update_music(dt, cam_pos, world.boss_pos);
         }
 
         // 5. Отрисовка мира через камеру
@@ -275,11 +285,15 @@ async fn main() {
 
         // 6. Отрисовка интерфейса на экране (screen-space)
         set_default_camera();
-        let ui_interaction = render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures, audio.is_muted);
+        let ui_interaction = render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures, audio.is_muted, audio.get_current_track_title());
 
         // Обработка интеракций из UI
         if ui_interaction.clicked_sound_toggle {
             audio.toggle_mute();
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
+        }
+        if ui_interaction.clicked_next_track {
+            audio.next_track();
             audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
         if ui_interaction.clicked_pause {
@@ -381,9 +395,7 @@ async fn main() {
                     show_codex = false;
                     active_dossier_tier = None;
                     boss_death_sound_played = false;
-                    if !audio.is_muted && !audio.is_music_playing {
-                        audio.start_music();
-                    }
+                    audio.shuffle_start();
                 }
                 crate::render::settings::SettingsAction::OpenCodex => {
                     is_paused = false;

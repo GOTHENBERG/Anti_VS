@@ -20,6 +20,7 @@ pub struct UiInteraction {
     pub clicked_pause: bool,
     pub clicked_codex: bool,
     pub clicked_sound_toggle: bool,
+    pub clicked_next_track: bool,
     pub is_mouse_over_ui: bool,
     pub map_click_world_pos: Option<Vec2>,
 }
@@ -40,6 +41,7 @@ pub fn render_ui(
     cam_zoom: f32,
     textures: &GameTextures,
     is_muted: bool,
+    current_track: &str,
 ) -> UiInteraction {
     let screen_w = screen_width();
     let screen_h = screen_height();
@@ -96,6 +98,36 @@ pub fn render_ui(
 
     if is_mouse_button_pressed(MouseButton::Left) && sound_hover {
         interaction.clicked_sound_toggle = true;
+    }
+
+    // 1.3 Кнопка переключения трека [N] под кнопкой звука
+    let track_btn_w = timer_box_w;
+    let track_btn_h = 24.0;
+    let track_btn_x = timer_box_x;
+    let track_btn_y = sound_btn_y + sound_btn_h + 5.0;
+    let track_hover = mx >= track_btn_x && mx <= track_btn_x + track_btn_w && my >= track_btn_y && my <= track_btn_y + track_btn_h;
+    if track_hover {
+        interaction.is_mouse_over_ui = true;
+    }
+    draw_rectangle(track_btn_x, track_btn_y, track_btn_w, track_btn_h, if track_hover { Color::new(0.20, 0.25, 0.38, 1.0) } else { Color::new(0.10, 0.11, 0.15, 0.95) });
+    draw_rectangle_lines(track_btn_x, track_btn_y, track_btn_w, track_btn_h, 1.2, if track_hover { SKYBLUE } else { DARKGRAY });
+    let t_label = "🎵 Трек [N] ▶";
+    let tw = fonts.measure_heading(t_label, 11.0).width;
+    fonts.draw_heading(t_label, track_btn_x + (track_btn_w - tw) / 2.0, track_btn_y + 16.0, 11.0, if track_hover { GOLD } else { SKYBLUE });
+
+    if is_mouse_button_pressed(MouseButton::Left) && track_hover {
+        interaction.clicked_next_track = true;
+    }
+
+    // Всплывающая подсказка с названием текущего трека при наведении курсора
+    if track_hover {
+        let tt_txt = format!("Сейчас играет: {}", current_track);
+        let tt_w = fonts.measure_text(&tt_txt, 11.0).width + 16.0;
+        let tt_x = (track_btn_x - tt_w - 6.0).max(10.0);
+        let tt_y = track_btn_y;
+        draw_rectangle(tt_x, tt_y, tt_w, 24.0, Color::new(0.06, 0.08, 0.14, 0.96));
+        draw_rectangle_lines(tt_x, tt_y, tt_w, 24.0, 1.0, GOLD);
+        fonts.draw_text(&tt_txt, tt_x + 8.0, tt_y + 16.0, 11.0, WHITE);
     }
 
     // 2. Полоска здоровья Босса и Опыт (сверху по центру)
