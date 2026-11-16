@@ -85,18 +85,35 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         }
     }
 
-    // 2. Потенциальные поля: Притяжение к кристаллам душ
-    let mut closest_gem_dist_sq = 260.0 * 260.0;
-    let mut gem_pull = Vec2::ZERO;
+    // 2. Потенциальные поля: Притяжение к кристаллам душ и супер-предметам "Магнит"
+    // Если на карте выпал Магнит, он имеет высший глобальный приоритет сбора (без ограничения радиуса в 260px)!
+    let mut closest_magnet = None;
+    let mut min_magnet_dist_sq = f32::MAX;
     for gem in &world.gems {
-        let dist_sq = gem.pos.distance_squared(boss_pos);
-        if dist_sq < closest_gem_dist_sq {
-            closest_gem_dist_sq = dist_sq;
-            let strength = if gem.is_magnet { gem_pull_weight * 1.8 } else { gem_pull_weight };
-            gem_pull = calculate_attract_force(boss_pos, gem.pos, 260.0, strength);
+        if gem.is_magnet {
+            let dist_sq = gem.pos.distance_squared(boss_pos);
+            if dist_sq < min_magnet_dist_sq {
+                min_magnet_dist_sq = dist_sq;
+                closest_magnet = Some(gem.pos);
+            }
         }
     }
-    total_force += gem_pull;
+
+    if let Some(m_pos) = closest_magnet {
+        let magnet_pull = calculate_attract_force(boss_pos, m_pos, crate::core::MAP_WIDTH, gem_pull_weight * 3.5);
+        total_force += magnet_pull;
+    } else {
+        let mut closest_gem_dist_sq = 260.0 * 260.0;
+        let mut gem_pull = Vec2::ZERO;
+        for gem in &world.gems {
+            let dist_sq = gem.pos.distance_squared(boss_pos);
+            if dist_sq < closest_gem_dist_sq {
+                closest_gem_dist_sq = dist_sq;
+                gem_pull = calculate_attract_force(boss_pos, gem.pos, 260.0, gem_pull_weight);
+            }
+        }
+        total_force += gem_pull;
+    }
 
     // 2.1 Стратегическая цель: Атака и разрушение Алтарей Крови
     // Если босс достаточно здоров (HP > retreat_hp) и рядом нет плотной толпы,

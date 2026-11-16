@@ -1,14 +1,14 @@
 use crate::core::rand;
 use serde::{Deserialize, Serialize};
 
-pub const INPUT_SIZE: usize = 42;
+pub const INPUT_SIZE: usize = 48;
 pub const HIDDEN1_SIZE: usize = 32;
 pub const HIDDEN2_SIZE: usize = 24;
 pub const OUTPUT_SIZE: usize = 8;
 
 /// Полносвязная глубокая нейронная сеть (Deep MLP)
-/// Архитектура: 42 сенсорных входа -> Скрытый слой 32 (ReLU) -> Скрытый слой 24 (ReLU) -> 8 выходов (Tanh/Sigmoid)
-/// Всего синапсов (весов и смещений): 42*32 + 32 + 32*24 + 24 + 24*8 + 8 = 2,368 параметров!
+/// Архитектура: 48 сенсорных входов -> Скрытый слой 32 (ReLU) -> Скрытый слой 24 (ReLU) -> 8 выходов (Tanh/Sigmoid)
+/// Всего синапсов (весов и смещений): 48*32 + 32 + 32*24 + 24 + 24*8 + 8 = 2,560 параметров!
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NeuralNet {
     pub input_size: usize,
@@ -16,7 +16,7 @@ pub struct NeuralNet {
     pub hidden2_size: usize,
     pub output_size: usize,
 
-    // Слой 1: 42 -> 32
+    // Слой 1: 48 -> 32
     pub w1: Vec<Vec<f32>>,
     pub b1: Vec<f32>,
 

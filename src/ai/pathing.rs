@@ -2,9 +2,9 @@ use macroquad::prelude::*;
 use crate::core::{MAP_WIDTH, MAP_HEIGHT};
 use crate::ecs::world::World;
 
-/// Данные навигации по ключевым точкам (Waypoints) и Алтарям Крови
+/// Комплексные данные навигации по ключевым точкам (Алтари Крови и супер-предметы "Магнит")
 #[derive(Clone, Debug)]
-pub struct AltarNavData {
+pub struct StrategicNavData {
     pub altar_count: usize,
     pub closest_altar_pos: Option<Vec2>,
     pub second_altar_pos: Option<Vec2>,
@@ -12,6 +12,12 @@ pub struct AltarNavData {
     pub time_to_closest_altar: f32,
     /// Время (в секундах) перехода от Точки Y (Алтарь 1) до Точки Z (Алтарь 2 или кластер опыта)
     pub time_chained_y_to_z: f32,
+
+    // Данные по супер-кристаллам "Магнит" (Super-Gem Vacuum)
+    pub has_active_magnet: bool,
+    pub closest_magnet_pos: Option<Vec2>,
+    pub time_to_closest_magnet: f32,
+    pub time_magnet_to_altar: f32,
 }
 
 /// Модуль навигации, оценки траекторий и кинематического времени перемещения (Kinematic Waypoint Estimation)
@@ -65,19 +71,18 @@ impl WaypointPlanner {
         (time_to_a, time_y_to_z)
     }
 
-    /// Извлекает точные координаты всех активных Алтарей Крови и рассчитывает
-    /// навигационные маршруты от точки Босса до Алтаря A, и от Алтаря 1 (Y) до Алтаря 2 (Z)
-    pub fn calculate_altar_navigation(world: &World) -> AltarNavData {
+    /// Извлекает точные координаты всех активных Алтарей Крови и Магнитов,
+    /// рассчитывая траектории и время перехода между ключевыми точками
+    pub fn calculate_strategic_navigation(world: &World) -> StrategicNavData {
         let boss_pos = world.boss_pos;
 
-        // Находим все живые алтари
+        // 1. Находим все живые алтари
         let mut altars: Vec<Vec2> = world.structures
             .iter()
             .filter(|s| s.structure_type == 1 && s.health.is_alive())
             .map(|s| s.pos)
             .collect();
 
-        // Сортируем по удаленности от Босса
         altars.sort_by(|a, b| {
             let d_a = a.distance_squared(boss_pos);
             let d_b = b.distance_squared(boss_pos);
@@ -85,19 +90,17 @@ impl WaypointPlanner {
         });
 
         let altar_count = altars.len();
-        let closest = altars.first().copied();
-        let second = altars.get(1).copied();
+        let closest_altar = altars.first().copied();
+        let second_altar = altars.get(1).copied();
 
-        let (time_to_closest, time_chained) = match (closest, second) {
+        let (time_to_closest_altar, time_chained_y_to_z) = match (closest_altar, second_altar) {
             (Some(a), Some(b)) => {
-                // Путь: Босс -> Алтарь A, затем Алтарь A (Y) -> Алтарь B (Z)
                 let t_a = Self::estimate_travel_time(world, boss_pos, a);
                 let t_chain = Self::estimate_travel_time(world, a, b);
                 (t_a, t_chain)
             }
             (Some(a), None) => {
                 let t_a = Self::estimate_travel_time(world, boss_pos, a);
-                // Если второго алтаря нет, в качестве точки Z берем центр ближайшего скопления кристаллов
                 let z_target = Self::find_densest_gem_cluster(world, a).unwrap_or(Vec2::new(MAP_WIDTH * 0.5, MAP_HEIGHT * 0.5));
                 let t_chain = Self::estimate_travel_time(world, a, z_target);
                 (t_a, t_chain)
@@ -105,12 +108,44 @@ impl WaypointPlanner {
             (None, _) => (0.0, 0.0),
         };
 
-        AltarNavData {
+        // 2. Поиск супер-предметов "Магнит" на всей карте (глобальный радар)
+        let mut magnets: Vec<Vec2> = world.gems
+            .iter()
+            .filter(|g| g.is_magnet)
+            .map(|g| g.pos)
+            .collect();
+
+        magnets.sort_by(|a, b| {
+            let d_a = a.distance_squared(boss_pos);
+            let d_b = b.distance_squared(boss_pos);
+            d_a.partial_cmp(&d_b).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let closest_magnet = magnets.first().copied();
+        let has_active_magnet = closest_magnet.is_some();
+
+        let (time_to_closest_magnet, time_magnet_to_altar) = if let Some(m_pos) = closest_magnet {
+            let t_m = Self::estimate_travel_time(world, boss_pos, m_pos);
+            let t_m_to_altar = if let Some(a_pos) = closest_altar {
+                Self::estimate_travel_time(world, m_pos, a_pos)
+            } else {
+                0.0
+            };
+            (t_m, t_m_to_altar)
+        } else {
+            (0.0, 0.0)
+        };
+
+        StrategicNavData {
             altar_count,
-            closest_altar_pos: closest,
-            second_altar_pos: second,
-            time_to_closest_altar: time_to_closest,
-            time_chained_y_to_z: time_chained,
+            closest_altar_pos: closest_altar,
+            second_altar_pos: second_altar,
+            time_to_closest_altar,
+            time_chained_y_to_z,
+            has_active_magnet,
+            closest_magnet_pos: closest_magnet,
+            time_to_closest_magnet,
+            time_magnet_to_altar,
         }
     }
 

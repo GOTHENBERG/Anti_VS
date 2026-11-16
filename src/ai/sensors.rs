@@ -86,8 +86,8 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     obs[29] = gem_vec.y;
 
     // 5. [30..36] Точные координаты алтарей, вектор направления и кинематические расчеты пути
-    let altar_nav = WaypointPlanner::calculate_altar_navigation(world);
-    if let Some(altar_pos) = altar_nav.closest_altar_pos {
+    let nav = WaypointPlanner::calculate_strategic_navigation(world);
+    if let Some(altar_pos) = nav.closest_altar_pos {
         // [30..32] Точные глобальные нормализованные координаты алтаря (X, Y) на карте
         obs[30] = (altar_pos.x / MAP_WIDTH).clamp(0.0, 1.0);
         obs[31] = (altar_pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
@@ -104,10 +104,10 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     }
 
     // [34] Расчетное время (в секундах) прибытия от текущей точки до Алтаря A (нормировано до 20 сек)
-    obs[34] = (altar_nav.time_to_closest_altar / 20.0).clamp(0.0, 1.0);
+    obs[34] = (nav.time_to_closest_altar / 20.0).clamp(0.0, 1.0);
 
     // [35] Расчетное время (в секундах) перехода по цепочке: от Точки Y (Алтарь 1) до Точки Z (Алтарь 2 или Опыт)
-    obs[35] = (altar_nav.time_chained_y_to_z / 20.0).clamp(0.0, 1.0);
+    obs[35] = (nav.time_chained_y_to_z / 20.0).clamp(0.0, 1.0);
 
     // 6. [36..38] Вектор к ближайшему кластеру снайперов-стрелков (Тир 3 и Тир 11)
     let mut closest_sniper_dist = 450.0f32;
@@ -130,7 +130,29 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     obs[38] = (world.boss_health.current / world.boss_health.max).clamp(0.0, 1.0); // % HP
     obs[39] = if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 }; // Готовность рывка
     obs[40] = (world.boss_inventory.get_movement_speed(160.0) / 160.0).clamp(0.5, 2.5); // Текущий множитель скорости
-    obs[41] = (altar_nav.altar_count as f32 / 5.0).clamp(0.0, 1.0); // Число активных алтарей
+    obs[41] = (nav.altar_count as f32 / 5.0).clamp(0.0, 1.0); // Число активных алтарей
+
+    // 8. [42..48] Точный радар супер-предметов "Магнит" (Super-Gem Vacuum)
+    obs[42] = if nav.has_active_magnet { 1.0 } else { 0.0 };
+    if let Some(m_pos) = nav.closest_magnet_pos {
+        // [43..45] Точные нормализованные мировые координаты Магнита (X, Y)
+        obs[43] = (m_pos.x / MAP_WIDTH).clamp(0.0, 1.0);
+        obs[44] = (m_pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
+
+        // [45..47] Относительный вектор направления к Магниту (dx, dy)
+        let m_diff = m_pos - boss_pos;
+        obs[45] = (m_diff.x / MAP_WIDTH).clamp(-1.0, 1.0);
+        obs[46] = (m_diff.y / MAP_HEIGHT).clamp(-1.0, 1.0);
+
+        // [47] Расчетное время прибытия к Магниту (в секундах)
+        obs[47] = (nav.time_to_closest_magnet / 20.0).clamp(0.0, 1.0);
+    } else {
+        obs[43] = 0.5;
+        obs[44] = 0.5;
+        obs[45] = 0.0;
+        obs[46] = 0.0;
+        obs[47] = 1.0; // Максимальная задержка если магнита нет
+    }
 
     obs
 }

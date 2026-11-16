@@ -222,18 +222,34 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
         }
     }
 
-    // 2. Притяжение к кристаллам душ с весом модели
-    let mut closest_gem_dist_sq = 280.0 * 280.0;
-    let mut gem_pull = Vec2::ZERO;
+    // 2. Притяжение к кристаллам душ и глобальным супер-предметам "Магнит"
+    let mut closest_magnet = None;
+    let mut min_magnet_dist_sq = f32::MAX;
     for gem in &world.gems {
-        let dist_sq = gem.pos.distance_squared(boss_pos);
-        if dist_sq < closest_gem_dist_sq {
-            closest_gem_dist_sq = dist_sq;
-            let strength = if gem.is_magnet { gem_pull_weight * 1.8 } else { gem_pull_weight };
-            gem_pull = crate::core::math::calculate_attract_force(boss_pos, gem.pos, 280.0, strength);
+        if gem.is_magnet {
+            let dist_sq = gem.pos.distance_squared(boss_pos);
+            if dist_sq < min_magnet_dist_sq {
+                min_magnet_dist_sq = dist_sq;
+                closest_magnet = Some(gem.pos);
+            }
         }
     }
-    total_force += gem_pull;
+
+    if let Some(m_pos) = closest_magnet {
+        let pull = crate::core::math::calculate_attract_force(boss_pos, m_pos, MAP_WIDTH, gem_pull_weight * 3.5);
+        total_force += pull;
+    } else {
+        let mut closest_gem_dist_sq = 280.0 * 280.0;
+        let mut gem_pull = Vec2::ZERO;
+        for gem in &world.gems {
+            let dist_sq = gem.pos.distance_squared(boss_pos);
+            if dist_sq < closest_gem_dist_sq {
+                closest_gem_dist_sq = dist_sq;
+                gem_pull = crate::core::math::calculate_attract_force(boss_pos, gem.pos, 280.0, gem_pull_weight);
+            }
+        }
+        total_force += gem_pull;
+    }
 
     // 3. Осада Алтарей Крови с весом модели
     if hp_ratio > retreat_hp && mobs_in_close < 8 {

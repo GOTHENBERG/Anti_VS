@@ -82,6 +82,71 @@ pub fn select_tactical_target(world: &World, boss_pos: Vec2, max_range: f32) -> 
     best_target
 }
 
+/// Находит точку наивысшей концентрации вражеской массы (центр кластера) в пределах радиуса стрельбы.
+/// Для AoE-оружий (Метеоры, Сингулярность, Разлом Бездны, Ядовитые споры) целится в центр тяжести
+/// наибольшего скопления мобов, максимизируя суммарный сплеш-урон.
+pub fn select_cluster_density_target(world: &World, boss_pos: Vec2, max_range: f32, aoe_radius: f32) -> Option<Vec2> {
+    // 1. Если рядом есть Алтарь Крови в зоне досягаемости — он приоритетнейшая цель для AoE разрушения!
+    for st in &world.structures {
+        if st.structure_type == 1 && st.health.is_alive() {
+            let dist = st.pos.distance(boss_pos);
+            if dist <= max_range {
+                return Some(st.pos);
+            }
+        }
+    }
+
+    let nearby_indices = world.spatial_grid.query_nearby(boss_pos, max_range);
+    if nearby_indices.is_empty() {
+        return None;
+    }
+
+    let aoe_radius_sq = aoe_radius * aoe_radius;
+    let mut best_score = 0.0f32;
+    let mut best_cluster_center = None;
+
+    // Сэмплируем кандидатов (до 24 ближайших мобов как потенциальные центры кластеров)
+    let candidate_count = nearby_indices.len().min(24);
+    for i in 0..candidate_count {
+        let idx = nearby_indices[i];
+        if let Some(candidate_mob) = world.mobs.get(idx) {
+            let center_candidate = candidate_mob.pos;
+            if center_candidate.distance_squared(boss_pos) > max_range * max_range {
+                continue;
+            }
+
+            // Оцениваем массу кластера вокруг кандидата
+            let cluster_mobs = world.spatial_grid.query_nearby(center_candidate, aoe_radius);
+            let mut total_threat = 0.0f32;
+            let mut weighted_pos = Vec2::ZERO;
+
+            for &m_idx in &cluster_mobs {
+                if let Some(m) = world.mobs.get(m_idx) {
+                    if m.pos.distance_squared(center_candidate) <= aoe_radius_sq {
+                        let threat = match m.tier {
+                            3 | 11 => 3.5, // Стрелки-культисты
+                            5 => 4.0,      // Камикадзе
+                            8 | 16 => 5.0, // Жнецы и Аватары
+                            4 | 12 => 2.5, // Големы и Колоссы
+                            _ => 1.0,      // Пехота
+                        };
+                        total_threat += threat;
+                        weighted_pos += m.pos * threat;
+                    }
+                }
+            }
+
+            if total_threat > best_score && total_threat > 0.001 {
+                best_score = total_threat;
+                // Физический центр тяжести (Center of Mass) кластера
+                best_cluster_center = Some(weighted_pos / total_threat);
+            }
+        }
+    }
+
+    best_cluster_center.or_else(|| select_tactical_target(world, boss_pos, max_range))
+}
+
 pub fn update_skills(world: &mut World, dt: f32) {
     let boss_pos = world.boss_pos;
     let cd_multiplier = world.boss_inventory.get_cooldown_multiplier();
@@ -104,6 +169,8 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
     // Умный выбор тактической цели для направленных атак
     let tactical_target_pos = select_tactical_target(world, boss_pos, 520.0);
+    // Кластерное наведение по центру массы толпы для разрушительных AoE атак
+    let cluster_target_pos = select_cluster_density_target(world, boss_pos, 550.0, 150.0);
 
     let mut new_projectiles = Vec::new();
     let mut new_acid_pools = Vec::new();
@@ -381,7 +448,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
                 // 1.11 Чумные Сферы: кислотные лужи на земле
                 WeaponType::PoisonOrbs => {
-                    let offset = if let Some(target_pos) = tactical_target_pos {
+                    let offset = if let Some(target_pos) = cluster_target_pos {
                         (target_pos - boss_pos).clamp_length_max(190.0)
                     } else {
                         Vec2::new(rand::gen_range(-100.0, 100.0), rand::gen_range(-100.0, 100.0))
@@ -622,7 +689,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
                 // 1.21 Гравитационная Сфера (Черная Дыра): притягивает мобов и взрывается
                 WeaponType::SingularityOrb => {
-                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                    let base_dir = if let Some(target_pos) = cluster_target_pos {
                         (target_pos - boss_pos).normalize_or_zero()
                     } else {
                         Vec2::X
@@ -993,7 +1060,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
                 // 1.37 Хаотический Метеор: падающий метеорит с колоссальным взрывом
                 WeaponType::ChaosMeteor => {
-                    let target = tactical_target_pos.unwrap_or(boss_pos + Vec2::new(rand::gen_range(-150.0, 150.0), rand::gen_range(-150.0, 150.0)));
+                    let target = cluster_target_pos.unwrap_or(boss_pos + Vec2::new(rand::gen_range(-150.0, 150.0), rand::gen_range(-150.0, 150.0)));
                     let dir = (target - boss_pos).normalize_or_zero();
                     new_projectiles.push(ProjectileEntity {
                         id: 0,
@@ -1036,7 +1103,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
                 // 1.39 Разрыв Бездны: космическая воронка, притягивающая врагов
                 WeaponType::VoidRift => {
-                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                    let base_dir = if let Some(target_pos) = cluster_target_pos {
                         (target_pos - boss_pos).normalize_or_zero()
                     } else {
                         Vec2::X
