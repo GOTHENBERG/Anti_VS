@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction};
-use crate::ecs::components::inventory::WeaponType;
+use crate::ecs::components::inventory::{PassiveType, WeaponType};
 use crate::ecs::systems::boss_ai::handle_boss_level_up;
 use crate::ecs::world::{SoulGemEntity, World};
 
@@ -12,6 +12,9 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let has_blade_storm = world.boss_inventory.has_weapon(WeaponType::BladeStorm);
     let has_divine_shield = world.boss_inventory.has_weapon(WeaponType::DivineShield);
     let has_hellfire = world.boss_inventory.has_weapon(WeaponType::Hellfire);
+    let has_octarine_core = world.boss_inventory.has_passive(PassiveType::OctarineCore);
+    let has_pyromaniac = world.boss_inventory.has_passive(PassiveType::Pyromaniac);
+    let has_immortal_aegis = world.boss_inventory.has_passive(PassiveType::ImmortalAegis);
 
     let mut kamikaze_explosions = Vec::new();
 
@@ -209,6 +212,16 @@ pub fn update_combat(world: &mut World, dt: f32) {
                             world.boss_health.heal(actual_dmg * 0.20);
                         }
 
+                        // Вампиризм заклинаний от Октаринового Ядра (OctarineCore): 6%
+                        if has_octarine_core {
+                            world.boss_health.heal(actual_dmg * 0.06);
+                        }
+
+                        // Вампиризм огня от Сердца Пироманта (Pyromaniac): 8% от урона огнем
+                        if has_pyromaniac && proj.damage_type == DamageType::Fire {
+                            world.boss_health.heal(actual_dmg * 0.08);
+                        }
+
                         // Отбрасывание моба
                         if !mob.knockback_immune {
                             let push_dir = proj.vel.normalize_or_zero();
@@ -340,13 +353,13 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
             // Улучшение Директора: Чумные Споры (Pestilence Spores)
             if pestilence_lvl > 0 {
-                let chance = (pestilence_lvl as f32) * 0.25;
+                let chance = ((pestilence_lvl as f32) * 0.15).min(0.60);
                 if rand::gen_range(0.0, 1.0) < chance {
                     pestilence_pools.push(crate::ecs::world::AcidPoolEntity {
                         pos: mob.pos,
-                        radius: 65.0,
-                        lifetime: 4.5,
-                        dps: 18.0,
+                        radius: 60.0,
+                        lifetime: 3.5,
+                        dps: 10.0 + (pestilence_lvl as f32) * 2.5,
                         corrosive: false,
                         is_director_source: true,
                     });
@@ -372,12 +385,27 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 xp_value *= 2.5;
             }
 
-            dropped_gems.push(SoulGemEntity {
-                id: mob.id,
-                pos: mob.pos,
-                xp_value,
-                is_magnet,
-            });
+            // Высокоуровневые титаны (Тир 8 Жнецы) дропают триплет гигантских сияющих кристаллов!
+            if mob.tier == 8 || mob.tier == 16 {
+                let chunk = xp_value / 3.0;
+                for k in 0..3 {
+                    let angle = (k as f32) * 2.0944;
+                    let offset = macroquad::prelude::Vec2::new(angle.cos(), angle.sin()) * 26.0;
+                    dropped_gems.push(SoulGemEntity {
+                        id: mob.id * 10 + k,
+                        pos: mob.pos + offset,
+                        xp_value: chunk,
+                        is_magnet: k == 0 && is_magnet,
+                    });
+                }
+            } else {
+                dropped_gems.push(SoulGemEntity {
+                    id: mob.id,
+                    pos: mob.pos,
+                    xp_value,
+                    is_magnet,
+                });
+            }
 
             false // удаляем моба
         } else {
@@ -433,6 +461,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let pickup_radius_sq = (boss_radius + 20.0).powi(2);
     let mut collected_xp = 0.0;
     let mut magnet_picked = false;
+    let mut big_xp_gained = 0.0f32;
 
     world.gems.retain(|gem| {
         let dist_sq = gem.pos.distance_squared(boss_pos);
@@ -440,12 +469,19 @@ pub fn update_combat(world: &mut World, dt: f32) {
             if gem.is_magnet {
                 magnet_picked = true;
             }
+            if gem.xp_value >= 120.0 {
+                big_xp_gained += gem.xp_value;
+            }
             collected_xp += gem.xp_value;
             false // кристалл подобран
         } else {
             true
         }
     });
+
+    if big_xp_gained >= 120.0 {
+        world.add_floating_text(boss_pos, format!("+{:.0} XP!", big_xp_gained), GOLD, 1.3);
+    }
 
     // Если подобран Магнит — весь оставшийся опыт мгновенно собирается!
     if magnet_picked {
@@ -466,6 +502,33 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
             // Запуск адаптивного Level-Up
             handle_boss_level_up(world);
+        }
+    }
+
+    // 6. Проверка Эгиды Бессмертия (ImmortalAegis Revive):
+    if !world.boss_health.is_alive() && has_immortal_aegis && !world.boss_inventory.has_used_aegis_revive {
+        world.boss_inventory.has_used_aegis_revive = true;
+        world.boss_health.current = world.boss_health.max;
+        world.boss_invulnerable_timer = 3.0; // 3 сек абсолютной неуязвимости
+        world.add_floating_text(
+            boss_pos,
+            "🛡️ ВОСКРЕШЕНИЕ: ЭГИДА БЕССМЕРТИЯ!".to_string(),
+            GOLD,
+            1.8,
+        );
+        world.push_audio(crate::audio::AudioEvent::BossLevelUp);
+        world.screen_shake = 18.0;
+        world.spawn_particles(boss_pos, 60, GOLD, 260.0);
+        world.spawn_particles(boss_pos, 40, WHITE, 320.0);
+
+        // Отбрасывание и стан мобов вокруг
+        for mob in &mut world.mobs {
+            let diff = mob.pos - boss_pos;
+            let dist = diff.length();
+            if dist < 320.0 && dist > 1.0 {
+                mob.vel += diff.normalize() * 480.0;
+                mob.health.take_damage(160.0);
+            }
         }
     }
 }

@@ -12,6 +12,15 @@ pub struct GameTextures {
     pub shadow_demon: Option<Texture2D>,
     pub fire_elemental: Option<Texture2D>,
     pub bringer_death: Option<Texture2D>,
+    // Page 2 Mobs (Tiers 9 to 16)
+    pub mob_tier09: Option<Texture2D>,
+    pub mob_tier10: Option<Texture2D>,
+    pub mob_tier11: Option<Texture2D>,
+    pub mob_tier12: Option<Texture2D>,
+    pub mob_tier13: Option<Texture2D>,
+    pub mob_tier14: Option<Texture2D>,
+    pub mob_tier15: Option<Texture2D>,
+    pub mob_tier16: Option<Texture2D>,
 
     // Boss (Knight)
     pub knight_idle: Vec<Texture2D>,
@@ -78,6 +87,27 @@ pub struct GameTextures {
     pub icon_clover: Option<Texture2D>,
     pub icon_prismatic: Option<Texture2D>,
     pub icon_aegis: Option<Texture2D>,
+    // New Weapons & Legendary Relics Icons
+    pub icon_aegis_orbiters: Option<Texture2D>,
+    pub icon_archmage_shard: Option<Texture2D>,
+    pub icon_blessed_core: Option<Texture2D>,
+    pub icon_calamity_mortar: Option<Texture2D>,
+    pub icon_chain_lightning: Option<Texture2D>,
+    pub icon_chaos_meteor: Option<Texture2D>,
+    pub icon_cinder_heart: Option<Texture2D>,
+    pub icon_colossal_eye: Option<Texture2D>,
+    pub icon_divine_bell: Option<Texture2D>,
+    pub icon_divine_rapier: Option<Texture2D>,
+    pub icon_fate_weaver: Option<Texture2D>,
+    pub icon_halo_radiance: Option<Texture2D>,
+    pub icon_immortal_aegis: Option<Texture2D>,
+    pub icon_octarine_core: Option<Texture2D>,
+    pub icon_resonant_strings: Option<Texture2D>,
+    pub icon_solar_relic: Option<Texture2D>,
+    pub icon_soul_phantoms: Option<Texture2D>,
+    pub icon_spectral_jar: Option<Texture2D>,
+    pub icon_stormhammer_core: Option<Texture2D>,
+    pub icon_void_rift: Option<Texture2D>,
 }
 
 async fn load_filtered(path: &str, filter: FilterMode) -> Option<Texture2D> {
@@ -111,6 +141,16 @@ impl GameTextures {
         let shadow_demon = load_filtered("assets/sprites/mob_shadow_demon.png", p_filter).await;
         let fire_elemental = load_filtered("assets/sprites/mob_fire_elemental.png", p_filter).await;
         let bringer_death = load_filtered("assets/sprites/mob_bringer_death.png", p_filter).await;
+
+        // Page 2 Mobs (Tiers 9 to 16)
+        let mob_tier09 = load_filtered("assets/sprites/mob_tier09_dread_phalanx.png", p_filter).await;
+        let mob_tier10 = load_filtered("assets/sprites/mob_tier10_hellhound.png", p_filter).await;
+        let mob_tier11 = load_filtered("assets/sprites/mob_tier11_void_cultist.png", p_filter).await;
+        let mob_tier12 = load_filtered("assets/sprites/mob_tier12_obsidian_colossus.png", p_filter).await;
+        let mob_tier13 = load_filtered("assets/sprites/mob_tier13_nuke_bomber.png", p_filter).await;
+        let mob_tier14 = load_filtered("assets/sprites/mob_tier14_shadow_stalker.png", p_filter).await;
+        let mob_tier15 = load_filtered("assets/sprites/mob_tier15_solar_archon.png", p_filter).await;
+        let mob_tier16 = load_filtered("assets/sprites/mob_tier16_avatar_oblivion.png", p_filter).await;
 
         let mut knight_idle = Vec::new();
         for i in 0..4 {
@@ -184,6 +224,28 @@ impl GameTextures {
         let icon_prismatic = load_filtered("assets/icons/icon_prismatic.png", ui_filter).await;
         let icon_aegis = load_filtered("assets/icons/icon_aegis.png", ui_filter).await;
 
+        // New active weapons and legendary relics icons
+        let icon_aegis_orbiters = load_filtered("assets/icons/icon_aegis_orbiters.png", ui_filter).await;
+        let icon_archmage_shard = load_filtered("assets/icons/icon_archmage_shard.png", ui_filter).await;
+        let icon_blessed_core = load_filtered("assets/icons/icon_blessed_core.png", ui_filter).await;
+        let icon_calamity_mortar = load_filtered("assets/icons/icon_calamity_mortar.png", ui_filter).await;
+        let icon_chain_lightning = load_filtered("assets/icons/icon_chain_lightning.png", ui_filter).await;
+        let icon_chaos_meteor = load_filtered("assets/icons/icon_chaos_meteor.png", ui_filter).await;
+        let icon_cinder_heart = load_filtered("assets/icons/icon_cinder_heart.png", ui_filter).await;
+        let icon_colossal_eye = load_filtered("assets/icons/icon_colossal_eye.png", ui_filter).await;
+        let icon_divine_bell = load_filtered("assets/icons/icon_divine_bell.png", ui_filter).await;
+        let icon_divine_rapier = load_filtered("assets/icons/icon_divine_rapier.png", ui_filter).await;
+        let icon_fate_weaver = load_filtered("assets/icons/icon_fate_weaver.png", ui_filter).await;
+        let icon_halo_radiance = load_filtered("assets/icons/icon_halo_radiance.png", ui_filter).await;
+        let icon_immortal_aegis = load_filtered("assets/icons/icon_immortal_aegis.png", ui_filter).await;
+        let icon_octarine_core = load_filtered("assets/icons/icon_octarine_core.png", ui_filter).await;
+        let icon_resonant_strings = load_filtered("assets/icons/icon_resonant_strings.png", ui_filter).await;
+        let icon_solar_relic = load_filtered("assets/icons/icon_solar_relic.png", ui_filter).await;
+        let icon_soul_phantoms = load_filtered("assets/icons/icon_soul_phantoms.png", ui_filter).await;
+        let icon_spectral_jar = load_filtered("assets/icons/icon_spectral_jar.png", ui_filter).await;
+        let icon_stormhammer_core = load_filtered("assets/icons/icon_stormhammer_core.png", ui_filter).await;
+        let icon_void_rift = load_filtered("assets/icons/icon_void_rift.png", ui_filter).await;
+
         Self {
             skeleton,
             hound_frames,
@@ -193,6 +255,14 @@ impl GameTextures {
             shadow_demon,
             fire_elemental,
             bringer_death,
+            mob_tier09,
+            mob_tier10,
+            mob_tier11,
+            mob_tier12,
+            mob_tier13,
+            mob_tier14,
+            mob_tier15,
+            mob_tier16,
             knight_idle,
             knight_walk,
             altar,
@@ -249,6 +319,26 @@ impl GameTextures {
             icon_clover,
             icon_prismatic,
             icon_aegis,
+            icon_aegis_orbiters,
+            icon_archmage_shard,
+            icon_blessed_core,
+            icon_calamity_mortar,
+            icon_chain_lightning,
+            icon_chaos_meteor,
+            icon_cinder_heart,
+            icon_colossal_eye,
+            icon_divine_bell,
+            icon_divine_rapier,
+            icon_fate_weaver,
+            icon_halo_radiance,
+            icon_immortal_aegis,
+            icon_octarine_core,
+            icon_resonant_strings,
+            icon_solar_relic,
+            icon_soul_phantoms,
+            icon_spectral_jar,
+            icon_stormhammer_core,
+            icon_void_rift,
         }
     }
 
@@ -268,6 +358,18 @@ impl GameTextures {
             WeaponType::ChainFrost | WeaponType::AbsoluteZero => self.icon_chain_frost.as_ref().or(self.icon_ring.as_ref()),
             WeaponType::BrimstoneRay | WeaponType::InfernalCataclysm => self.icon_brimstone.as_ref().or(self.icon_fire_aura.as_ref()),
             WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage => self.icon_missiles.as_ref().or(self.icon_bow.as_ref()),
+            WeaponType::ChainLightning => self.icon_chain_lightning.as_ref().or(self.icon_thunder.as_ref()),
+            WeaponType::StormGodWrath => self.icon_stormhammer_core.as_ref().or(self.icon_chain_lightning.as_ref()),
+            WeaponType::DivineBell => self.icon_divine_bell.as_ref().or(self.icon_holy_hammer.as_ref()),
+            WeaponType::CathedralAura => self.icon_halo_radiance.as_ref().or(self.icon_divine_bell.as_ref()),
+            WeaponType::SoulPhantoms => self.icon_soul_phantoms.as_ref().or(self.icon_wand.as_ref()),
+            WeaponType::BansheeWail => self.icon_spectral_jar.as_ref().or(self.icon_soul_phantoms.as_ref()),
+            WeaponType::AegisOrbiters => self.icon_aegis_orbiters.as_ref().or(self.icon_shield.as_ref()),
+            WeaponType::InvincibleBastion => self.icon_immortal_aegis.as_ref().or(self.icon_aegis_orbiters.as_ref()),
+            WeaponType::ChaosMeteor => self.icon_chaos_meteor.as_ref().or(self.icon_fire_aura.as_ref()),
+            WeaponType::ArmageddonStorm => self.icon_cinder_heart.as_ref().or(self.icon_chaos_meteor.as_ref()),
+            WeaponType::VoidRift => self.icon_void_rift.as_ref().or(self.icon_singularity.as_ref()),
+            WeaponType::SingularityCollapse => self.icon_octarine_core.as_ref().or(self.icon_void_rift.as_ref()),
         }
     }
 
@@ -287,6 +389,20 @@ impl GameTextures {
             PassiveType::CloverOfFate => self.icon_clover.as_ref().or(self.icon_jewel.as_ref()),
             PassiveType::PrismaticFocus => self.icon_prismatic.as_ref().or(self.icon_ring.as_ref()),
             PassiveType::TitanAegis => self.icon_aegis.as_ref().or(self.icon_armor.as_ref()),
+            PassiveType::ImmortalAegis => self.icon_immortal_aegis.as_ref().or(self.icon_shield.as_ref()),
+            PassiveType::ArchmageShard => self.icon_archmage_shard.as_ref().or(self.icon_wand.as_ref()),
+            PassiveType::DivineRapier => self.icon_divine_rapier.as_ref().or(self.icon_sword.as_ref()),
+            PassiveType::OctarineCore => self.icon_octarine_core.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::SolarRelic => self.icon_solar_relic.as_ref().or(self.icon_ring.as_ref()),
+            PassiveType::StaticCore => self.icon_stormhammer_core.as_ref().or(self.icon_thunder.as_ref()),
+            PassiveType::ColossalEye => self.icon_colossal_eye.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::BlessedHeart => self.icon_blessed_core.as_ref().or(self.icon_giant_heart.as_ref()),
+            PassiveType::Pyromaniac => self.icon_cinder_heart.as_ref().or(self.icon_fire_aura.as_ref()),
+            PassiveType::SoulHarvester => self.icon_spectral_jar.as_ref().or(self.icon_bottle.as_ref()),
+            PassiveType::DivinityAura => self.icon_halo_radiance.as_ref().or(self.icon_holy_hammer.as_ref()),
+            PassiveType::UkuleleResonance => self.icon_resonant_strings.as_ref().or(self.icon_bow.as_ref()),
+            PassiveType::FateWeaver => self.icon_fate_weaver.as_ref().or(self.icon_clover.as_ref()),
+            PassiveType::SiegeMortar => self.icon_calamity_mortar.as_ref().or(self.icon_missiles.as_ref()),
         }
     }
 
@@ -306,6 +422,14 @@ impl GameTextures {
             6 => self.shadow_demon.as_ref(),
             7 => self.fire_elemental.as_ref(),
             8 => self.bringer_death.as_ref(),
+            9 => self.mob_tier09.as_ref(),
+            10 => self.mob_tier10.as_ref(),
+            11 => self.mob_tier11.as_ref(),
+            12 => self.mob_tier12.as_ref(),
+            13 => self.mob_tier13.as_ref(),
+            14 => self.mob_tier14.as_ref(),
+            15 => self.mob_tier15.as_ref(),
+            16 => self.mob_tier16.as_ref(),
             _ => None,
         }
     }

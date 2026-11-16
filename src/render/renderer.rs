@@ -13,33 +13,42 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
     // 1. Отрисовка большой арены (плиты, разломы, колонны)
     draw_environment(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT, textures);
 
-    // 2. Кислотные лужи (Poison Pools)
+    // 2. Кислотные лужи (Poison Pools) — мягкий полупрозрачный токсичный туман
     for pool in &world.acid_pools {
-        let alpha = (pool.lifetime / 4.0).min(0.65);
+        let alpha = (pool.lifetime / 4.0).clamp(0.0, 1.0);
         let (color, border_color) = if pool.is_director_source {
             // Чумные споры Директора: ядовито-фиолетовая слизь (ранит босса)
             (
-                Color::new(0.65, 0.12, 0.78, alpha * 0.85),
-                Color::new(0.95, 0.25, 0.95, alpha * 0.95),
+                Color::new(0.55, 0.10, 0.70, alpha * 0.22),
+                Color::new(0.85, 0.25, 0.95, alpha * 0.60),
             )
         } else if pool.corrosive {
             // Разъедающая кислота босса: неоново-зеленая
             (
-                Color::new(0.1, 0.85, 0.2, alpha),
-                Color::new(0.3, 0.95, 0.3, alpha * 0.9),
+                Color::new(0.12, 0.75, 0.20, alpha * 0.24),
+                Color::new(0.35, 0.95, 0.35, alpha * 0.65),
             )
         } else {
             (
-                Color::new(0.25, 0.75, 0.1, alpha),
-                Color::new(0.4, 0.95, 0.2, alpha * 0.9),
+                Color::new(0.20, 0.70, 0.15, alpha * 0.20),
+                Color::new(0.40, 0.90, 0.25, alpha * 0.55),
             )
         };
+        // Мягкое полупрозрачное основание лужи (не перекрывает обзор поля боя)
         draw_circle(pool.pos.x, pool.pos.y, pool.radius, color);
-        draw_circle_lines(pool.pos.x, pool.pos.y, pool.radius, 2.0, border_color);
+        draw_circle_lines(pool.pos.x, pool.pos.y, pool.radius, 1.5, border_color);
 
-        // Пузыри на поверхности лужи
-        let bubble_angle = (time * 6.0 + pool.pos.x).sin() * 0.5 * pool.radius;
-        draw_circle(pool.pos.x + bubble_angle, pool.pos.y + (time * 4.0).cos() * 10.0, 4.0, border_color);
+        // Внутренняя рябь / концентрическое кольцо испарения
+        let ripple_r = pool.radius * 0.6 + (time * 3.5 + pool.pos.x * 0.1).sin() * 5.0;
+        if ripple_r > 5.0 {
+            draw_circle_lines(pool.pos.x, pool.pos.y, ripple_r, 1.0, Color::new(border_color.r, border_color.g, border_color.b, alpha * 0.35));
+        }
+
+        // Анимированные токсичные пузыри
+        let b_angle = (time * 5.0 + pool.pos.x).sin() * 0.6 * pool.radius;
+        let b_y = (time * 4.0 + pool.pos.y).cos() * 0.4 * pool.radius;
+        draw_circle(pool.pos.x + b_angle, pool.pos.y + b_y, 3.0, border_color);
+        draw_circle(pool.pos.x - b_angle * 0.7, pool.pos.y - b_y * 0.7, 2.0, border_color);
     }
 
     // 3. Разрушаемые структуры (Алтари Крови)
@@ -70,18 +79,28 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
                 draw_circle(gem.pos.x, gem.pos.y, 4.0, WHITE);
             }
         } else if let Some(c_tex) = textures.soul_crystal.as_ref() {
-            let (tint, scale) = if gem.xp_value > 100.0 {
-                (GOLD, 1.3)
-            } else if gem.xp_value > 30.0 {
-                (LIME, 1.1)
+            let (tint, scale, aura_color) = if gem.xp_value >= 1000.0 {
+                (Color::new(1.0, 0.85, 0.2, 1.0), 2.2, Color::new(1.0, 0.75, 0.1, 0.6))
+            } else if gem.xp_value >= 300.0 {
+                (Color::new(1.0, 0.45, 0.2, 1.0), 1.8, Color::new(1.0, 0.35, 0.1, 0.5))
+            } else if gem.xp_value >= 100.0 {
+                (Color::new(0.85, 0.45, 1.0, 1.0), 1.5, Color::new(0.65, 0.25, 0.9, 0.4))
+            } else if gem.xp_value >= 30.0 {
+                (Color::new(0.4, 1.0, 0.5, 1.0), 1.25, Color::new(0.2, 0.8, 0.3, 0.35))
             } else {
-                (WHITE, 1.0)
+                (Color::new(0.7, 0.9, 1.0, 1.0), 1.0, Color::new(0.2, 0.6, 1.0, 0.25))
             };
             let size = 18.0 * scale;
             let bob = (time * 4.0 + (gem.pos.x * 0.1)).sin() * 2.0;
 
             // Мягкое эфирное свечение под кристаллом души
-            draw_ellipse(gem.pos.x, gem.pos.y + 6.0, 7.0, 3.2, 0.0, Color::new(0.2, 0.6, 1.0, 0.30));
+            draw_ellipse(gem.pos.x, gem.pos.y + 6.0 * scale, 7.0 * scale, 3.2 * scale, 0.0, aura_color);
+
+            // Если кристалл гигантский (>= 300 XP), рисуем сияющую пульсирующую корону/звезду вокруг него
+            if gem.xp_value >= 300.0 {
+                let pulse = (time * 6.0).sin() * 4.0;
+                draw_circle_lines(gem.pos.x, gem.pos.y + bob, (size * 0.75) + pulse, 1.5, aura_color);
+            }
 
             draw_texture_ex(
                 c_tex,

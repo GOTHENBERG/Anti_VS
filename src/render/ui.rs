@@ -21,6 +21,7 @@ pub struct UiInteraction {
     pub clicked_codex: bool,
     pub clicked_sound_toggle: bool,
     pub clicked_next_track: bool,
+    pub set_mob_page: Option<u8>,
     pub is_mouse_over_ui: bool,
     pub map_click_world_pos: Option<Vec2>,
 }
@@ -159,7 +160,7 @@ pub fn render_ui(
     // 3. ДВА РАЗДЕЛЬНЫХ ПОЛЯ: ОРУЖИЕ И ПАССИВНЫЕ РЕЛИКВИИ
     let field_y = bar_y + bar_h + 10.0;
     let field_w = 270.0;
-    let field_h = 60.0;
+    let field_h = 78.0;
     let slot_size = 40.0;
     let slot_gap = 4.0;
 
@@ -167,10 +168,10 @@ pub fn render_ui(
     let wep_field_x = bar_x;
     draw_rectangle(wep_field_x, field_y, field_w, field_h, Color::new(0.07, 0.08, 0.12, 0.95));
     draw_rectangle_lines(wep_field_x, field_y, field_w, field_h, 1.5, Color::new(0.35, 0.50, 0.70, 0.85));
-    fonts.draw_heading("⚔️ ОРУЖИЕ БОССА", wep_field_x + 8.0, field_y + 13.0, 11.0, SKYBLUE);
+    fonts.draw_heading("⚔️ ОРУЖИЕ БОССА", wep_field_x + 8.0, field_y + 14.0, 11.0, SKYBLUE);
 
     let wep_slots_start_x = wep_field_x + 4.0;
-    let wep_slots_y = field_y + 16.0;
+    let wep_slots_y = field_y + 22.0;
 
     for i in 0..6 {
         let sx = wep_slots_start_x + (i as f32) * (slot_size + slot_gap);
@@ -233,51 +234,57 @@ pub fn render_ui(
     draw_line(div_cx, field_y + 6.0, div_cx, field_y + field_h - 6.0, 1.5, Color::new(0.5, 0.45, 0.6, 0.6));
     draw_circle(div_cx, field_y + field_h / 2.0, 3.5, GOLD);
 
-    // 3.2 Правое поле: Пассивные Реликвии (6 слотов)
+    // 3.2 Правое поле: Пассивные Реликвии (10 слотов: 2 ряда по 5)
     let pas_field_x = bar_x + bar_w - field_w;
     draw_rectangle(pas_field_x, field_y, field_w, field_h, Color::new(0.08, 0.06, 0.12, 0.95));
     draw_rectangle_lines(pas_field_x, field_y, field_w, field_h, 1.5, Color::new(0.60, 0.35, 0.75, 0.85));
-    fonts.draw_heading("🔮 ПАССИВНЫЕ РЕЛИКВИИ", pas_field_x + 8.0, field_y + 13.0, 11.0, Color::new(0.85, 0.55, 1.0, 1.0));
+    fonts.draw_heading("🔮 ПАССИВНЫЕ РЕЛИКВИИ", pas_field_x + 8.0, field_y + 14.0, 11.0, Color::new(0.85, 0.55, 1.0, 1.0));
 
-    let pas_slots_start_x = pas_field_x + 4.0;
-    let pas_slots_y = field_y + 16.0;
+    let p_slot_s = 26.0;
+    let p_slot_gap = 5.0;
+    let p_total_w = 5.0 * p_slot_s + 4.0 * p_slot_gap;
+    let p_start_x = pas_field_x + (field_w - p_total_w) / 2.0;
 
-    for i in 0..6 {
-        let sx = pas_slots_start_x + (i as f32) * (slot_size + slot_gap);
-        let is_hover = mx >= sx && mx <= sx + slot_size && my >= pas_slots_y && my <= pas_slots_y + slot_size;
+    for i in 0..10 {
+        let col_idx = (i % 5) as f32;
+        let row_idx = (i / 5) as f32;
+        let sx = p_start_x + col_idx * (p_slot_s + p_slot_gap);
+        let sy = field_y + 19.0 + row_idx * (p_slot_s + 2.0);
+
+        let is_hover = mx >= sx && mx <= sx + p_slot_s && my >= sy && my <= sy + p_slot_s;
         if is_hover { interaction.is_mouse_over_ui = true; }
 
-        draw_rectangle(sx, pas_slots_y, slot_size, slot_size, Color::new(0.05, 0.04, 0.08, 0.95));
+        draw_rectangle(sx, sy, p_slot_s, p_slot_s, Color::new(0.05, 0.04, 0.08, 0.95));
 
         if let Some(p) = world.boss_inventory.passives.get(i) {
-            draw_rectangle(sx + 2.0, pas_slots_y + 2.0, slot_size - 4.0, slot_size - 4.0, Color::new(0.26, 0.10, 0.34, 0.9));
-            draw_rectangle_lines(sx, pas_slots_y, slot_size, slot_size, 1.5, Color::new(0.75, 0.40, 0.90, 0.95));
+            draw_rectangle(sx + 1.0, sy + 1.0, p_slot_s - 2.0, p_slot_s - 2.0, Color::new(0.26, 0.10, 0.34, 0.9));
+            draw_rectangle_lines(sx, sy, p_slot_s, p_slot_s, 1.5, Color::new(0.75, 0.40, 0.90, 0.95));
 
             if let Some(icon) = textures.get_passive_icon(p.kind) {
                 draw_texture_ex(
                     icon,
-                    sx + 3.0,
-                    pas_slots_y + 3.0,
+                    sx + 2.0,
+                    sy + 2.0,
                     WHITE,
                     DrawTextureParams {
-                        dest_size: Some(Vec2::new(slot_size - 6.0, slot_size - 6.0)),
+                        dest_size: Some(Vec2::new(p_slot_s - 4.0, p_slot_s - 4.0)),
                         ..Default::default()
                     },
                 );
             }
 
             let lvl_tag = format!("{}", p.level);
-            let tag_w = fonts.measure_heading(&lvl_tag, 10.0).width + 4.0;
-            draw_rectangle(sx + slot_size - tag_w, pas_slots_y + slot_size - 11.0, tag_w, 11.0, Color::new(0.0, 0.0, 0.0, 0.85));
-            fonts.draw_heading(&lvl_tag, sx + slot_size - tag_w + 2.0, pas_slots_y + slot_size - 2.0, 10.0, GOLD);
+            let tag_w = fonts.measure_heading(&lvl_tag, 9.0).width + 3.0;
+            draw_rectangle(sx + p_slot_s - tag_w, sy + p_slot_s - 9.0, tag_w, 9.0, Color::new(0.0, 0.0, 0.0, 0.85));
+            fonts.draw_heading(&lvl_tag, sx + p_slot_s - tag_w + 1.0, sy + p_slot_s - 1.0, 9.0, GOLD);
 
             if is_hover {
-                hovered_tooltip = Some(HoverTooltip::Passive(p.clone(), sx, pas_slots_y));
+                hovered_tooltip = Some(HoverTooltip::Passive(p.clone(), sx, sy));
             }
         } else {
             // Пустой слот реликвии
-            draw_rectangle_lines(sx, pas_slots_y, slot_size, slot_size, 1.0, Color::new(0.25, 0.20, 0.30, 0.7));
-            draw_circle_lines(sx + slot_size / 2.0, pas_slots_y + slot_size / 2.0, 6.0, 1.0, Color::new(0.35, 0.25, 0.40, 0.4));
+            draw_rectangle_lines(sx, sy, p_slot_s, p_slot_s, 1.0, Color::new(0.25, 0.20, 0.30, 0.7));
+            draw_circle_lines(sx + p_slot_s / 2.0, sy + p_slot_s / 2.0, 4.0, 1.0, Color::new(0.35, 0.25, 0.40, 0.4));
         }
     }
 
@@ -545,10 +552,43 @@ pub fn render_ui(
             }
         }
 
-        // 9. КАРТОЧКИ ПРИЗЫВА МОБОВ (Центральный блок: идеальные отступы от краев, ЛКМ = призыв, кнопка [i] = досье, Shift = на все души)
+        // Переключатели Страниц Мобов: [Страница 1: Тиры 1-8] и [Страница 2: Тиры 9-16]
+        let page_tab_w = 110.0;
+        let page_tab_h = g_btn_h;
+        let p1_x = cards_start_x + 3.0 * (g_btn_w + 8.0);
+        let p2_x = p1_x + page_tab_w + 6.0;
 
+        let p1_hover = mx >= p1_x && mx <= p1_x + page_tab_w && my >= g_y && my <= g_y + page_tab_h;
+        let p2_hover = mx >= p2_x && mx <= p2_x + page_tab_w && my >= g_y && my <= g_y + page_tab_h;
+        if p1_hover || p2_hover {
+            interaction.is_mouse_over_ui = true;
+        }
+
+        let p1_active = director.mob_page == 0;
+        let p2_active = director.mob_page == 1;
+
+        // Кнопка Страница 1
+        draw_rectangle(p1_x, g_y, page_tab_w, page_tab_h, if p1_active { Color::new(0.24, 0.18, 0.38, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
+        draw_rectangle_lines(p1_x, g_y, page_tab_w, page_tab_h, if p1_active { 2.0 } else { 1.0 }, if p1_active { GOLD } else { GRAY });
+        fonts.draw_heading("⚔️ ОРДА 1-8", p1_x + 12.0, g_y + 13.0, 11.0, if p1_active { GOLD } else { LIGHTGRAY });
+        fonts.draw_text("Базовые отряды", p1_x + 12.0, g_y + 25.0, 9.5, if p1_active { WHITE } else { GRAY });
+        if is_mouse_button_pressed(MouseButton::Left) && p1_hover {
+            interaction.set_mob_page = Some(0);
+        }
+
+        // Кнопка Страница 2
+        draw_rectangle(p2_x, g_y, page_tab_w, page_tab_h, if p2_active { Color::new(0.38, 0.14, 0.22, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
+        draw_rectangle_lines(p2_x, g_y, page_tab_w, page_tab_h, if p2_active { 2.0 } else { 1.0 }, if p2_active { GOLD } else { GRAY });
+        fonts.draw_heading("🔥 ЛЕГИОН 9-16", p2_x + 8.0, g_y + 13.0, 11.0, if p2_active { GOLD } else { LIGHTGRAY });
+        fonts.draw_text("Высшие [Tab]", p2_x + 8.0, g_y + 25.0, 9.5, if p2_active { WHITE } else { GRAY });
+        if is_mouse_button_pressed(MouseButton::Left) && p2_hover {
+            interaction.set_mob_page = Some(1);
+        }
+
+        // 9. КАРТОЧКИ ПРИЗЫВА МОБОВ (Центральный блок: идеальные отступы от краев, ЛКМ = призыв, кнопка [i] = досье, Shift = на все души)
+        let page_offset = director.mob_page * 8;
         for i in 0..8 {
-            let tier = (i + 1) as u8;
+            let tier = (i + 1) as u8 + page_offset;
             let config = get_squad_config(tier);
             let is_unlocked = director.total_points_spent >= config.unlock_spent_threshold;
             let can_afford = director.points >= config.cost;
@@ -604,7 +644,7 @@ pub fn render_ui(
             // Иконка / Спрайт моба
             if let Some(mob_tex) = textures.get_mob_texture(tier, 0) {
                 let p_size = 34.0;
-                let (pw, ph) = if tier == 2 { (p_size * 1.3, p_size * 0.65) } else { (p_size, p_size) };
+                let (pw, ph) = if tier == 2 || tier == 10 { (p_size * 1.3, p_size * 0.65) } else { (p_size, p_size) };
                 let px = cx + (card_w - pw) / 2.0;
                 let py = cy + 22.0 + (p_size - ph) / 2.0;
                 draw_texture_ex(
@@ -628,7 +668,15 @@ pub fn render_ui(
                 5 => "Камикадзе",
                 6 => "Демоны",
                 7 => "Элементали",
-                _ => "Жнецы",
+                8 => "Жнецы",
+                9 => "Фаланга",
+                10 => "Ад.Гончие",
+                11 => "Архикультист",
+                12 => "Колоссы",
+                13 => "Мучители",
+                14 => "Ловчие",
+                15 => "Архонты",
+                _ => "Аватар",
             };
             let nw = fonts.measure_heading(short_name, 11.0).width;
             fonts.draw_heading(short_name, cx + (card_w - nw) / 2.0, cy + 68.0, 11.0, if is_unlocked { WHITE } else { LIGHTGRAY });
@@ -658,13 +706,21 @@ pub fn render_ui(
             // Роль
             let role_str = match tier {
                 1 => "x8 бойцов",
-                2 => "x6 скор.",
+                2 => "x5 скор.",
                 3 => "Дальники",
                 4 => "Танк 380",
                 5 => "Взрыв 220",
                 6 => "Телепорт",
                 7 => "Магия огня",
-                _ => "Титан коса",
+                8 => "Титан коса",
+                9 => "x8 щитов",
+                10 => "x5 ад.псов",
+                11 => "Снайперы",
+                12 => "Танк 1450",
+                13 => "Взрыв 550",
+                14 => "Ловчие фазы",
+                15 => "Архонты огня",
+                _ => "Колосс 8500",
             };
             let rw = fonts.measure_text(role_str, 10.0).width;
             fonts.draw_text(role_str, cx + (card_w - rw) / 2.0, cy + 98.0, 10.0, if is_unlocked { SKYBLUE } else { GRAY });
@@ -1038,6 +1094,12 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
             WeaponType::ChainFrost => ("Клевер Судьбы", "Абсолютный Ноль"),
             WeaponType::BrimstoneRay => ("Призматический Фокус", "Инфернальный Катаклизм"),
             WeaponType::MissileSwarm => ("Черный Эгис", "Осада Судного Дня"),
+            WeaponType::ChainLightning => ("Громовой Молот", "Гнев Бури"),
+            WeaponType::DivineBell => ("Аура Божественности", "Аура Собора"),
+            WeaponType::SoulPhantoms => ("Жатва Душ", "Вопль Банши"),
+            WeaponType::AegisOrbiters => ("Эгида Бессмертия", "Несокрушимая Крепость"),
+            WeaponType::ChaosMeteor => ("Сердце Пироманта", "Шторм Армагеддона"),
+            WeaponType::VoidRift => ("Оккультная Призма", "Коллапс Сверхновой"),
             _ => ("-", "-"),
         };
         (format!("Эволюция (Ур. 8 + {}): -> {}", req_passive, evo_weapon), YELLOW)
@@ -1049,8 +1111,8 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
 /// Всплывающая подсказка для пассивного предмета Босса
 fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts: &GameFonts) {
     let def = get_passive_def(p.kind);
-    let card_w = 380.0;
-    let card_h = 130.0;
+    let card_w = 400.0;
+    let card_h = 138.0;
     let card_x = (sx + 19.0 - card_w / 2.0).clamp(10.0, screen_w - card_w - 10.0);
     let card_y = sy + 36.0;
 
@@ -1075,6 +1137,20 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::CloverOfFate => format!("Текущий бонус: +{}% шанс критического удара (х2 урон)", p.level * 12),
         PassiveType::PrismaticFocus => format!("Текущий бонус: +{}% к площади поражения (AoE)", p.level * 15),
         PassiveType::TitanAegis => format!("Текущий бонус: -{:.1} плоского урона от каждого удара", p.level as f32 * 2.5),
+        PassiveType::ImmortalAegis => format!("Текущий бонус: Воскрешение с 100% HP и импульсом (Статус: {})", if p.level > 0 { "ГОТОВО" } else { "НЕАКТИВНО" }),
+        PassiveType::ArchmageShard => format!("Текущий бонус: +{} рикошет, -{}% кд, +{}% AoE", p.level, p.level * 15, p.level * 20),
+        PassiveType::DivineRapier => format!("Текущий бонус: +{}% наносимый урон, +{}% входящий урон", p.level * 60, p.level * 15),
+        PassiveType::OctarineCore => format!("Текущий бонус: {}% вампиризм от всех заклинаний", p.level * 22),
+        PassiveType::SolarRelic => format!("Текущий бонус: {} святого AoE урона/сек, -20% урона врагов", p.level * 40),
+        PassiveType::StaticCore => format!("Текущий бонус: {}% шанс молнии на 6 целей", p.level * 25),
+        PassiveType::ColossalEye => format!("Текущий бонус: +{}% урон, +{}% размер снарядов, 100% пробивание", p.level * 100, p.level * 50),
+        PassiveType::BlessedHeart => format!("Текущий бонус: +{} HP, +{}% урон, самонаведение снарядов", p.level * 150, p.level * 25),
+        PassiveType::Pyromaniac => format!("Текущий бонус: {}% исцеления от огненного урона и взрывов", p.level * 35),
+        PassiveType::SoulHarvester => format!("Текущий бонус: {}% шанс призыва мстительных духов", p.level * 20),
+        PassiveType::DivinityAura => format!("Текущий бонус: {} AoE святого урона от летящих снарядов", p.level * 35),
+        PassiveType::UkuleleResonance => format!("Текущий бонус: {}% шанс электро-цепочки на 4 цели", p.level * 25),
+        PassiveType::FateWeaver => "Текущий бонус: Все шансы эффектов проверяются дважды в пользу босса".to_string(),
+        PassiveType::SiegeMortar => "Текущий бонус: Взрывы 55px при каждом попадании снаряда (50% урона)".to_string(),
     };
     fonts.draw_text(&bonus_text, card_x + 12.0, card_y + 44.0, 12.0, GREEN);
 
@@ -1095,6 +1171,20 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::CloverOfFate => "Связка для эволюции: Цепной Ледяной Шар -> Абсолютный Ноль",
         PassiveType::PrismaticFocus => "Связка для эволюции: Кровавый Гиперлуч -> Инфернальный Катаклизм",
         PassiveType::TitanAegis => "Связка для эволюции: Рой Микроракет -> Осада Судного Дня",
+        PassiveType::ImmortalAegis => "Связка для эволюции: Орбитальные Бастионы -> Несокрушимая Крепость",
+        PassiveType::ArchmageShard => "Связка для синергии: Усиливает все заклинания и снаряды (+AoE, -кд)",
+        PassiveType::DivineRapier => "Связка для синергии: Колоссальный урон для всех видов вооружения",
+        PassiveType::OctarineCore => "Связка для эволюции: Разрыв Бездны -> Коллапс Сверхновой",
+        PassiveType::SolarRelic => "Связка для синергии: Священная аура, сжигающая нежить и орду",
+        PassiveType::StaticCore => "Связка для эволюции: Цепная Молния -> Гнев Бури",
+        PassiveType::ColossalEye => "Связка для синергии: Превращает все снаряды в пробивающие гиганты",
+        PassiveType::BlessedHeart => "Связка для синергии: Самонаведение для абсолютно всех атак босса",
+        PassiveType::Pyromaniac => "Связка для эволюции: Хаотический Метеор -> Шторм Армагеддона",
+        PassiveType::SoulHarvester => "Связка для эволюции: Голодные Призраки -> Вопль Банши",
+        PassiveType::DivinityAura => "Связка для эволюции: Священный Колокол -> Аура Собора",
+        PassiveType::UkuleleResonance => "Связка для синергии: Электро-цепи при любом ударе",
+        PassiveType::FateWeaver => "Связка для синергии: Удваивает удачу для всех критов и проков",
+        PassiveType::SiegeMortar => "Связка для синергии: Добавляет взрывы по площади ко всем атакам",
     };
     fonts.draw_text(evo_synergy, card_x + 12.0, card_y + 92.0, 11.5, YELLOW);
 }

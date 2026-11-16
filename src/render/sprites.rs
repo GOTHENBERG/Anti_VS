@@ -734,11 +734,16 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
                 let rot_time = get_time() as f32 * 12.0;
                 let h_dir = Vec2::new(rot_time.cos(), rot_time.sin());
                 let h_norm = Vec2::new(-h_dir.y, h_dir.x);
-                draw_circle(pos.x, pos.y, radius * 1.1, Color::new(1.0, 0.85, 0.2, 0.35));
-                draw_line(pos.x - h_dir.x * 12.0, pos.y - h_dir.y * 12.0, pos.x + h_dir.x * 6.0, pos.y + h_dir.y * 6.0, 3.5, Color::new(0.6, 0.4, 0.2, 1.0));
+                // Сияющая золотая аура святого молота
+                draw_circle(pos.x, pos.y, radius * 1.35, Color::new(1.0, 0.90, 0.35, 0.45));
+                draw_circle_lines(pos.x, pos.y, radius * 1.35, 1.5, GOLD);
+                // Рукоять из освященной стали с золотым навершием
+                draw_line(pos.x - h_dir.x * 12.0, pos.y - h_dir.y * 12.0, pos.x + h_dir.x * 6.0, pos.y + h_dir.y * 6.0, 3.5, GOLD);
+                draw_circle(pos.x - h_dir.x * 12.0, pos.y - h_dir.y * 12.0, 3.0, WHITE);
+                // Массивный боёк боевого молота
                 let head_c = pos + h_dir * 8.0;
-                draw_line(head_c.x - h_norm.x * 10.0, head_c.y - h_norm.y * 10.0, head_c.x + h_norm.x * 10.0, head_c.y + h_norm.y * 10.0, 7.0, GOLD);
-                draw_circle(head_c.x, head_c.y, 3.5, WHITE);
+                draw_line(head_c.x - h_norm.x * 9.0, head_c.y - h_norm.y * 9.0, head_c.x + h_norm.x * 9.0, head_c.y + h_norm.y * 9.0, 7.5, GOLD);
+                draw_line(head_c.x - h_norm.x * 7.0, head_c.y - h_norm.y * 7.0, head_c.x + h_norm.x * 7.0, head_c.y + h_norm.y * 7.0, 3.5, WHITE);
                 return;
             }
             // Ледяные Осколки: ограненные кристаллы льда

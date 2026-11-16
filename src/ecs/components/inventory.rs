@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 pub const MAX_WEAPON_SLOTS: usize = 6;
-pub const MAX_PASSIVE_SLOTS: usize = 6;
+pub const MAX_PASSIVE_SLOTS: usize = 10; // Расширено до 10 слотов для создания глубоких синергетических билдов!
 pub const MAX_WEAPON_LEVEL: u8 = 8;
 pub const MAX_PASSIVE_LEVEL: u8 = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WeaponType {
-    // Базовые оружия (14 видов)
+    // Базовые оружия и скиллы (20 видов)
     WindBlade,        // 1. Клинок Ветра
     FireAura,         // 2. Огненная Аура
     MagicWand,        // 3. Магический Жезл
@@ -22,26 +22,39 @@ pub enum WeaponType {
     ChainFrost,       // 12. Цепной Ледяной Шар (Прыгающий мороз)
     BrimstoneRay,     // 13. Кровавый Гиперлуч (Прожигающий лазер)
     MissileSwarm,     // 14. Рой Микроракет (Самонаводящиеся ракеты)
+    ChainLightning,   // 15. Цепная Молния (Static Arc)
+    DivineBell,       // 16. Священный Колокол (Resonance Clang)
+    SoulPhantoms,     // 17. Голодные Призраки (Ethereal Swarm)
+    AegisOrbiters,    // 18. Орбитальные Бастионы (Shield Orbiters)
+    ChaosMeteor,      // 19. Хаотический Метеор (Astral Cataclysm)
+    VoidRift,         // 20. Разрыв Бездны (Spatial Rift)
 
-    // Эволюции (14 эволюций)
-    BladeStorm,       // Эволюция: Буря Клинков (Клинок Ветра + Перчатка Скорости)
-    Hellfire,         // Эволюция: Адское Пекло (Огненная Аура + Сердце Гиганта)
-    DeathRay,         // Эволюция: Луч Смерти (Магический Жезл + Фолиант Времени)
-    DivineShield,     // Эволюция: Праведный Щит (Святой Молот + Броня Света)
-    BlizzardStorm,    // Эволюция: Ледниковая Буря (Ледяные Осколки + Кольцо Заморозки)
-    ToxicPestilence,  // Эволюция: Токсичный Мор (Чумные Сферы + Едкий Сосуд)
-    WhirlwindCleaver, // Эволюция: Вихревой Секач (Топор Палача + Кровавый Камень)
-    StarfallBarrage,  // Эволюция: Звездопадный Залп (Небесный Лук + Орлиный Прицел)
-    ThunderstormWrath,// Эволюция: Гнев Грозы (Грозовая Сфера + Песочные Часы)
-    BloodHarvest,     // Эволюция: Кровавая Жатва (Кровавые Кинжалы + Сфера Притяжения)
-    EventHorizon,     // Эволюция: Горизонт Событий (Гравитационная Сфера + Катушка Теслы)
-    AbsoluteZero,     // Эволюция: Абсолютный Ноль (Цепной Ледяной Шар + Клевер Судьбы)
-    InfernalCataclysm,// Эволюция: Инфернальный Катаклизм (Кровавый Гиперлуч + Призматический Фокус)
-    DoomsdayBarrage,  // Эволюция: Осада Судного Дня (Рой Микроракет + Черный Эгис)
+    // Эволюции (20 эволюций)
+    BladeStorm,       // 1. Буря Клинков (Клинок Ветра + Перчатка Скорости)
+    Hellfire,         // 2. Адское Пекло (Огненная Аура + Сердце Гиганта)
+    DeathRay,         // 3. Луч Смерти (Магический Жезл + Фолиант Времени)
+    DivineShield,     // 4. Праведный Щит (Святой Молот + Броня Света)
+    BlizzardStorm,    // 5. Ледниковая Буря (Ледяные Осколки + Кольцо Заморозки)
+    ToxicPestilence,  // 6. Токсичный Мор (Чумные Сферы + Едкий Сосуд)
+    WhirlwindCleaver, // 7. Вихревой Секач (Топор Палача + Кровавый Камень)
+    StarfallBarrage,  // 8. Звездопадный Залп (Небесный Лук + Орлиный Прицел)
+    ThunderstormWrath,// 9. Гнев Грозы (Грозовая Сфера + Песочные Часы)
+    BloodHarvest,     // 10. Кровавая Жатва (Кровавые Кинжалы + Сфера Притяжения)
+    EventHorizon,     // 11. Горизонт Событий (Гравитационная Сфера + Катушка Теслы)
+    AbsoluteZero,     // 12. Абсолютный Ноль (Цепной Ледяной Шар + Клевер Судьбы)
+    InfernalCataclysm,// 13. Инфернальный Катаклизм (Кровавый Гиперлуч + Призматический Фокус)
+    DoomsdayBarrage,  // 14. Осада Судного Дня (Рой Микроракет + Черный Эгис)
+    StormGodWrath,    // 15. Гнев Буревестника (Цепная Молния + Громовой Молот)
+    CathedralAura,    // 16. Великий Благовест (Священный Колокол + Аура Божественности)
+    BansheeWail,      // 17. Вопль Банши (Голодные Призраки + Жатва Душ)
+    InvincibleBastion,// 18. Несокрушимая Крепость (Орбитальные Бастионы + Эгида Бессмертия)
+    ArmageddonStorm,  // 19. Шторм Армагеддона (Хаотический Метеор + Сердце Пироманта)
+    SingularityCollapse,// 20. Коллапс Сверхновой (Разрыв Бездны + Оккультная Призма)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PassiveType {
+    // Базовые пассивки (14 видов)
     SpeedGloves,      // 1. Перчатка Скорости (+скорость атаки)
     GiantHeart,       // 2. Сердце Гиганта (+макс ХП и регенерация)
     CooldownTome,     // 3. Фолиант Времени (-кд всех способностей)
@@ -56,6 +69,22 @@ pub enum PassiveType {
     CloverOfFate,     // 12. Клевер Судьбы (+шанс крит. удара)
     PrismaticFocus,   // 13. Призматический Фокус (+радиус поражения AoE)
     TitanAegis,       // 14. Черный Эгис (плоское снижение входящего урона)
+
+    // Легендарные реликвии и кросс-синергетические предметы (14 видов)
+    ImmortalAegis,    // 15. Эгида Бессмертия (Воскрешение с 65% HP + ударная волна)
+    ArchmageShard,    // 16. Осколок Архимага (+1 рикошет, -15% кд, +20% AoE всем скиллам)
+    DivineRapier,     // 17. Священная Рапира (+60% общий урон, но +15% входящий урон)
+    OctarineCore,     // 18. Оккультная Призма (22% вампиризм от всех заклинаний)
+    SolarRelic,       // 19. Солнечный Венец (40 AoE ожог/сек, враги наносят на 20% меньше урона)
+    StaticCore,       // 20. Громовой Молот (25% шанс цепной молнии на 6 целей)
+    ColossalEye,      // 21. Око Колосса (-25% темп атаки, +110% урон, +50% размер, 100% пробивание)
+    BlessedHeart,     // 22. Благословенное Сердце (+35% урон, +150 HP, самонаведение всех снарядов)
+    Pyromaniac,       // 23. Сердце Пироманта (Огонь и взрывы лечат босса на 40% урона)
+    SoulHarvester,    // 24. Жатва Душ (Убийства призывают духов-фамильяров)
+    DivinityAura,     // 25. Аура Божественности (Снаряды излучают сияющий AoE урон в полете)
+    UkuleleResonance, // 26. Электрическая Лира (25% шанс цепных импульсов на 4 врагов)
+    FateWeaver,       // 27. Ткач Судьбы (57-листный клевер: все шансы проков бросаются дважды)
+    SiegeMortar,      // 28. Осадный Бегемот (Все попадания детонируют в радиусе 55px на 50% урона)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -104,6 +133,9 @@ pub struct BossInventory {
     pub ranged_damage_recent: f32,
     pub last_chosen_perk: Option<String>,
     pub perk_announcement_timer: f32,
+
+    // Механика однократного воскрешения от Эгиды Бессмертия
+    pub has_used_aegis_revive: bool,
 }
 
 impl BossInventory {
@@ -128,6 +160,7 @@ impl BossInventory {
             ranged_damage_recent: 0.0,
             last_chosen_perk: None,
             perk_announcement_timer: 0.0,
+            has_used_aegis_revive: false,
         }
     }
 
@@ -137,7 +170,6 @@ impl BossInventory {
         while self.current_xp >= self.xp_to_next_level {
             self.current_xp -= self.xp_to_next_level;
             self.level += 1;
-            // Умеренный рост кривой опыта для динамичного сноуболла босса
             self.xp_to_next_level = (self.xp_to_next_level * 1.20 + 10.0).floor();
             level_ups += 1;
         }
@@ -206,14 +238,44 @@ impl BossInventory {
             WeaponType::MissileSwarm if self.has_passive(PassiveType::TitanAegis) => {
                 Some(WeaponType::DoomsdayBarrage)
             }
+            WeaponType::ChainLightning if self.has_passive(PassiveType::StaticCore) => {
+                Some(WeaponType::StormGodWrath)
+            }
+            WeaponType::DivineBell if self.has_passive(PassiveType::DivinityAura) => {
+                Some(WeaponType::CathedralAura)
+            }
+            WeaponType::SoulPhantoms if self.has_passive(PassiveType::SoulHarvester) => {
+                Some(WeaponType::BansheeWail)
+            }
+            WeaponType::AegisOrbiters if self.has_passive(PassiveType::ImmortalAegis) => {
+                Some(WeaponType::InvincibleBastion)
+            }
+            WeaponType::ChaosMeteor if self.has_passive(PassiveType::Pyromaniac) => {
+                Some(WeaponType::ArmageddonStorm)
+            }
+            WeaponType::VoidRift if self.has_passive(PassiveType::OctarineCore) => {
+                Some(WeaponType::SingularityCollapse)
+            }
             _ => None,
         }
     }
 
-    /// Шанс удара цепной молнией от TeslaCoil (Катушка Теслы)
+    /// Ткач Судьбы (57-листный клевер): перебрасывает неудачные шансы
+    pub fn roll_luck(&self, chance: f32) -> bool {
+        let has_clover = self.has_passive(PassiveType::FateWeaver);
+        let roll1 = macroquad::rand::gen_range(0.0, 1.0) < chance;
+        if roll1 || !has_clover {
+            roll1
+        } else {
+            macroquad::rand::gen_range(0.0, 1.0) < chance
+        }
+    }
+
+    /// Шанс удара цепной молнией от TeslaCoil / StaticCore
     pub fn get_tesla_chain_chance(&self) -> f32 {
         let lvl = self.get_passive_level(PassiveType::TeslaCoil);
-        (lvl as f32 * 0.12).min(0.60)
+        let static_core = if self.has_passive(PassiveType::StaticCore) { 0.25 } else { 0.0 };
+        ((lvl as f32 * 0.12) + static_core).min(0.75)
     }
 
     /// Шанс критического удара от CloverOfFate (Клевер Судьбы)
@@ -222,34 +284,55 @@ impl BossInventory {
         (lvl as f32 * 0.12).min(0.60)
     }
 
-    /// Множитель размера области поражения AoE от PrismaticFocus (Призматический Фокус)
+    /// Множитель размера области поражения AoE от PrismaticFocus и ArchmageShard
     pub fn get_aoe_multiplier(&self) -> f32 {
         let lvl = self.get_passive_level(PassiveType::PrismaticFocus);
-        1.0 + (lvl as f32 * 0.15)
+        let shard_bonus = if self.has_passive(PassiveType::ArchmageShard) { 0.20 } else { 0.0 };
+        1.0 + (lvl as f32 * 0.15) + shard_bonus
     }
 
-    /// Плоское снижение любого входящего урона от TitanAegis (Черный Эгис)
+    /// Плоское снижение любого входящего урона от TitanAegis
     pub fn get_flat_damage_reduction(&self) -> f32 {
         let lvl = self.get_passive_level(PassiveType::TitanAegis);
         lvl as f32 * 2.5
     }
 
-    /// Множитель урона от пассивок (BloodStone)
+    /// Множитель урона от BloodStone, DivineRapier, ColossalEye, BlessedHeart
     pub fn get_damage_multiplier(&self) -> f32 {
         let blood_stone = self.get_passive_level(PassiveType::BloodStone);
-        1.0 + (blood_stone as f32 * 0.12) // +12% за уровень
+        let mut mult = 1.0 + (blood_stone as f32 * 0.12);
+        if self.has_passive(PassiveType::DivineRapier) {
+            mult += 0.60; // +60% от Священной Рапиры
+        }
+        if self.has_passive(PassiveType::ColossalEye) {
+            mult += 1.10; // +110% от Ока Колосса
+        }
+        if self.has_passive(PassiveType::BlessedHeart) {
+            mult += 0.35; // +35% от Благословенного Сердца
+        }
+        mult
     }
 
     /// Множитель скорости полета снарядов (EagleScope)
     pub fn get_projectile_speed_multiplier(&self) -> f32 {
         let eagle_scope = self.get_passive_level(PassiveType::EagleScope);
-        1.0 + (eagle_scope as f32 * 0.20) // +20% за уровень
+        1.0 + (eagle_scope as f32 * 0.20)
     }
 
-    /// Регенерация HP в секунду от BloodStone
+    /// Регенерация HP в секунду от BloodStone и GiantHeart
     pub fn get_hp_regen(&self) -> f32 {
         let blood_stone = self.get_passive_level(PassiveType::BloodStone);
-        blood_stone as f32 * 2.5 // +2.5 HP/сек за уровень
+        let giant_heart = self.get_passive_level(PassiveType::GiantHeart);
+        (blood_stone as f32 * 2.5) + (giant_heart as f32 * 3.0)
+    }
+
+    /// Вампиризм от Оккультной Призмы (Octarine Core)
+    pub fn get_spell_lifesteal_ratio(&self) -> f32 {
+        if self.has_passive(PassiveType::OctarineCore) {
+            0.22 // 22% исцеления от любого магического и стихийного урона
+        } else {
+            0.0
+        }
     }
 
     /// Эффективный радиус сбора опыта от MagnetSphere
@@ -263,18 +346,25 @@ impl BossInventory {
         let mut mult = 1.0;
         let speed_gloves = self.get_passive_level(PassiveType::SpeedGloves);
         if speed_gloves > 0 {
-            mult *= 1.0 - (speed_gloves as f32 * 0.08); // до -40%
+            mult *= 1.0 - (speed_gloves as f32 * 0.08);
         }
         let tome = self.get_passive_level(PassiveType::CooldownTome);
         if tome > 0 {
-            mult *= 1.0 - (tome as f32 * 0.07); // до -35%
+            mult *= 1.0 - (tome as f32 * 0.07);
         }
-        mult.max(0.3)
+        if self.has_passive(PassiveType::ArchmageShard) {
+            mult *= 0.85; // -15% кд от Осколка Архимага
+        }
+        // Око Колосса снижает скорость атаки на 25% ради колоссального урона
+        if self.has_passive(PassiveType::ColossalEye) {
+            mult *= 1.25;
+        }
+        mult.clamp(0.25, 2.0)
     }
 
     /// Пробитие брони от пассивки CorrosiveFlask
     pub fn get_armor_penetration(&self) -> f32 {
         let flask = self.get_passive_level(PassiveType::CorrosiveFlask);
-        (flask as f32 * 0.10).min(0.50) // 10% за уровень, до 50%
+        (flask as f32 * 0.10).min(0.50)
     }
 }

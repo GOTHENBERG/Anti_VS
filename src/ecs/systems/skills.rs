@@ -143,6 +143,21 @@ pub fn update_skills(world: &mut World, dt: f32) {
                 WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage => {
                     Some(crate::audio::AudioEvent::RocketSwarm)
                 }
+                WeaponType::ChainLightning | WeaponType::StormGodWrath => {
+                    Some(crate::audio::AudioEvent::LightningStrike)
+                }
+                WeaponType::DivineBell | WeaponType::CathedralAura | WeaponType::AegisOrbiters | WeaponType::InvincibleBastion => {
+                    Some(crate::audio::AudioEvent::BladeSlash)
+                }
+                WeaponType::SoulPhantoms | WeaponType::BansheeWail => {
+                    Some(crate::audio::AudioEvent::MagicWand)
+                }
+                WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => {
+                    Some(crate::audio::AudioEvent::FireBlast)
+                }
+                WeaponType::VoidRift | WeaponType::SingularityCollapse => {
+                    Some(crate::audio::AudioEvent::LaserBeam)
+                }
             };
             if let Some(ev) = sfx {
                 world.push_audio(ev);
@@ -788,6 +803,279 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     }
                     world.spawn_particles(boss_pos, 25, RED, 180.0);
                 }
+
+                // 1.29 Цепная Молния (Static Arc): дуговые разряды молнии
+                WeaponType::ChainLightning => {
+                    let count = 3 + weapon.bonus_projectiles as usize;
+                    for _ in 0..count {
+                        let base_dir = if let Some(target_pos) = tactical_target_pos {
+                            let jitter: f32 = rand::gen_range(-0.4, 0.4);
+                            let raw_dir = (target_pos - boss_pos).normalize_or_zero();
+                            Vec2::new(raw_dir.x * jitter.cos() - raw_dir.y * jitter.sin(), raw_dir.x * jitter.sin() + raw_dir.y * jitter.cos())
+                        } else {
+                            let angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
+                            Vec2::new(angle.cos(), angle.sin())
+                        };
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: base_dir * (500.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::True,
+                            armor_penetration: 0.50,
+                            lifetime: 1.6,
+                            radius: 12.0,
+                            pierce: 4,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::ChainLightning),
+                        });
+                    }
+                }
+
+                // 1.30 Гнев Бури (ЭВОЛЮЦИЯ): сокрушительный грозовой разряд
+                WeaponType::StormGodWrath => {
+                    let count = 8 + weapon.bonus_projectiles as usize;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (580.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::True,
+                            armor_penetration: 0.80,
+                            lifetime: 2.0,
+                            radius: 16.0,
+                            pierce: 8,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::StormGodWrath),
+                        });
+                    }
+                    world.spawn_particles(boss_pos, 30, SKYBLUE, 220.0);
+                }
+
+                // 1.31 Священный Колокол: резонансный набат
+                WeaponType::DivineBell => {
+                    let radius = 240.0;
+                    let mobs_in_range = world.spatial_grid.query_nearby(boss_pos, radius);
+                    for idx in mobs_in_range {
+                        if let Some(mob) = world.mobs.get_mut(idx) {
+                            let d_sq = mob.pos.distance_squared(boss_pos);
+                            if d_sq < radius * radius {
+                                let push_dir = (mob.pos - boss_pos).normalize_or_zero();
+                                if !mob.knockback_immune {
+                                    mob.knockback_vel += push_dir * 180.0;
+                                }
+                                world.damage_queue.push(DamagePacket {
+                                    source_id: Some(0),
+                                    target_id: mob.id,
+                                    amount: effective_damage,
+                                    damage_type: DamageType::Holy,
+                                    armor_penetration: armor_pen + 0.35,
+                                });
+                            }
+                        }
+                    }
+                    world.spawn_particles(boss_pos, 25, GOLD, 200.0);
+                }
+
+                // 1.32 Аура Собора (ЭВОЛЮЦИЯ): священный хор, очищающий все вокруг
+                WeaponType::CathedralAura => {
+                    let radius = 340.0;
+                    let mobs_in_range = world.spatial_grid.query_nearby(boss_pos, radius);
+                    for idx in mobs_in_range {
+                        if let Some(mob) = world.mobs.get_mut(idx) {
+                            if mob.pos.distance_squared(boss_pos) < radius * radius {
+                                world.damage_queue.push(DamagePacket {
+                                    source_id: Some(0),
+                                    target_id: mob.id,
+                                    amount: effective_damage,
+                                    damage_type: DamageType::Holy,
+                                    armor_penetration: armor_pen + 0.60,
+                                });
+                            }
+                        }
+                    }
+                    world.spawn_particles(boss_pos, 35, Color::new(1.0, 0.9, 0.3, 0.9), 300.0);
+                }
+
+                // 1.33 Голодные Призраки: стая духов, проходящих сквозь стены и врагов
+                WeaponType::SoulPhantoms => {
+                    let count = 3 + weapon.bonus_projectiles as usize;
+                    for _ in 0..count {
+                        let angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (320.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::True,
+                            armor_penetration: 0.40,
+                            lifetime: 2.8,
+                            radius: 14.0,
+                            pierce: 5,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::SoulPhantoms),
+                        });
+                    }
+                }
+
+                // 1.34 Вопль Банши (ЭВОЛЮЦИЯ): 7 призраков Бездны
+                WeaponType::BansheeWail => {
+                    let count = 7 + weapon.bonus_projectiles as usize;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (360.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::True,
+                            armor_penetration: 0.70,
+                            lifetime: 3.5,
+                            radius: 18.0,
+                            pierce: 12,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::BansheeWail),
+                        });
+                    }
+                    world.spawn_particles(boss_pos, 40, Color::new(0.4, 1.0, 0.7, 0.9), 240.0);
+                }
+
+                // 1.35 Орбитальные Бастионы: защитные щиты вокруг босса
+                WeaponType::AegisOrbiters => {
+                    let count = 2 + weapon.bonus_projectiles as usize;
+                    for i in 0..count {
+                        let base_angle = (get_time() as f32 * 3.5) + (i as f32 * std::f32::consts::PI * 2.0 / count as f32);
+                        let dir = Vec2::new(base_angle.cos(), base_angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos + dir * 65.0,
+                            vel: dir * (200.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Physical,
+                            armor_penetration: armor_pen + 0.3,
+                            lifetime: 1.8,
+                            radius: 16.0,
+                            pierce: 10,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::AegisOrbiters),
+                        });
+                    }
+                }
+
+                // 1.36 Несокрушимая Крепость (ЭВОЛЮЦИЯ): 4 гигантских бастиона
+                WeaponType::InvincibleBastion => {
+                    let count = 4 + weapon.bonus_projectiles as usize;
+                    for i in 0..count {
+                        let base_angle = (get_time() as f32 * 4.0) + (i as f32 * std::f32::consts::PI * 0.5);
+                        let dir = Vec2::new(base_angle.cos(), base_angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos + dir * 75.0,
+                            vel: dir * (250.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Holy,
+                            armor_penetration: armor_pen + 0.6,
+                            lifetime: 2.2,
+                            radius: 22.0,
+                            pierce: 25,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::InvincibleBastion),
+                        });
+                    }
+                }
+
+                // 1.37 Хаотический Метеор: падающий метеорит с колоссальным взрывом
+                WeaponType::ChaosMeteor => {
+                    let target = tactical_target_pos.unwrap_or(boss_pos + Vec2::new(rand::gen_range(-150.0, 150.0), rand::gen_range(-150.0, 150.0)));
+                    let dir = (target - boss_pos).normalize_or_zero();
+                    new_projectiles.push(ProjectileEntity {
+                        id: 0,
+                        pos: boss_pos,
+                        vel: dir * (400.0 * spd_mult),
+                        damage: effective_damage,
+                        damage_type: DamageType::Fire,
+                        armor_penetration: 0.50,
+                        lifetime: 1.5,
+                        radius: 24.0,
+                        pierce: 1,
+                        faction: Faction::Boss,
+                        source_weapon: Some(WeaponType::ChaosMeteor),
+                    });
+                }
+
+                // 1.38 Шторм Армагеддона (ЭВОЛЮЦИЯ): 5 метеоритов
+                WeaponType::ArmageddonStorm => {
+                    let count = 5 + weapon.bonus_projectiles as usize;
+                    for _ in 0..count {
+                        let offset = Vec2::new(rand::gen_range(-300.0, 300.0), rand::gen_range(-300.0, 300.0));
+                        let target = boss_pos + offset;
+                        let dir = (target - boss_pos).normalize_or_zero();
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (450.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Fire,
+                            armor_penetration: 0.75,
+                            lifetime: 1.6,
+                            radius: 28.0,
+                            pierce: 1,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::ArmageddonStorm),
+                        });
+                    }
+                    world.spawn_particles(boss_pos, 40, ORANGE, 260.0);
+                }
+
+                // 1.39 Разрыв Бездны: космическая воронка, притягивающая врагов
+                WeaponType::VoidRift => {
+                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                        (target_pos - boss_pos).normalize_or_zero()
+                    } else {
+                        Vec2::X
+                    };
+                    new_projectiles.push(ProjectileEntity {
+                        id: 0,
+                        pos: boss_pos,
+                        vel: base_dir * (260.0 * spd_mult),
+                        damage: effective_damage,
+                        damage_type: DamageType::True,
+                        armor_penetration: 0.70,
+                        lifetime: 2.5,
+                        radius: 20.0,
+                        pierce: 15,
+                        faction: Faction::Boss,
+                        source_weapon: Some(WeaponType::VoidRift),
+                    });
+                }
+
+                // 1.40 Коллапс Сверхновой (ЭВОЛЮЦИЯ): черная дыра взрывается каскадом сингулярностей
+                WeaponType::SingularityCollapse => {
+                    let count = 4 + weapon.bonus_projectiles as usize;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (280.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::True,
+                            armor_penetration: 0.95,
+                            lifetime: 3.0,
+                            radius: 26.0,
+                            pierce: 25,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::SingularityCollapse),
+                        });
+                    }
+                    world.spawn_particles(boss_pos, 50, MAGENTA, 320.0);
+                }
             }
         }
     }
@@ -849,36 +1137,78 @@ pub fn update_skills(world: &mut World, dt: f32) {
         }
     }
 
-    // Присваиваем ID снарядам
+    // Модификаторы снарядов от пассивок и реликвий
+    let has_colossal_eye = world.boss_inventory.has_passive(crate::ecs::components::inventory::PassiveType::ColossalEye);
+    let has_archmage_shard = world.boss_inventory.has_passive(crate::ecs::components::inventory::PassiveType::ArchmageShard);
+    let has_solar_relic = world.boss_inventory.has_passive(crate::ecs::components::inventory::PassiveType::SolarRelic);
+
+    // Аура Солнечного Венца (SolarRelic): наносит 40 святого урона/сек вокруг босса
+    if has_solar_relic {
+        let solar_rad = 180.0;
+        let nearby = world.spatial_grid.query_nearby(boss_pos, solar_rad);
+        for idx in nearby {
+            if let Some(mob) = world.mobs.get_mut(idx) {
+                if mob.pos.distance_squared(boss_pos) < solar_rad * solar_rad {
+                    world.damage_queue.push(DamagePacket {
+                        source_id: Some(0),
+                        target_id: mob.id,
+                        amount: 40.0 * dt,
+                        damage_type: DamageType::Holy,
+                        armor_penetration: 0.3,
+                    });
+                }
+            }
+        }
+    }
+
+    // Присваиваем ID и применяем эффекты реликвий
     for proj in &mut new_projectiles {
         proj.id = world.alloc_id();
+        if has_colossal_eye {
+            proj.radius *= 1.5;
+            proj.damage *= 2.0;
+            proj.pierce += 99;
+        }
+        if has_archmage_shard {
+            proj.pierce += 1;
+        }
     }
     world.projectiles.extend(new_projectiles);
     world.acid_pools.extend(new_acid_pools);
 
-    // 2. Стрельба культистов (Тир 3), Огненных элементалей (Тир 7) и Жнеца Смерти (Тир 8)
+    // 2. Стрельба культистов (Тир 3/11), Огненных элементалей (Тир 7/15) и Жнеца/Аватара (Тир 8/16)
     let mut enemy_shots = Vec::new();
     for mob in &mut world.mobs {
-        if mob.tier == 3 {
+        if mob.tier == 3 || mob.tier == 11 {
             mob.attack_timer -= dt;
             let dist_sq = mob.pos.distance_squared(boss_pos);
-            if dist_sq < 310.0 * 310.0 && mob.attack_timer <= 0.0 {
-                mob.attack_timer = 2.0;
-                enemy_shots.push((mob.pos, 18.0, DamageType::Physical, 230.0, 8.0, None));
+            let shoot_dist = if mob.tier == 11 { 380.0 } else { 310.0 };
+            if dist_sq < shoot_dist * shoot_dist && mob.attack_timer <= 0.0 {
+                mob.attack_timer = if mob.tier == 11 { 1.6 } else { 2.0 };
+                let (dmg, dmg_type, spd) = if mob.tier == 11 {
+                    (48.0, DamageType::True, 260.0)
+                } else {
+                    (18.0, DamageType::Physical, 230.0)
+                };
+                enemy_shots.push((mob.pos, dmg, dmg_type, spd, 9.0, None));
             }
-        } else if mob.tier == 7 {
+        } else if mob.tier == 7 || mob.tier == 15 {
             mob.attack_timer -= dt;
             let dist_sq = mob.pos.distance_squared(boss_pos);
-            if dist_sq < 360.0 * 360.0 && mob.attack_timer <= 0.0 {
-                mob.attack_timer = 2.2;
-                enemy_shots.push((mob.pos, 35.0, DamageType::Fire, 260.0, 12.0, None));
+            let shoot_dist = if mob.tier == 15 { 440.0 } else { 360.0 };
+            if dist_sq < shoot_dist * shoot_dist && mob.attack_timer <= 0.0 {
+                mob.attack_timer = if mob.tier == 15 { 1.8 } else { 2.2 };
+                let (dmg, spd) = if mob.tier == 15 { (110.0, 300.0) } else { (35.0, 260.0) };
+                enemy_shots.push((mob.pos, dmg, DamageType::Fire, spd, 14.0, None));
             }
-        } else if mob.tier == 8 {
+        } else if mob.tier == 8 || mob.tier == 16 {
             mob.attack_timer -= dt;
             let dist_sq = mob.pos.distance_squared(boss_pos);
-            if dist_sq < 420.0 * 420.0 && mob.attack_timer <= 0.0 {
-                mob.attack_timer = 2.8;
-                enemy_shots.push((mob.pos, 70.0, DamageType::True, 280.0, 18.0, Some(WeaponType::ExecutionerAxe)));
+            let shoot_dist = if mob.tier == 16 { 500.0 } else { 420.0 };
+            if dist_sq < shoot_dist * shoot_dist && mob.attack_timer <= 0.0 {
+                mob.attack_timer = if mob.tier == 16 { 2.4 } else { 2.8 };
+                let (dmg, spd) = if mob.tier == 16 { (160.0, 320.0) } else { (70.0, 280.0) };
+                enemy_shots.push((mob.pos, dmg, DamageType::True, spd, 20.0, Some(WeaponType::ExecutionerAxe)));
             }
         }
     }

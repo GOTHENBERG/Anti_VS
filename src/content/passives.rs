@@ -78,5 +78,75 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Черный Эгис",
             description: "-2.5 плоского урона от каждого удара. Нужен для Осады Судного Дня.",
         },
+        PassiveType::ImmortalAegis => PassiveDefinition {
+            kind,
+            name: "Эгида Бессмертия",
+            description: "Воскрешение со 100% HP и мощной ударной волной при гибели. Эволюция Бастиона.",
+        },
+        PassiveType::ArchmageShard => PassiveDefinition {
+            kind,
+            name: "Осколок Архимага",
+            description: "+1 дополнительный рикошет снарядов, -15% к откатy и +20% к площади всех атак.",
+        },
+        PassiveType::DivineRapier => PassiveDefinition {
+            kind,
+            name: "Священная Рапира",
+            description: "+60% к общему наносимому урону, но +15% к получаемому боссом урону.",
+        },
+        PassiveType::OctarineCore => PassiveDefinition {
+            kind,
+            name: "Оккультная Призма",
+            description: "22% вампиризма от любого урона заклинаний. Эволюция Коллапса Сверхновой.",
+        },
+        PassiveType::SolarRelic => PassiveDefinition {
+            kind,
+            name: "Солнечный Венец",
+            description: "Аура солнца: 40 святого урона/сек вокруг босса, ослабляет урон врагов на 20%.",
+        },
+        PassiveType::StaticCore => PassiveDefinition {
+            kind,
+            name: "Громовой Молот",
+            description: "25% шанс вызвать цепную молнию на 6 целей при ударе. Эволюция Гнева Бури.",
+        },
+        PassiveType::ColossalEye => PassiveDefinition {
+            kind,
+            name: "Око Колосса",
+            description: "Снаряды пронзают насквозь и наносят +100% урона, но темп стрельбы снижен на 20%.",
+        },
+        PassiveType::BlessedHeart => PassiveDefinition {
+            kind,
+            name: "Благословенное Сердце",
+            description: "+150 к макс. HP, +25% к урону и наделяет абсолютно все снаряды самонаведением.",
+        },
+        PassiveType::Pyromaniac => PassiveDefinition {
+            kind,
+            name: "Сердце Пироманта",
+            description: "Огонь и взрывы исцеляют босса на 35% от нанесенного урона. Эволюция Армагеддона.",
+        },
+        PassiveType::SoulHarvester => PassiveDefinition {
+            kind,
+            name: "Жатва Душ",
+            description: "Убийство врагов с шансом 20% выпускает мстительного духа. Эволюция Вопля Банши.",
+        },
+        PassiveType::DivinityAura => PassiveDefinition {
+            kind,
+            name: "Аура Божественности",
+            description: "Все снаряды излучают сияющий ореол света на 35 AoE урона в полете. Эволюция Собора.",
+        },
+        PassiveType::UkuleleResonance => PassiveDefinition {
+            kind,
+            name: "Электрическая Лира",
+            description: "25% шанс при попадании выпустить цепочку искр на 4 дополнительные цели.",
+        },
+        PassiveType::FateWeaver => PassiveDefinition {
+            kind,
+            name: "Ткач Судьбы",
+            description: "Колесо Фортуны: все шансы срабатывания эффектов бросаются дважды в пользу босса.",
+        },
+        PassiveType::SiegeMortar => PassiveDefinition {
+            kind,
+            name: "Осадный Бегемот",
+            description: "Прямые попадания вызывают вторичную детонацию по площади радиусом 55px.",
+        },
     }
 }

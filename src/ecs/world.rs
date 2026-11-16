@@ -94,10 +94,11 @@ pub struct DirectorState {
     pub income_rate: f32, // Очков каждые 2 секунды
     pub total_points_spent: f32,
     pub income_timer: f32,
-    pub squad_cooldowns: [f32; 8],
+    pub squad_cooldowns: [f32; 16],
     pub altar_cooldown: f32,
     pub altar_max_cooldown: f32,
     pub total_mobs_spawned: usize,
+    pub mob_page: u8,           // 0 = Тиры 1-8 (Базовая Орда), 1 = Тиры 9-16 (Высший Легион)
     pub grade_fury: u32,        // [F] Ярость: +12% урон, +6% скорость (u32: никогда не переполняется при 255+)
     pub grade_carapace: u32,    // [G] Панцирь: +2.5 броня, +5% физ. рез
     pub grade_pestilence: u32,  // [H] Мор: 25% шанс лужи яда при гибели моба
@@ -111,10 +112,11 @@ impl DirectorState {
             income_rate: 8.0,
             total_points_spent: 0.0,
             income_timer: 0.0,
-            squad_cooldowns: [0.0; 8],
+            squad_cooldowns: [0.0; 16],
             altar_cooldown: 0.0,
             altar_max_cooldown: 60.0, // 60 секунд (1 минута) кулдаун на постройку Алтаря (без искусственного лимита)
             total_mobs_spawned: 0,
+            mob_page: 0,
             grade_fury: 0,
             grade_carapace: 0,
             grade_pestilence: 0,

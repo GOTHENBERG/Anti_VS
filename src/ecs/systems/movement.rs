@@ -119,17 +119,20 @@ pub fn update_movement(world: &mut World, dt: f32) {
 
     // 4. Обновление кислотных луж
     let boss_pos = world.boss_pos;
+    let mut overlapping_director_pools = 0;
+    let mut max_director_dps = 0.0f32;
+    let mut corrosive_active = false;
+
     for pool in &mut world.acid_pools {
         pool.lifetime -= dt;
 
         if pool.is_director_source {
-            // Лужа Директора (Чумные Споры): наносит периодический урон БОССУ, а мобов игрока НЕ трогает!
+            // Лужа Директора (Чумные Споры): отслеживаем нахождение босса в зоне заражения
             if boss_pos.distance_squared(pool.pos) < pool.radius * pool.radius {
-                let poison_dmg = pool.dps * dt;
-                world.boss_health.take_damage(poison_dmg);
-                world.total_damage_dealt_to_boss += poison_dmg;
+                overlapping_director_pools += 1;
+                max_director_dps = max_director_dps.max(pool.dps);
                 if pool.corrosive {
-                    world.boss_resistances.flat_armor = (world.boss_resistances.flat_armor - dt * 1.5).max(0.0);
+                    corrosive_active = true;
                 }
             }
         } else {
@@ -153,6 +156,24 @@ pub fn update_movement(world: &mut World, dt: f32) {
                     }
                 }
             }
+        }
+    }
+
+    // Балансировка Чумных Спор: суммирование с затуханием (макс кап 3 стака) и учет резиста к яду
+    if overlapping_director_pools > 0 {
+        let stack_mult = match overlapping_director_pools {
+            1 => 1.0,
+            2 => 1.4,
+            _ => 1.75, // Ограничение: предотвращает моментальный ваншот босса от сотен наложившихся луж
+        };
+        let poison_res = world.boss_resistances.poison_res.clamp(-0.5, 0.85);
+        let effective_dps = max_director_dps * stack_mult * (1.0 - poison_res);
+        let poison_dmg = effective_dps * dt;
+        world.boss_health.take_damage(poison_dmg);
+        world.total_damage_dealt_to_boss += poison_dmg;
+
+        if corrosive_active {
+            world.boss_resistances.flat_armor = (world.boss_resistances.flat_armor - dt * 1.5).max(0.0);
         }
     }
     world.acid_pools.retain(|p| p.lifetime > 0.0);

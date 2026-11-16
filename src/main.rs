@@ -78,7 +78,11 @@ async fn main() {
     let mut cam_zoom: f32 = 0.95;
     let mut follow_boss = true;
     let mut show_codex = auto_codex;
-    let mut codex_tab: usize = 0;
+    let mut codex_tab: usize = std::env::args()
+        .position(|a| a == "--codex-tab")
+        .and_then(|idx| std::env::args().nth(idx + 1))
+        .and_then(|val| val.parse().ok())
+        .unwrap_or(0);
     let mut frame_count = 0;
 
     let mut last_mouse_pos = Vec2::from(mouse_position());
@@ -338,6 +342,11 @@ async fn main() {
                 net_driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: grade });
             }
         }
+        if let Some(page) = ui_interaction.set_mob_page {
+            if let Some(director) = world.directors.first() {
+                net_driver.send_command(Command::SetMobPage { director_id: director.id, page });
+            }
+        }
 
         // Логика перемещения карты зажатием ЛКМ (если курсор не над UI и окна закрыты)
         if is_mouse_button_pressed(MouseButton::Left) {
@@ -490,6 +499,12 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam
     if let Some(director) = world.directors.first() {
         let is_shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
 
+        // Переключение страницы мобов Директора по клавише [Tab] (Страница 1: 1-8, Страница 2: 9-16)
+        if is_key_pressed(KeyCode::Tab) {
+            let next_page = if director.mob_page == 0 { 1 } else { 0 };
+            driver.send_command(Command::SetMobPage { director_id: director.id, page: next_page });
+        }
+
         // 1. Горячие клавиши 1, 2, 3, 4, 5, 6, 7, 8 для спавна отрядов (с поддержкой Shift для спавна на все деньги)
         let keys = [
             KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4,
@@ -497,7 +512,7 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam
         ];
         for (i, key) in keys.iter().enumerate() {
             if is_key_pressed(*key) {
-                let tier = (i + 1) as u8;
+                let tier = (i + 1) as u8 + (director.mob_page * 8);
                 if is_shift {
                     driver.send_command(Command::SpawnSquadMax { director_id: director.id, tier });
                 } else {
@@ -536,11 +551,16 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam
             {
                 let (mx, my) = mouse_position();
                 let world_click = world_cam.screen_to_world(Vec2::new(mx, my));
-                driver.send_command(Command::PlaceStructure {
-                    director_id: director.id,
-                    structure_type: 1,
-                    pos: world_click.into(),
-                });
+                let margin = 140.0;
+                if world_click.x >= margin && world_click.x <= MAP_WIDTH - margin
+                    && world_click.y >= margin && world_click.y <= MAP_HEIGHT - margin
+                {
+                    driver.send_command(Command::PlaceStructure {
+                        director_id: director.id,
+                        structure_type: 1,
+                        pos: world_click.into(),
+                    });
+                }
             }
         }
     }
@@ -691,9 +711,19 @@ fn execute_command(world: &mut World, cmd: Command) {
                     && director.spend_points(BLOOD_ALTAR_COST)
                 {
                     director.altar_cooldown = director.altar_max_cooldown;
-                    spawn_blood_altar(world, pos.into());
+                    let margin = 140.0;
+                    let clamped_pos = Vec2::new(
+                        pos.x.clamp(margin, MAP_WIDTH - margin),
+                        pos.y.clamp(margin, MAP_HEIGHT - margin),
+                    );
+                    spawn_blood_altar(world, clamped_pos);
                     world.push_audio(crate::audio::AudioEvent::AltarBuild);
                 }
+            }
+        }
+        Command::SetMobPage { director_id, page } => {
+            if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
+                director.mob_page = page;
             }
         }
         _ => {}

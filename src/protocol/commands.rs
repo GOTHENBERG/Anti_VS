@@ -54,6 +54,11 @@ pub enum Command {
         structure_type: u8,
         pos: NetVec2,
     },
+    /// Переключение страницы мобов Директора (0: Тиры 1-8, 1: Тиры 9-16)
+    SetMobPage {
+        director_id: u8,
+        page: u8,
+    },
     /// Перезапуск игры
     RestartGame,
 }
