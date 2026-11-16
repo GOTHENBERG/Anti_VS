@@ -514,6 +514,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
 }
 
 fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, is_final: bool) {
+    let _ = std::fs::create_dir_all("models");
     if is_final {
         println!("\n[СОХРАНЕНИЕ] Финальный экспорт обученных моделей...");
     } else {
