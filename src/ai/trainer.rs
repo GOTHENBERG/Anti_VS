@@ -31,6 +31,7 @@ struct BossEval {
     avg_hazard_damage: f32,
     avg_altars_destroyed: usize,
     avg_altars_built: usize,
+    avg_meditation_time: f32,
     mobs_spawned: [usize; 16],
 }
 
@@ -48,13 +49,13 @@ struct DirectorEval {
 pub fn run_co_evolutionary_training(generations: usize, population_size: usize, reset: bool) {
     let gpu_info = detect_gpu_device();
     println!("============================================================");
-    println!("🚀 ЗАПУСК ТУРНИРА СО-ЭВОЛЮЦИИ ИИ (LEAGUE SELF-PLAY)");
-    println!("🎮 Графический процессор: {}", gpu_info);
-    println!("⚡ Многопоточный движок: {} потоков (Rayon SIMD Parallel)", rayon::current_num_threads());
-    println!("🏆 Поколений: {} | Размер популяции каждого агента: {}", generations, population_size);
-    println!("🏛️ Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
+    println!(">>> ЗАПУСК ТУРНИРА СО-ЭВОЛЮЦИИ ИИ (LEAGUE SELF-PLAY)");
+    println!("  Устройство вычислений: {}", gpu_info);
+    println!("  Многопоточный движок: {} потоков (Rayon SIMD Parallel)", rayon::current_num_threads());
+    println!("  Поколений: {} | Размер популяции каждого агента: {}", generations, population_size);
+    println!("  Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
     if reset {
-        println!("🧹 РЕЖИМ СБРОСА (--clean): ИИ Босса полностью очищен, обучение начнется с нуля!");
+        println!("  [СБРОС --clean]: ИИ Босса очищен, обучение начнется с нуля!");
     }
     println!("============================================================");
 
@@ -75,9 +76,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
     };
 
     if base_gen > 0 {
-        println!("🔄 Дообучение (Warm Start): продолжаем с Поколения {} (Фитнес Босса: {:.0}, Синапсов: {})", base_gen, seed_boss.fitness, seed_boss.total_synapses);
+        println!("[ПРОДОЛЖЕНИЕ] Дообучение: с Поколения {} (Фитнес Босса: {:.0}, Синапсов: {})", base_gen, seed_boss.fitness, seed_boss.total_synapses);
     } else {
-        println!("🌱 Начало нового цикла обучения: инициализирована глубокая нейросеть ({} синапсов, 150 входов).", seed_boss.total_synapses);
+        println!("[СТАРТ] Начало нового цикла обучения: инициализирована нейросеть ({} синапсов, 150 входов).", seed_boss.total_synapses);
     }
 
     // 1. Инициализация Зала Славы (Hall of Fame) историческими чемпионами
@@ -145,6 +146,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                 let mut total_melee_damage = 0.0;
                 let mut total_ranged_damage = 0.0;
                 let mut total_hazard_damage = 0.0;
+                let mut total_meditation_time = 0.0;
                 let mut total_altars_destroyed = 0;
                 let mut total_altars_built = 0;
                 let mut total_mobs = [0usize; 16];
@@ -168,6 +170,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     total_melee_damage += res.boss_damage_stats.melee_total;
                     total_ranged_damage += res.boss_damage_stats.ranged_total;
                     total_hazard_damage += res.boss_damage_stats.hazard_total;
+                    total_meditation_time += res.total_meditation_time;
                     total_altars_destroyed += res.altars_destroyed;
                     total_altars_built += res.altars_built;
                     for t in 0..16 {
@@ -210,6 +213,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     avg_hazard_damage: total_hazard_damage / m_f,
                     avg_altars_destroyed: ((total_altars_destroyed as f32) / m_f).round() as usize,
                     avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
+                    avg_meditation_time: total_meditation_time / m_f,
                     mobs_spawned: avg_mobs,
                 }
             })
@@ -342,6 +346,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         let total_mobs_spawned: usize = best_dir_eval.mobs_spawned.iter().sum();
         let boss_time_reward = best_boss_eval.avg_survival * 2.5;
         let boss_whip = best_boss_eval.avg_damage_taken * 0.04;
+        let boss_meditation_reward = best_boss_eval.avg_meditation_time * 3.0;
         let dir_speed_reward = (1020.0 - best_dir_eval.avg_kill_speed).max(0.0) * 3.0;
         let dir_time_whip = if best_dir_eval.avg_kill_speed > 420.0 {
             (best_dir_eval.avg_kill_speed - 420.0) * 1.5
@@ -350,37 +355,61 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         };
         let dir_dmg_reward = best_dir_eval.avg_damage_dealt * 0.06;
 
+        println!("================================================================================");
         println!(
-            "🏆 Раунд {:02}/{:02} (Поколение #{:02}) [🏛️ Зал Славы: {}]",
+            ">>> РАУНД {:02}/{:02} (Поколение #{:02}) [Зал Славы: {} моделей]",
             gen_idx, generations, current_gen_num, hof_bosses.len()
         );
+        println!("--------------------------------------------------------------------------------");
+        println!("  [КЛЮЧЕВЫЕ МЕТРИКИ СОПЕРНИЧЕСТВА]:");
         println!(
-            "   👑 Лучший Босс: выжил {:.1}с (Ур. {}, Фитнес {:.0}) | ⏳ Пряник времени: +{:.0} | Урон: {:.0} HP (Кнут: -{:.0}) | Сломал алтарей: {}",
-            best_boss_eval.avg_survival, best_boss_eval.avg_level, best_boss_eval.fitness,
-            boss_time_reward,
-            best_boss_eval.avg_damage_taken, boss_whip,
-            best_boss_eval.avg_altars_destroyed,
+            "    >> ВРЕМЯ ВЫЖИВАНИЯ БОССА:     {:>6.1} сек ({:.1} мин)",
+            best_boss_eval.avg_survival,
+            best_boss_eval.avg_survival / 60.0
         );
         println!(
-            "      ↳ 🛡️ Разрез полученного урона: [⚔️Ближний бой: {:.0}, 🏹Дальний бой: {:.0}, ☣️Окружение/Споры: {:.0}]",
+            "    >> СКОРОСТЬ ПОБЕДЫ ДИРЕКТОРА: {:>6.1} сек ({:.1} мин)",
+            best_dir_eval.avg_kill_speed,
+            best_dir_eval.avg_kill_speed / 60.0
+        );
+        println!("--------------------------------------------------------------------------------");
+        println!(
+            "  БОСС (Фитнес: {:.0}, Уровень: {}):",
+            best_boss_eval.fitness, best_boss_eval.avg_level
+        );
+        println!(
+            "    * Время выживания: +{:.0} | Урон получен: {:.0} HP (-{:.0}) | Медитация: {:.1}с (+{:.0})",
+            boss_time_reward,
+            best_boss_eval.avg_damage_taken, boss_whip,
+            best_boss_eval.avg_meditation_time, boss_meditation_reward
+        );
+        println!(
+            "    * Алтарей разрушено: {} | Урон по типам: [Ближний: {:.0}, Дальний: {:.0}, Окружение: {:.0}]",
+            best_boss_eval.avg_altars_destroyed,
             best_boss_eval.avg_melee_damage,
             best_boss_eval.avg_ranged_damage,
             best_boss_eval.avg_hazard_damage,
         );
         println!(
-            "   👁️ Лучший Директор: сбрил за {:.1}с (Фитнес {:.0}) | ⚡ Скорость: +{:.0} (Кнут времени: -{:.0}) | Урон: {:.0} HP (+{:.0}) | Построил алтарей: {} | Грейды: [🔥Ярость: {}, 🛡️Панцирь: {}, 🧪Мор: {}]",
-            best_dir_eval.avg_kill_speed, best_dir_eval.fitness,
+            "  ДИРЕКТОР (Фитнес: {:.0}):",
+            best_dir_eval.fitness
+        );
+        println!(
+            "    * Скорость победы: +{:.0} (Штраф за затяжку: -{:.0}) | Урон нанесен: {:.0} HP (+{:.0})",
             dir_speed_reward, dir_time_whip,
-            best_dir_eval.avg_damage_dealt, dir_dmg_reward,
+            best_dir_eval.avg_damage_dealt, dir_dmg_reward
+        );
+        println!(
+            "    * Алтарей построено: {} | Улучшения орды: [Ярость: {}, Панцирь: {}, Мор: {}]",
             best_dir_eval.avg_altars_built,
-            best_dir_eval.grades.0, best_dir_eval.grades.1, best_dir_eval.grades.2,
+            best_dir_eval.grades.0, best_dir_eval.grades.1, best_dir_eval.grades.2
         );
         println!(
-            "      ↳ 👾 Всего призвано монстров: {} шт",
-            total_mobs_spawned,
+            "    * Призвано монстров: {} шт",
+            total_mobs_spawned
         );
         println!(
-            "      ↳ ⚔️ Орда (Тир 1-8): [💀Скелеты: {}, 🐺Гончие: {}, 🔮Культисты: {}, 🗿Големы: {}, 💣Камикадзе: {}, 👤Демоны: {}, 🔥Огонь: {}, ☠️Жнецы: {}]",
+            "      - Орда (T1-8): [Скелеты: {}, Гончие: {}, Культисты: {}, Големы: {}, Камикадзе: {}, Демоны: {}, Огонь: {}, Жнецы: {}]",
             best_dir_eval.mobs_spawned[0],
             best_dir_eval.mobs_spawned[1],
             best_dir_eval.mobs_spawned[2],
@@ -393,7 +422,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         let legion_total: usize = best_dir_eval.mobs_spawned[8..16].iter().sum();
         if legion_total > 0 {
             println!(
-                "      ↳ 🔥 Легион (Тир 9-16): [🛡️Фаланга: {}, 🐕Церберы: {}, 🌌Архикультисты: {}, 🏰Колоссы: {}, ☢️Мучители: {}, 👥Ловчие: {}, ☀️Архонты: {}, 🌑Аватар: {}]",
+                "      - Легион (T9-16): [Фаланга: {}, Церберы: {}, Архикультисты: {}, Колоссы: {}, Мучители: {}, Ловчие: {}, Архонты: {}, Аватар: {}]",
                 best_dir_eval.mobs_spawned[8],
                 best_dir_eval.mobs_spawned[9],
                 best_dir_eval.mobs_spawned[10],
@@ -404,6 +433,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                 best_dir_eval.mobs_spawned[15],
             );
         }
+        println!("================================================================================");
 
         // 4. Селекция, кроссовер и мутации для следующего поколения
         let mut next_boss_pop = vec![boss_pop[0].clone(), boss_pop[1].clone()];
@@ -485,31 +515,31 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
 
 fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, is_final: bool) {
     if is_final {
-        println!("\n💾 ФИНАЛЬНОЕ СОХРАНЕНИЕ ОБУЧЕННЫХ МОДЕЛЕЙ...");
+        println!("\n[СОХРАНЕНИЕ] Финальный экспорт обученных моделей...");
     } else {
-        println!("\n💾 ⚡ [ЧЕКПОИНТ #{}] Автоматическое сохранение прогресса на диск...", boss.generation);
+        println!("\n[ЧЕКПОИНТ #{}] Автоматическое сохранение прогресса на диск...", boss.generation);
     }
 
     if let Ok(boss_json) = serde_json::to_string_pretty(boss) {
         if let Ok(_) = std::fs::write("models/boss_policy.json", &boss_json) {
-            println!("  ✅ Нейросетевая модель Босса ({} синапсов, Поколение #{}) сохранена в: models/boss_policy.json", boss.total_synapses, boss.generation);
+            println!("  [OK] Модель Босса ({} синапсов, Поколение #{}) -> models/boss_policy.json", boss.total_synapses, boss.generation);
         }
     }
 
     if let Some(ref net) = boss.neural_net {
         if let Ok(brain_json) = serde_json::to_string_pretty(net) {
             let _ = std::fs::write("models/boss_brain_neural.json", brain_json);
-            println!("  🧠 Развернутая матрица синапсов (150 сенсоров, 2 скрытых слоя) сохранена в: models/boss_brain_neural.json");
+            println!("  [OK] Матрица синапсов (150 сенсоров, 2 скрытых слоя) -> models/boss_brain_neural.json");
         }
     }
 
     let archetype_names = [
-        "🔥 Инфернальный Пиромант (Огонь, Пламя, Сердце Пироманта)",
-        "⚡ Сверхпроводящий Громовержец (Молния, Тесла, Лира, Клевер)",
-        "🛡️ Несокрушимый Бастион (Орбиты, Молот, Щиты, Эгида)",
-        "🌌 Аннигилятор Бездны (Луч Смерти, Сингулярность, Око Колосса)",
-        "🩸 Кровавый Жнец (Топор, Кинжалы, Вампиризм, Клевер)",
-        "✨ Звёздный Охотник (Лук, Ракеты, Самонаведение, Орлиный Глаз)",
+        "Инфернальный Пиромант (Огонь, Пламя, Сердце Пироманта)",
+        "Сверхпроводящий Громовержец (Молния, Тесла, Лира, Клевер)",
+        "Несокрушимый Бастион (Орбиты, Молот, Щиты, Эгида)",
+        "Аннигилятор Бездны (Луч Смерти, Сингулярность, Око Колосса)",
+        "Кровавый Жнец (Топор, Кинжалы, Вампиризм, Клевер)",
+        "Звёздный Охотник (Лук, Ракеты, Самонаведение, Орлиный Глаз)",
     ];
     let mut best_arch = 0;
     let mut best_weight = 0.0f32;
@@ -520,12 +550,12 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, i
         }
     }
     if let Some(name) = archetype_names.get(best_arch) {
-        println!("  ✨ Доминирующий билд-архетип: {} (Вес: {:.2}, Поиск комбо: {:.2})", name, best_weight, boss.synergy_seeking_weight);
+        println!("  [АРХЕТИП] Доминирующий билд: {} (Вес: {:.2}, Поиск комбо: {:.2})", name, best_weight, boss.synergy_seeking_weight);
     }
 
     if let Ok(dir_json) = serde_json::to_string_pretty(director) {
         if let Ok(_) = std::fs::write("models/director_policy.json", dir_json) {
-            println!("  ✅ Модель Директора (Поколение #{}) сохранена в: models/director_policy.json", director.generation);
+            println!("  [OK] Модель Директора (Поколение #{}) -> models/director_policy.json", director.generation);
         }
     }
 
@@ -543,6 +573,6 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, i
     }
 
     if is_final {
-        println!("🎉 Обучение завершено! Модель Босса теперь автоматически используется в игре!\n");
+        println!("[ГОТОВО] Обучение завершено. Модели сохранены и готовы к игре.\n");
     }
 }
