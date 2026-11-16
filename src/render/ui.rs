@@ -936,8 +936,8 @@ fn draw_altar_widget_tooltip(aw_x: f32, aw_y: f32, screen_w: f32, fonts: &GameFo
 /// Всплывающая подсказка для оружия Босса
 fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &GameFonts) {
     let def = get_weapon_def(w.kind);
-    let card_w = 340.0;
-    let card_h = 135.0;
+    let card_w = 380.0;
+    let card_h = 138.0;
     let card_x = (sx + 19.0 - card_w / 2.0).clamp(10.0, screen_w - card_w - 10.0);
     let card_y = sy + 36.0;
 
@@ -950,7 +950,7 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
     } else {
         format!("{} [Ур. {}/8]", def.name, w.level)
     };
-    fonts.draw_heading(&title, card_x + 12.0, card_y + 22.0, 16.0, border_color);
+    fonts.draw_heading(&title, card_x + 12.0, card_y + 22.0, 15.0, border_color);
 
     let dmg_type_str = match def.damage_type {
         crate::ecs::components::combat::DamageType::Physical => "Физический",
@@ -961,12 +961,12 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
         _ => "Обычный",
     };
     let stats_text = format!("Урон: {:.0} ({}) | Кулдаун: {:.2}с", w.damage, dmg_type_str, w.base_cooldown);
-    fonts.draw_text(&stats_text, card_x + 12.0, card_y + 44.0, 13.0, WHITE);
+    fonts.draw_text(&stats_text, card_x + 12.0, card_y + 44.0, 12.0, WHITE);
 
-    fonts.draw_text(def.description, card_x + 12.0, card_y + 68.0, 12.0, LIGHTGRAY);
+    fonts.draw_text(def.description, card_x + 12.0, card_y + 68.0, 11.5, LIGHTGRAY);
 
     let (evo_str, evo_col) = if w.limit_break_level > 0 {
-        (format!("⚡ ЗАПРЕДЕЛЬНОЕ ВОЗВЫШЕНИЕ: +{}% Урона, +{} Снарядов", w.limit_break_level * 12, w.bonus_projectiles), GOLD)
+        (format!("⚡ ВОЗВЫШЕНИЕ: +{}% Урона, +{} Снарядов", w.limit_break_level * 10, w.bonus_projectiles), GOLD)
     } else if w.is_evolved {
         ("⭐ СУПЕРОРУЖИЕ: Максимальная боевая эволюция".to_string(), GOLD)
     } else {
@@ -989,15 +989,15 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
         };
         (format!("Эволюция (Ур. 8 + {}): -> {}", req_passive, evo_weapon), YELLOW)
     };
-    fonts.draw_text(&evo_str, card_x + 12.0, card_y + 92.0, 12.0, evo_col);
-    fonts.draw_text("Совет: Босс выбирает апгрейды адаптивно в зависимости от угроз", card_x + 12.0, card_y + 114.0, 11.0, GRAY);
+    fonts.draw_text(&evo_str, card_x + 12.0, card_y + 92.0, 11.5, evo_col);
+    fonts.draw_text("Совет: Босс выбирает апгрейды адаптивно в зависимости от угроз", card_x + 12.0, card_y + 114.0, 10.5, GRAY);
 }
 
 /// Всплывающая подсказка для пассивного предмета Босса
 fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts: &GameFonts) {
     let def = get_passive_def(p.kind);
-    let card_w = 330.0;
-    let card_h = 125.0;
+    let card_w = 380.0;
+    let card_h = 130.0;
     let card_x = (sx + 19.0 - card_w / 2.0).clamp(10.0, screen_w - card_w - 10.0);
     let card_y = sy + 36.0;
 
@@ -1005,7 +1005,7 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
     draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, PURPLE);
 
     let title = format!("{} [Ур. {}/5]", def.name, p.level);
-    fonts.draw_heading(&title, card_x + 12.0, card_y + 22.0, 16.0, GOLD);
+    fonts.draw_heading(&title, card_x + 12.0, card_y + 22.0, 15.0, GOLD);
 
     let bonus_text = match p.kind {
         PassiveType::SpeedGloves => format!("Текущий бонус: +{}% к скорости атаки оружия", p.level * 15),
@@ -1023,9 +1023,9 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::PrismaticFocus => format!("Текущий бонус: +{}% к площади поражения (AoE)", p.level * 15),
         PassiveType::TitanAegis => format!("Текущий бонус: -{:.1} плоского урона от каждого удара", p.level as f32 * 2.5),
     };
-    fonts.draw_text(&bonus_text, card_x + 12.0, card_y + 44.0, 13.0, GREEN);
+    fonts.draw_text(&bonus_text, card_x + 12.0, card_y + 44.0, 12.0, GREEN);
 
-    fonts.draw_text(def.description, card_x + 12.0, card_y + 68.0, 12.0, LIGHTGRAY);
+    fonts.draw_text(def.description, card_x + 12.0, card_y + 68.0, 11.5, LIGHTGRAY);
 
     let evo_synergy = match p.kind {
         PassiveType::SpeedGloves => "Связка для эволюции: Клинок Ветра -> Буря Клинков",
@@ -1043,7 +1043,7 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::PrismaticFocus => "Связка для эволюции: Кровавый Гиперлуч -> Инфернальный Катаклизм",
         PassiveType::TitanAegis => "Связка для эволюции: Рой Микроракет -> Осада Судного Дня",
     };
-    fonts.draw_text(evo_synergy, card_x + 12.0, card_y + 92.0, 12.0, YELLOW);
+    fonts.draw_text(evo_synergy, card_x + 12.0, card_y + 92.0, 11.5, YELLOW);
 }
 
 /// Всплывающая подсказка при наведении на объекты на карте

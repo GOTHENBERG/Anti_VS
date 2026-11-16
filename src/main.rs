@@ -78,6 +78,7 @@ async fn main() {
     let mut last_mouse_pos = Vec2::from(mouse_position());
     let mut is_dragging_map = false;
     let mut active_dossier_tier: Option<u8> = if auto_dossier { Some(1) } else { None };
+    let mut opened_dossier_from_codex = false;
 
     // Начальный разрушаемый алтарь игрока
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
@@ -150,15 +151,25 @@ async fn main() {
 
         // Инфернальный кодекс по I
         if is_key_pressed(KeyCode::I) {
-            show_codex = !show_codex;
-            if show_codex {
+            if active_dossier_tier.is_some() {
                 active_dossier_tier = None;
+                opened_dossier_from_codex = false;
+                show_codex = false;
+            } else {
+                show_codex = !show_codex;
+                if show_codex {
+                    active_dossier_tier = None;
+                }
             }
         }
         // Закрытие окон по Esc
         if is_key_pressed(KeyCode::Escape) {
             if active_dossier_tier.is_some() {
                 active_dossier_tier = None;
+                if opened_dossier_from_codex {
+                    show_codex = true;
+                    opened_dossier_from_codex = false;
+                }
             } else if show_codex {
                 show_codex = false;
             }
@@ -241,6 +252,7 @@ async fn main() {
         }
         if let Some(tier) = ui_interaction.open_dossier_tier {
             active_dossier_tier = Some(tier);
+            opened_dossier_from_codex = false;
         }
         if let Some(tier) = ui_interaction.direct_summon_tier {
             if let Some(director) = world.directors.first() {
@@ -282,11 +294,19 @@ async fn main() {
 
         // 7. Отрисовка модальных окон (Кодекс, Вики-досье, Пауза или Завершение игры)
         if show_codex {
-            draw_codex(&mut codex_tab, &fonts, &textures);
+            if let Some(tier) = draw_codex(&mut codex_tab, &fonts, &textures) {
+                show_codex = false;
+                active_dossier_tier = Some(tier);
+                opened_dossier_from_codex = true;
+            }
         } else if let Some(tier) = active_dossier_tier {
             let res = draw_mob_dossier(tier, &world, &fonts, &textures);
             if res.close_requested {
                 active_dossier_tier = None;
+                if opened_dossier_from_codex {
+                    show_codex = true;
+                    opened_dossier_from_codex = false;
+                }
             }
             if res.summon_requested {
                 if let Some(director) = world.directors.first() {

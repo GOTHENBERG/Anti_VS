@@ -124,19 +124,22 @@ pub fn draw_mob_dossier(
     }
 
     let count_str = format!("• Размер отряда: {} существ", config.count);
-    fonts.draw_text(&count_str, left_x + 14.0, summon_box_y + 68.0, 13.0, WHITE);
+    fonts.draw_text(&count_str, left_x + 14.0, summon_box_y + 68.0, 12.5, WHITE);
+
+    let cd_str = "• Время призыва: Мгновенно (Кулдаун снят)";
+    fonts.draw_text(cd_str, left_x + 14.0, summon_box_y + 88.0, 12.0, YELLOW);
 
     let inc_str = format!("• Прирост дохода: +{:.2}", config.cost * 0.02);
-    fonts.draw_text(&inc_str, left_x + 14.0, summon_box_y + 88.0, 13.0, SKYBLUE);
-    let iw = fonts.measure_text(&inc_str, 13.0).width;
+    fonts.draw_text(&inc_str, left_x + 14.0, summon_box_y + 108.0, 12.5, SKYBLUE);
+    let iw = fonts.measure_text(&inc_str, 12.5).width;
     if let Some(sm_tex) = textures.soul_ethereal_sm.as_ref() {
-        draw_texture_ex(sm_tex, left_x + 16.0 + iw, summon_box_y + 77.0, WHITE, DrawTextureParams { dest_size: Some(Vec2::new(14.0, 14.0)), ..Default::default() });
+        draw_texture_ex(sm_tex, left_x + 16.0 + iw, summon_box_y + 97.0, WHITE, DrawTextureParams { dest_size: Some(Vec2::new(14.0, 14.0)), ..Default::default() });
     }
-    fonts.draw_text("/ 2 сек", left_x + 34.0 + iw, summon_box_y + 88.0, 12.0, SKYBLUE);
+    fonts.draw_text("/ 2 сек", left_x + 34.0 + iw, summon_box_y + 108.0, 11.5, SKYBLUE);
 
     let total_spawned = director.map_or(0, |d| d.total_mobs_spawned);
     let stats_match = format!("• Всего на поле боя: {} (Призвано: {})", world.mobs.len(), total_spawned);
-    fonts.draw_text(&stats_match, left_x + 14.0, summon_box_y + 108.0, 11.5, LIGHTGRAY);
+    fonts.draw_text(&stats_match, left_x + 14.0, summon_box_y + 128.0, 11.5, LIGHTGRAY);
 
     // Большая кнопка призыва
     let s_btn_w = left_w - 28.0;
@@ -173,57 +176,69 @@ pub fn draw_mob_dossier(
 
     // 2. Правая колонка: Энциклопедическая статья (Википедия моба)
     // 2.1 Таблица характеристик и Сопротивлений
-    let stats_box_h = 160.0;
+    let stats_box_h = 170.0;
     draw_rectangle(right_x, content_y, right_w, stats_box_h, Color::new(0.09, 0.09, 0.13, 0.95));
     draw_rectangle_lines(right_x, content_y, right_w, stats_box_h, 1.5, Color::new(0.35, 0.4, 0.5, 0.8));
 
-    fonts.draw_heading("📊 БАЗОВЫЕ БОЕВЫЕ ХАРАКТЕРИСТИКИ И РЕЗИСТЫ", right_x + 16.0, content_y + 24.0, 14.0, GOLD);
+    fonts.draw_heading("📊 БАЗОВЫЕ БОЕВЫЕ ХАРАКТЕРИСТИКИ И РЕЗИСТЫ", right_x + 16.0, content_y + 22.0, 14.0, GOLD);
 
-    let (hp_val, spd_val, dmg_val, arm_val, dmg_t_name) = match tier {
-        1 => (32.0, 105.0, 7.0, 0.0, "Физический (Ближний бой)"),
-        2 => (50.0, 160.0, 12.0, 1.0, "Физический (Фланговый наскок)"),
-        3 => (75.0, 80.0, 16.0, 2.0, "Магический (Дальний бой 320px)"),
-        4 => (380.0, 52.0, 32.0, 14.0, "Физический (Осадный таран)"),
-        5 => (130.0, 185.0, 220.0, 2.0, "Чистый сплэш (Камикадзе 65px)"),
-        6 => (550.0, 140.0, 42.0, 8.0, "Физический + Телепорт"),
-        7 => (850.0, 95.0, 55.0, 10.0, "Огненный шар (Дальний бой 350px)"),
-        _ => (2800.0, 68.0, 95.0, 24.0, "Чистый урон / True Damage (Коса)"),
+    let (hp_val, spd_val, spd_note, dmg_val, dmg_t_name, atk_spd_str, atk_range_str, arm_val, kb_res_str, xp_drop) = match tier {
+        1 => (32.0, 105.0, "(Босс: 115)", 7.0, "Физ. контакт", "1.0 уд/сек (7 DPS)", "24 px (Ближний бой)", 0.0, "0%", 8),
+        2 => (50.0, 160.0, "(⚡ +39% быстрее босса!)", 12.0, "Физ. наскок", "1.0 уд/сек (12 DPS)", "26 px (Ближний бой)", 1.0, "15%", 20),
+        3 => (75.0, 80.0, "(Кайтинг)", 16.0, "Темная магия", "1 выстр / 2.0 сек", "320 px (Дальний бой)", 2.0, "0%", 45),
+        4 => (380.0, 52.0, "(Монолит)", 32.0, "Физ + Замедление", "1.0 уд/сек (32 DPS)", "36 px (Ближний бой)", 14.0, "100% (ИММУН)", 130),
+        5 => (130.0, 185.0, "(⚡ Сверхзвук)", 220.0, "Чистый сплэш", "Мгновенно при контакте", "95 px (Радиус взрыва)", 2.0, "0%", 160),
+        6 => (550.0, 140.0, "(Стремительный)", 42.0, "Физ / Тьма", "1.0 уд/с + Скачок 4.5с", "30 px (Телепорт >320px)", 8.0, "30%", 240),
+        7 => (850.0, 95.0, "(Артиллерия)", 55.0, "Огненный шар", "1 выстр / 2.2 сек", "360 px (Дальний бой)", 10.0, "20%", 420),
+        _ => (2800.0, 68.0, "(Титан орды)", 95.0, "Чистый урон (True)", "1.0 уд/с + Волна 2.8с", "50 px (Волна 420 px)", 24.0, "100% (ИММУН)", 1200),
     };
 
     let col1_x = right_x + 16.0;
-    let col2_x = right_x + right_w * 0.5;
+    let col2_x = right_x + right_w * 0.50;
 
+    // Левая колонка боевых статов
     let h_t = format!("• Здоровье: {:.0} HP", hp_val);
-    let s_t = format!("• Скорость: {:.0} px/сек", spd_val);
+    let s_t = format!("• Скорость бега: {:.0} px/сек {}", spd_val, spd_note);
     let d_t = format!("• Урон: {:.0} ({})", dmg_val, dmg_t_name);
-    let a_t = format!("• Плоская броня: {:.0} ед.", arm_val);
-    fonts.draw_text(&h_t, col1_x, content_y + 48.0, 13.0, WHITE);
-    fonts.draw_text(&s_t, col1_x, content_y + 68.0, 13.0, WHITE);
-    fonts.draw_text(&d_t, col1_x, content_y + 88.0, 13.0, GOLD);
-    fonts.draw_text(&a_t, col1_x, content_y + 108.0, 13.0, SKYBLUE);
+    let as_t = format!("• Скорость атаки: {}", atk_spd_str);
+    let ar_t = format!("• Дальность атаки: {}", atk_range_str);
+    let a_t = format!("• Плоская броня: {:.0} ед. | Отброс: {}", arm_val, kb_res_str);
 
-    let (res_phys, res_fire, res_ice, res_holy) = match tier {
-        1 => ("+5%", "0%", "0%", "-25% (Слабость)"),
-        2 => ("+10%", "0%", "0%", "-20%"),
-        3 => ("+15%", "+20%", "-10%", "-40% (Слабость)"),
-        4 => ("+35%", "-50% (Уязвим)", "100% (Иммунитет)", "0%"),
-        5 => ("+10%", "+50%", "0%", "0%"),
-        6 => ("+25%", "+20%", "+20%", "-10%"),
-        7 => ("+20%", "100% (Иммунитет)", "-40% (Уязвим)", "0%"),
-        _ => ("+45%", "+30%", "+30%", "-20%"),
+    fonts.draw_text(&h_t, col1_x, content_y + 42.0, 12.0, WHITE);
+    fonts.draw_text(&s_t, col1_x, content_y + 61.0, 12.0, SKYBLUE);
+    fonts.draw_text(&d_t, col1_x, content_y + 80.0, 12.0, GOLD);
+    fonts.draw_text(&as_t, col1_x, content_y + 99.0, 12.0, YELLOW);
+    fonts.draw_text(&ar_t, col1_x, content_y + 118.0, 12.0, WHITE);
+    fonts.draw_text(&a_t, col1_x, content_y + 137.0, 12.0, LIGHTGRAY);
+
+    let (res_phys, res_fire, res_ice, res_holy, res_poison) = match tier {
+        1 => ("+5%", "0%", "0%", "-25% (Нежить)", "0%"),
+        2 => ("+10%", "0%", "0%", "-20%", "0%"),
+        3 => ("+15%", "+20%", "-10%", "-40% (Слабость)", "0%"),
+        4 => ("+35%", "-50% (Уязвим)", "100% (ИММУН)", "0%", "+50%"),
+        5 => ("+10%", "+50%", "0%", "0%", "0%"),
+        6 => ("+25%", "+20%", "+20%", "-10%", "0%"),
+        7 => ("+20%", "100% (ИММУН)", "-40% (Уязвим)", "0%", "+50%"),
+        _ => ("+45%", "+30%", "+30%", "-20%", "0%"),
     };
 
-    fonts.draw_text("ТАБЛИЦА РЕЗИСТОВ К УРОНУ:", col2_x, content_y + 48.0, 13.0, YELLOW);
+    // Правая колонка резистов
+    fonts.draw_heading("ТАБЛИЦА РЕЗИСТОВ К УРОНУ:", col2_x, content_y + 42.0, 12.5, YELLOW);
     let rf = format!("• Физ. урон: {} | Огонь: {}", res_phys, res_fire);
     let rh = format!("• Лед/Холод: {} | Святой: {}", res_ice, res_holy);
-    fonts.draw_text(&rf, col2_x, content_y + 68.0, 12.0, LIGHTGRAY);
-    fonts.draw_text(&rh, col2_x, content_y + 88.0, 12.0, LIGHTGRAY);
-    let champ_str = "• Шанс Чемпиона: 12% (+80% HP, +35% Урон, Золотая корона)";
-    fonts.draw_text(champ_str, col2_x, content_y + 112.0, 12.0, GOLD);
+    let rp = format!("• Яд/Кислота: {} | Чистый: 0%", res_poison);
+    let xp_str = format!("• Награда Боссу: {} XP сфер", xp_drop);
+    let champ_str = "• Шанс Чемпиона: 12% (+80% HP, +35% DMG)";
+
+    fonts.draw_text(&rf, col2_x, content_y + 61.0, 11.5, LIGHTGRAY);
+    fonts.draw_text(&rh, col2_x, content_y + 80.0, 11.5, LIGHTGRAY);
+    fonts.draw_text(&rp, col2_x, content_y + 99.0, 11.5, LIGHTGRAY);
+    fonts.draw_text(&xp_str, col2_x, content_y + 118.0, 11.5, ORANGE);
+    fonts.draw_text(champ_str, col2_x, content_y + 137.0, 11.5, GOLD);
 
     // 2.2 Тактическое руководство и Лор (Wikipedia Style Lore & Strategy)
-    let lore_box_y = content_y + stats_box_h + 16.0;
-    let lore_box_h = modal_h - (lore_box_y - y) - 24.0;
+    let lore_box_y = content_y + stats_box_h + 12.0;
+    let lore_box_h = modal_h - (lore_box_y - y) - 20.0;
     draw_rectangle(right_x, lore_box_y, right_w, lore_box_h, Color::new(0.08, 0.08, 0.12, 0.95));
     draw_rectangle_lines(right_x, lore_box_y, right_w, lore_box_h, 1.5, Color::new(0.4, 0.35, 0.5, 0.8));
 
