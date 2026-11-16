@@ -244,26 +244,31 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     let res = run_headless_simulation(boss, director, 1020.0);
 
                     // 2. Фитнес Директора:
-                    // ГЛАВНЫЙ ПРЯНИК — скорость сбривания босса (до 3000 очков) + бонус за добивание (800 очков)
+                    // ГЛАВНЫЙ ПРЯНИК — ранний конец матча и бонус за быстрое уничтожение босса
                     let time_saved = (1020.0 - res.survival_time).max(0.0);
-                    let speed_reward = time_saved * 3.0;
-                    let kill_bonus = if !res.boss_won { 800.0 } else { 0.0 };
-
-                    // ГЛАВНЫЙ КНУТ ДИРЕКТОРА — время, которое босс прожил!
-                    // Если босс живет дольше 7 минут (>420с), включается растущий штраф за затягивание боя
-                    let time_drag_whip = if res.survival_time > 420.0 {
-                        (res.survival_time - 420.0) * 1.5
+                    let speed_reward = time_saved * 5.0;
+                    let kill_bonus = if !res.boss_won { 1500.0 } else { 0.0 };
+                    let early_blitz_bonus = if !res.boss_won && res.survival_time < 300.0 {
+                        (300.0 - res.survival_time) * 5.0
                     } else {
                         0.0
                     };
-                    let survived_boss_whip = if res.boss_won { 800.0 } else { 0.0 };
+
+                    // ГЛАВНЫЙ КНУТ ДИРЕКТОРА — жесткие штрафы за затягивание боя!
+                    // Если босс живет дольше 5 минут (>300с), включается тяжелый штраф (-4 очка за каждую секунду затяжки)
+                    let time_drag_whip = if res.survival_time > 300.0 {
+                        (res.survival_time - 300.0) * 4.0
+                    } else {
+                        0.0
+                    };
+                    let survived_boss_whip = if res.boss_won { 2500.0 } else { 0.0 };
                     let total_time_whip = time_drag_whip + survived_boss_whip;
 
-                    // ВТОРОСТЕПЕННЫЕ ПРЯНИКИ — нанесенный урон и постройка алтарей
-                    let damage_reward = res.damage_dealt_to_boss * 0.06;
-                    let altar_reward = res.altars_built as f32 * 20.0;
+                    // Урон ограничен (потолок 500), чтобы исключить гринд регенерации босса
+                    let damage_reward = (res.damage_dealt_to_boss * 0.04).min(500.0);
+                    let altar_reward = (res.altars_built as f32 * 20.0).min(200.0);
 
-                    let kill_score = (speed_reward + kill_bonus + damage_reward + altar_reward - total_time_whip).max(10.0);
+                    let kill_score = (speed_reward + kill_bonus + early_blitz_bonus + damage_reward + altar_reward - total_time_whip).max(10.0);
                     total_score += kill_score;
                     total_kill_speed += res.survival_time;
                     total_damage_dealt += res.damage_dealt_to_boss;
@@ -347,13 +352,13 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         let boss_time_reward = best_boss_eval.avg_survival * 2.5;
         let boss_whip = best_boss_eval.avg_damage_taken * 0.04;
         let boss_meditation_reward = best_boss_eval.avg_meditation_time * 3.0;
-        let dir_speed_reward = (1020.0 - best_dir_eval.avg_kill_speed).max(0.0) * 3.0;
-        let dir_time_whip = if best_dir_eval.avg_kill_speed > 420.0 {
-            (best_dir_eval.avg_kill_speed - 420.0) * 1.5
+        let dir_speed_reward = (1020.0 - best_dir_eval.avg_kill_speed).max(0.0) * 5.0;
+        let dir_time_whip = if best_dir_eval.avg_kill_speed > 300.0 {
+            (best_dir_eval.avg_kill_speed - 300.0) * 4.0
         } else {
             0.0
         };
-        let dir_dmg_reward = best_dir_eval.avg_damage_dealt * 0.06;
+        let dir_dmg_reward = (best_dir_eval.avg_damage_dealt * 0.04).min(500.0);
 
         println!("================================================================================");
         println!(
@@ -361,16 +366,16 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             gen_idx, generations, current_gen_num, hof_bosses.len()
         );
         println!("--------------------------------------------------------------------------------");
-        println!("  [КЛЮЧЕВЫЕ МЕТРИКИ СОПЕРНИЧЕСТВА]:");
+        println!("  [ВРЕМЯ ЖИЗНИ БОССА В РАУНДЕ]:");
         println!(
-            "    >> ВРЕМЯ ВЫЖИВАНИЯ БОССА:     {:>6.1} сек ({:.1} мин)",
-            best_boss_eval.avg_survival,
-            best_boss_eval.avg_survival / 60.0
+            "    >> В матчах лучшего Босса:     {:>4.1} мин ({:>5.1} сек)  [цель: 17.0 мин]",
+            best_boss_eval.avg_survival / 60.0,
+            best_boss_eval.avg_survival
         );
         println!(
-            "    >> СКОРОСТЬ ПОБЕДЫ ДИРЕКТОРА: {:>6.1} сек ({:.1} мин)",
-            best_dir_eval.avg_kill_speed,
-            best_dir_eval.avg_kill_speed / 60.0
+            "    >> Против лучшего Директора:   {:>4.1} мин ({:>5.1} сек)  [цель: 0.0 мин]",
+            best_dir_eval.avg_kill_speed / 60.0,
+            best_dir_eval.avg_kill_speed
         );
         println!("--------------------------------------------------------------------------------");
         println!(
@@ -378,10 +383,11 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_boss_eval.fitness, best_boss_eval.avg_level
         );
         println!(
-            "    * Время выживания: +{:.0} | Урон получен: {:.0} HP (-{:.0}) | Медитация: {:.1}с (+{:.0})",
+            "    * Время жизни босса: {:.1} мин (+{:.0}) | Урон получен: {:.0} HP (-{:.0}) | Медитация: {:.1} мин (+{:.0})",
+            best_boss_eval.avg_survival / 60.0,
             boss_time_reward,
             best_boss_eval.avg_damage_taken, boss_whip,
-            best_boss_eval.avg_meditation_time, boss_meditation_reward
+            best_boss_eval.avg_meditation_time / 60.0, boss_meditation_reward
         );
         println!(
             "    * Алтарей разрушено: {} | Урон по типам: [Ближний: {:.0}, Дальний: {:.0}, Окружение: {:.0}]",
@@ -395,7 +401,8 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_dir_eval.fitness
         );
         println!(
-            "    * Скорость победы: +{:.0} (Штраф за затяжку: -{:.0}) | Урон нанесен: {:.0} HP (+{:.0})",
+            "    * Время жизни босса: {:.1} мин | Бонус за ранний конец: +{:.0} | Штраф за затяжку: -{:.0} | Урон: {:.0} HP (+{:.0})",
+            best_dir_eval.avg_kill_speed / 60.0,
             dir_speed_reward, dir_time_whip,
             best_dir_eval.avg_damage_dealt, dir_dmg_reward
         );
