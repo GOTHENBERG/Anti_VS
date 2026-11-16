@@ -7,14 +7,35 @@ use crate::render::sprites::{
 };
 use crate::render::textures::GameTextures;
 
-pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) {
+pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures, cam_pos: Vec2, cam_zoom: f32) {
     let time = get_time() as f32;
+
+    // Расчет границ видимой области экрана (Viewport Frustum Culling)
+    let screen_w = screen_width();
+    let screen_h = screen_height();
+    let zoom_clamped = cam_zoom.max(0.15);
+    let half_w = (screen_w / (2.0 * zoom_clamped)) + 90.0;
+    let half_h = (screen_h / (2.0 * zoom_clamped)) + 90.0;
+    let view_min_x = cam_pos.x - half_w;
+    let view_max_x = cam_pos.x + half_w;
+    let view_min_y = cam_pos.y - half_h;
+    let view_max_y = cam_pos.y + half_h;
+
+    let in_view = |pos: Vec2, radius: f32| -> bool {
+        pos.x + radius >= view_min_x
+            && pos.x - radius <= view_max_x
+            && pos.y + radius >= view_min_y
+            && pos.y - radius <= view_max_y
+    };
 
     // 1. Отрисовка большой арены (плиты, разломы, колонны)
     draw_environment(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT, textures);
 
     // 2. Кислотные лужи (Poison Pools) — мягкий полупрозрачный токсичный туман
     for pool in &world.acid_pools {
+        if !in_view(pool.pos, pool.radius) {
+            continue;
+        }
         let alpha = (pool.lifetime / 4.0).clamp(0.0, 1.0);
         let (color, border_color) = if pool.is_director_source {
             // Чумные споры Директора: ядовито-фиолетовая слизь (ранит босса)
@@ -53,11 +74,17 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
 
     // 3. Разрушаемые структуры (Алтари Крови)
     for structure in &world.structures {
+        if !in_view(structure.pos, 100.0) {
+            continue;
+        }
         draw_blood_altar(structure.pos, structure.health.current, structure.health.max, time, textures);
     }
 
     // 4. Кристаллы душ (Soul Gems & Magnet Orbs)
     for gem in &world.gems {
+        if !in_view(gem.pos, 35.0) {
+            continue;
+        }
         if gem.is_magnet {
             if let Some(chest_tex) = textures.chest.as_ref() {
                 let pulse = (time * 6.0).sin() * 2.5;
@@ -128,6 +155,9 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
 
     // 5. Отрисовка мобов со спрайтами и джазовым танцем
     for mob in &world.mobs {
+        if !in_view(mob.pos, mob.radius + 15.0) {
+            continue;
+        }
         draw_mob_sprite(mob, time, textures, world.boss_pos);
 
         // Наложение статусных эффектов (заморозка, горение, яд)
@@ -144,6 +174,9 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
 
     // 6. Отрисовка снарядов (с обновленными эффектами для босса и мобов)
     for proj in &world.projectiles {
+        if !in_view(proj.pos, proj.radius + 15.0) {
+            continue;
+        }
         draw_projectile_sprite(proj, textures);
     }
 
@@ -278,6 +311,9 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
 
     // 9. Отрисовка частиц
     for p in &world.particles {
+        if !in_view(p.pos, p.radius + 5.0) {
+            continue;
+        }
         let alpha = (p.lifetime / p.max_lifetime).clamp(0.0, 1.0);
         let mut color = p.color;
         color.a = alpha;

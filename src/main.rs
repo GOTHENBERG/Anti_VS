@@ -284,9 +284,9 @@ async fn main() {
             audio.update_music(dt, cam_pos, world.boss_pos);
         }
 
-        // 5. Отрисовка мира через камеру
+        // 5. Отрисовка мира через камеру с Viewport Frustum Culling
         set_camera(&world_cam);
-        render_world(&world, &fonts, &textures);
+        render_world(&world, &fonts, &textures, cam_pos, cam_zoom);
 
         // 6. Отрисовка интерфейса на экране (screen-space)
         set_default_camera();

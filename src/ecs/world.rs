@@ -177,6 +177,7 @@ pub struct World {
     pub screen_shake: f32,
     pub boss_model: Option<crate::ai::models::BossModel>,
     pub audio_events: Vec<crate::audio::AudioEvent>,
+    pub is_headless: bool, // Режим обучения без графики: отключает вложенный параллелизм
 }
 
 impl World {
@@ -222,6 +223,7 @@ impl World {
             screen_shake: 0.0,
             boss_model: crate::ai::load_trained_boss_model(),
             audio_events: Vec::new(),
+            is_headless: false,
         }
     }
 

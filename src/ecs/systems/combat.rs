@@ -490,6 +490,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
     world.gems.extend(dropped_gems);
 
+    // Ограничение и слияние кристаллов душ (Gem Compression) при превышении лимита
+    if world.gems.len() > 350 {
+        merge_excess_gems(&mut world.gems, 300, boss_pos);
+    }
+
     // 5. Подбор кристаллов душ Боссом
     let pickup_radius_sq = (boss_radius + 20.0).powi(2);
     let mut collected_xp = 0.0;
@@ -563,5 +568,65 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 mob.health.take_damage(160.0);
             }
         }
+    }
+}
+
+/// Слияние избыточных кристаллов душ (Gem Merging):
+/// Предотвращает просадки FPS от тысяч объектов на карте при сохранении 100% полученного опыта!
+fn merge_excess_gems(gems: &mut Vec<SoulGemEntity>, target_max: usize, boss_pos: Vec2) {
+    if gems.len() <= target_max {
+        return;
+    }
+
+    let boss_dist_min_sq = 150.0 * 150.0;
+    let merge_dist_sq = 70.0 * 70.0;
+    let len = gems.len();
+
+    // 1. Локальное слияние близко лежащих кристаллов вне зоны подбора босса
+    for i in 0..len {
+        if gems[i].is_magnet || gems[i].xp_value <= 0.0 {
+            continue;
+        }
+        if gems[i].pos.distance_squared(boss_pos) < boss_dist_min_sq {
+            continue;
+        }
+
+        for j in (i + 1)..len {
+            if gems[j].is_magnet || gems[j].xp_value <= 0.0 {
+                continue;
+            }
+            if gems[i].pos.distance_squared(gems[j].pos) < merge_dist_sq {
+                gems[i].xp_value += gems[j].xp_value;
+                gems[j].xp_value = 0.0;
+            }
+        }
+    }
+
+    gems.retain(|g| g.is_magnet || g.xp_value > 0.0);
+
+    // 2. Если кристаллов всё ещё больше целевого капа, объединяем дальние кристаллы в кластеры
+    if gems.len() > target_max {
+        let mut non_magnets: Vec<(usize, f32)> = gems
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| !g.is_magnet)
+            .map(|(idx, g)| (idx, g.pos.distance_squared(boss_pos)))
+            .collect();
+
+        // Сортируем: самые дальние от босса в начале
+        non_magnets.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let to_remove = gems.len().saturating_sub(target_max);
+        let mut removed = 0;
+        let mut i = 0;
+        while i + 1 < non_magnets.len() && removed < to_remove {
+            let idx_a = non_magnets[i].0;
+            let idx_b = non_magnets[i + 1].0;
+            gems[idx_a].xp_value += gems[idx_b].xp_value;
+            gems[idx_b].xp_value = 0.0;
+            removed += 1;
+            i += 2;
+        }
+        gems.retain(|g| g.is_magnet || g.xp_value > 0.0);
     }
 }

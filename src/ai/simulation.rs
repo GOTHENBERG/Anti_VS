@@ -34,6 +34,7 @@ pub fn run_headless_simulation(
     max_duration_seconds: f32,
 ) -> MatchResult {
     let mut world = World::new();
+    world.is_headless = true;
     world.boss_model = Some(boss_model.clone());
     let dt = 0.05f32; // 20 тиков на каждую виртуальную секунду
     let mut sim_time = 0.0f32;
