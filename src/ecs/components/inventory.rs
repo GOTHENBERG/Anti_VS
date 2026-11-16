@@ -136,6 +136,7 @@ pub struct BossInventory {
 
     // Механика однократного воскрешения от Эгиды Бессмертия
     pub has_used_aegis_revive: bool,
+    pub bonus_move_speed_multiplier: f32, // Множитель скорости бега (от SpeedGloves и Возвышения)
 }
 
 impl BossInventory {
@@ -161,6 +162,7 @@ impl BossInventory {
             last_chosen_perk: None,
             perk_announcement_timer: 0.0,
             has_used_aegis_revive: false,
+            bonus_move_speed_multiplier: 1.0,
         }
     }
 
@@ -258,6 +260,38 @@ impl BossInventory {
             }
             _ => None,
         }
+    }
+
+    /// Возвращает требуемую пассивку для эволюции оружия
+    pub fn get_evolution_passive_for_weapon(kind: WeaponType) -> Option<PassiveType> {
+        match kind {
+            WeaponType::WindBlade => Some(PassiveType::SpeedGloves),
+            WeaponType::FireAura => Some(PassiveType::GiantHeart),
+            WeaponType::MagicWand => Some(PassiveType::CooldownTome),
+            WeaponType::HolyHammer => Some(PassiveType::LightArmor),
+            WeaponType::IceShards => Some(PassiveType::FrostRing),
+            WeaponType::PoisonOrbs => Some(PassiveType::CorrosiveFlask),
+            WeaponType::ExecutionerAxe => Some(PassiveType::BloodStone),
+            WeaponType::CelestialBow => Some(PassiveType::EagleScope),
+            WeaponType::ThunderOrb => Some(PassiveType::ChronoHourglass),
+            WeaponType::BloodDaggers => Some(PassiveType::MagnetSphere),
+            WeaponType::SingularityOrb => Some(PassiveType::TeslaCoil),
+            WeaponType::ChainFrost => Some(PassiveType::CloverOfFate),
+            WeaponType::BrimstoneRay => Some(PassiveType::PrismaticFocus),
+            WeaponType::MissileSwarm => Some(PassiveType::TitanAegis),
+            WeaponType::ChainLightning => Some(PassiveType::StaticCore),
+            WeaponType::DivineBell => Some(PassiveType::DivinityAura),
+            WeaponType::SoulPhantoms => Some(PassiveType::SoulHarvester),
+            WeaponType::AegisOrbiters => Some(PassiveType::ImmortalAegis),
+            WeaponType::ChaosMeteor => Some(PassiveType::Pyromaniac),
+            WeaponType::VoidRift => Some(PassiveType::OctarineCore),
+            _ => None,
+        }
+    }
+
+    /// Проверяет, является ли пассивка ключом к эволюции для указанного оружия
+    pub fn is_evolution_partner(weapon: WeaponType, passive: PassiveType) -> bool {
+        Self::get_evolution_passive_for_weapon(weapon) == Some(passive)
     }
 
     /// Ткач Судьбы (57-листный клевер): перебрасывает неудачные шансы
@@ -366,5 +400,15 @@ impl BossInventory {
     pub fn get_armor_penetration(&self) -> f32 {
         let flask = self.get_passive_level(PassiveType::CorrosiveFlask);
         (flask as f32 * 0.10).min(0.50)
+    }
+
+    /// Эффективная скорость перемещения босса с учетом пассивок и модификаторов
+    pub fn get_movement_speed(&self, base_speed: f32) -> f32 {
+        let mut mult = self.bonus_move_speed_multiplier;
+        let speed_gloves = self.get_passive_level(PassiveType::SpeedGloves);
+        if speed_gloves > 0 {
+            mult += speed_gloves as f32 * 0.04; // +4% к скорости бега за уровень
+        }
+        base_speed * mult
     }
 }

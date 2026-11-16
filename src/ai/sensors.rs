@@ -2,10 +2,20 @@ use macroquad::prelude::*;
 use crate::ecs::world::World;
 use crate::core::{MAP_WIDTH, MAP_HEIGHT};
 use crate::ai::neural_net::INPUT_SIZE;
+use crate::ai::pathing::WaypointPlanner;
 
-/// Извлекает 36-мерный вектор сенсорного восприятия Босса из игрового мира
-/// Сенсоры включают 360-градусный лидар, радар плотности толпы, дистанцию до стен,
-/// векторы на кристаллы, алтари и снайперов, а также статус здоровья и отката рывка.
+/// Извлекает 42-мерный вектор сенсорного восприятия Босса из игрового мира.
+/// Сенсоры включают:
+/// - 360-градусный 16-лучевой лидар дальности до врагов
+/// - 8-секторный радар плотности массы толпы
+/// - Дистанции до границ арены
+/// - Вектор на ближайший кристалл душ
+/// - Точные нормализованные мировые координаты ближайшего Алтаря Крови
+/// - Вектор относительного смещения от Босса к Алтарю Крови (без искусственного ограничения радиуса)
+/// - Кинематическое расчетное время прибытия от позиции Босса до Алтаря A (в секундах)
+/// - Кинематическое расчетное время перехода по цепочке от Точки Y (Алтарь 1) до Точки Z (Алтарь 2 или скопление опыта)
+/// - Детектор снайперов-культистов (Тир 3 и Тир 11)
+/// - Внутренний статус: здоровье, готовность рывка, скорость бега и общее число активных алтарей
 pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     let mut obs = [0.0f32; INPUT_SIZE];
     let boss_pos = world.boss_pos;
@@ -21,8 +31,7 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
             let diff = mob.pos - boss_pos;
             let dist = diff.length();
             if dist < max_lidar_dist && dist > 0.001 {
-                // Определяем сектор (0..16)
-                let angle = diff.y.atan2(diff.x); // -PI .. PI
+                let angle = diff.y.atan2(diff.x);
                 let norm_angle = if angle < 0.0 { angle + std::f32::consts::PI * 2.0 } else { angle };
                 let sector = ((norm_angle / (std::f32::consts::PI * 2.0)) * 16.0) as usize % 16;
                 if dist < min_sector_dist[sector] {
@@ -57,7 +66,6 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     }
 
     // 3. [24..28] Сенсоры стен арены (Left, Right, Top, Bottom)
-    // 1.0 = далеко в центре, 0.0 = вплотную к стене (опасность зажатия)
     let wall_danger_dist = 180.0f32;
     obs[24] = (boss_pos.x / wall_danger_dist).clamp(0.0, 1.0);
     obs[25] = ((MAP_WIDTH - boss_pos.x) / wall_danger_dist).clamp(0.0, 1.0);
@@ -77,20 +85,31 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     obs[28] = gem_vec.x;
     obs[29] = gem_vec.y;
 
-    // 5. [30..32] Вектор к ближайшему Алтарю Крови
-    let mut closest_altar_dist = 600.0f32;
-    let mut altar_vec = Vec2::ZERO;
-    for st in &world.structures {
-        let dist = st.pos.distance(boss_pos);
-        if dist < closest_altar_dist {
-            closest_altar_dist = dist;
-            altar_vec = (st.pos - boss_pos) / 600.0;
-        }
-    }
-    obs[30] = altar_vec.x;
-    obs[31] = altar_vec.y;
+    // 5. [30..36] Точные координаты алтарей, вектор направления и кинематические расчеты пути
+    let altar_nav = WaypointPlanner::calculate_altar_navigation(world);
+    if let Some(altar_pos) = altar_nav.closest_altar_pos {
+        // [30..32] Точные глобальные нормализованные координаты алтаря (X, Y) на карте
+        obs[30] = (altar_pos.x / MAP_WIDTH).clamp(0.0, 1.0);
+        obs[31] = (altar_pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
 
-    // 6. [32..34] Вектор к ближайшему кластеру снайперов-стрелков (Тир 3 и Тир 11)
+        // [32..34] Относительный вектор смещения от Босса к Алтарю (dx, dy)
+        let diff = altar_pos - boss_pos;
+        obs[32] = (diff.x / MAP_WIDTH).clamp(-1.0, 1.0);
+        obs[33] = (diff.y / MAP_HEIGHT).clamp(-1.0, 1.0);
+    } else {
+        obs[30] = 0.5;
+        obs[31] = 0.5;
+        obs[32] = 0.0;
+        obs[33] = 0.0;
+    }
+
+    // [34] Расчетное время (в секундах) прибытия от текущей точки до Алтаря A (нормировано до 20 сек)
+    obs[34] = (altar_nav.time_to_closest_altar / 20.0).clamp(0.0, 1.0);
+
+    // [35] Расчетное время (в секундах) перехода по цепочке: от Точки Y (Алтарь 1) до Точки Z (Алтарь 2 или Опыт)
+    obs[35] = (altar_nav.time_chained_y_to_z / 20.0).clamp(0.0, 1.0);
+
+    // 6. [36..38] Вектор к ближайшему кластеру снайперов-стрелков (Тир 3 и Тир 11)
     let mut closest_sniper_dist = 450.0f32;
     let mut sniper_vec = Vec2::ZERO;
     for idx in &world.spatial_grid.query_nearby(boss_pos, 450.0) {
@@ -104,12 +123,14 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
             }
         }
     }
-    obs[32] = sniper_vec.x;
-    obs[33] = sniper_vec.y;
+    obs[36] = sniper_vec.x;
+    obs[37] = sniper_vec.y;
 
-    // 7. [34..36] Внутреннее состояние Босса
-    obs[34] = (world.boss_health.current / world.boss_health.max).clamp(0.0, 1.0); // % HP
-    obs[35] = if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 }; // Готовность рывка
+    // 7. [38..42] Внутреннее состояние Босса
+    obs[38] = (world.boss_health.current / world.boss_health.max).clamp(0.0, 1.0); // % HP
+    obs[39] = if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 }; // Готовность рывка
+    obs[40] = (world.boss_inventory.get_movement_speed(160.0) / 160.0).clamp(0.5, 2.5); // Текущий множитель скорости
+    obs[41] = (altar_nav.altar_count as f32 / 5.0).clamp(0.0, 1.0); // Число активных алтарей
 
     obs
 }

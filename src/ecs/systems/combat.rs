@@ -13,6 +13,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let has_blade_storm = world.boss_inventory.has_weapon(WeaponType::BladeStorm);
     let has_divine_shield = world.boss_inventory.has_weapon(WeaponType::DivineShield);
     let has_hellfire = world.boss_inventory.has_weapon(WeaponType::Hellfire);
+    let has_invincible_bastion = world.boss_inventory.has_weapon(WeaponType::InvincibleBastion);
     let has_octarine_core = world.boss_inventory.has_passive(PassiveType::OctarineCore);
     let has_pyromaniac = world.boss_inventory.has_passive(PassiveType::Pyromaniac);
     let has_immortal_aegis = world.boss_inventory.has_passive(PassiveType::ImmortalAegis);
@@ -121,6 +122,30 @@ pub fn update_combat(world: &mut World, dt: f32) {
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
             world.boss_health.heal(dmg * 0.05);
+        }
+
+        if has_hellfire && dist_sq < (95.0 + st.radius).powi(2) {
+            let packet = DamagePacket {
+                source_id: Some(0),
+                target_id: st.id,
+                amount: 85.0 * dt,
+                damage_type: DamageType::Fire,
+                armor_penetration: 0.25,
+            };
+            let dmg = st.resistances.calculate_damage(&packet, false);
+            st.health.take_damage(dmg);
+        }
+
+        if has_invincible_bastion && dist_sq < (105.0 + st.radius).powi(2) {
+            let packet = DamagePacket {
+                source_id: Some(0),
+                target_id: st.id,
+                amount: 110.0 * dt,
+                damage_type: DamageType::Holy,
+                armor_penetration: 0.50,
+            };
+            let dmg = st.resistances.calculate_damage(&packet, false);
+            st.health.take_damage(dmg);
         }
     }
 

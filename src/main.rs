@@ -48,12 +48,13 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     // Режим автономного со-эволюционного обучения ботов (Self-Play Training)
-    // Поддерживает аргументы: cargo run --release -- --train [поколений] [размер популяции]
+    // Поддерживает аргументы: cargo run --release -- --train [поколений] [размер популяции] [--clean / --reset]
     let args: Vec<String> = std::env::args().collect();
     if let Some(pos) = args.iter().position(|a| a == "--train") {
         let generations = args.get(pos + 1).and_then(|s| s.parse().ok()).unwrap_or(8);
         let population = args.get(pos + 2).and_then(|s| s.parse().ok()).unwrap_or(8);
-        crate::ai::trainer::run_co_evolutionary_training(generations, population);
+        let reset = args.iter().any(|a| a == "--clean" || a == "--reset");
+        crate::ai::trainer::run_co_evolutionary_training(generations, population, reset);
         return;
     }
 

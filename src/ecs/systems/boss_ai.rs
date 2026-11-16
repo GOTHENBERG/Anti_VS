@@ -121,7 +121,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     let nearby_cultists: Vec<Vec2> = world.spatial_grid.query_nearby(boss_pos, 420.0)
         .iter()
         .filter_map(|&idx| world.mobs.get(idx))
-        .filter(|m| m.tier == 3)
+        .filter(|m| m.tier == 3 || m.tier == 11)
         .map(|m| m.pos)
         .collect();
 
@@ -262,7 +262,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         let wants_meditation = !nearby_threats && (hp_ratio < 0.98 || world.boss_still_time > 0.0);
 
         // Обычное передвижение по вектору сил
-        let max_speed = 160.0;
+        let max_speed = world.boss_inventory.get_movement_speed(160.0);
         let desired_vel = if wants_meditation {
             Vec2::ZERO
         } else if total_force.length_squared() > 4.0 {
@@ -281,95 +281,228 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     world.boss_pos.y = world.boss_pos.y.clamp(35.0, map_h - 35.0);
 }
 
-/// Адаптивный выбор из 3 карт при Level-Up босса
+fn get_weapon_index(kind: WeaponType) -> usize {
+    match kind {
+        WeaponType::WindBlade | WeaponType::BladeStorm => 0,
+        WeaponType::FireAura | WeaponType::Hellfire => 1,
+        WeaponType::MagicWand | WeaponType::DeathRay => 2,
+        WeaponType::HolyHammer | WeaponType::DivineShield => 3,
+        WeaponType::IceShards | WeaponType::BlizzardStorm => 4,
+        WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => 5,
+        WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver => 6,
+        WeaponType::CelestialBow | WeaponType::StarfallBarrage => 7,
+        WeaponType::ThunderOrb | WeaponType::ThunderstormWrath => 8,
+        WeaponType::BloodDaggers | WeaponType::BloodHarvest => 9,
+        WeaponType::SingularityOrb | WeaponType::EventHorizon => 10,
+        WeaponType::ChainFrost | WeaponType::AbsoluteZero => 11,
+        WeaponType::BrimstoneRay | WeaponType::InfernalCataclysm => 12,
+        WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage => 13,
+        WeaponType::ChainLightning | WeaponType::StormGodWrath => 14,
+        WeaponType::AegisOrbiters | WeaponType::InvincibleBastion => 15,
+        WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => 16,
+        WeaponType::VoidRift | WeaponType::SingularityCollapse => 17,
+        WeaponType::SoulPhantoms | WeaponType::BansheeWail => 18,
+        WeaponType::DivineBell | WeaponType::CathedralAura => 19,
+    }
+}
+
+fn get_passive_index(kind: PassiveType) -> usize {
+    match kind {
+        PassiveType::SpeedGloves => 0,
+        PassiveType::GiantHeart => 1,
+        PassiveType::CooldownTome => 2,
+        PassiveType::LightArmor => 3,
+        PassiveType::FrostRing => 4,
+        PassiveType::CorrosiveFlask => 5,
+        PassiveType::BloodStone => 6,
+        PassiveType::EagleScope => 7,
+        PassiveType::ChronoHourglass => 8,
+        PassiveType::MagnetSphere => 9,
+        PassiveType::TeslaCoil => 10,
+        PassiveType::CloverOfFate => 11,
+        PassiveType::PrismaticFocus => 12,
+        PassiveType::TitanAegis => 13,
+        PassiveType::ImmortalAegis => 14,
+        PassiveType::ArchmageShard => 15,
+        PassiveType::DivineRapier => 16,
+        PassiveType::OctarineCore => 17,
+        PassiveType::SolarRelic => 18,
+        PassiveType::StaticCore => 19,
+        PassiveType::ColossalEye => 20,
+        PassiveType::BlessedHeart => 21,
+        PassiveType::Pyromaniac => 22,
+        PassiveType::SoulHarvester => 23,
+        PassiveType::DivinityAura => 24,
+        PassiveType::UkuleleResonance => 25,
+        PassiveType::FateWeaver => 26,
+        PassiveType::SiegeMortar => 27,
+    }
+}
+
+fn get_weapon_archetypes(kind: WeaponType) -> &'static [usize] {
+    match kind {
+        WeaponType::FireAura | WeaponType::Hellfire | WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => &[0],
+        WeaponType::BrimstoneRay | WeaponType::InfernalCataclysm => &[0, 3],
+        WeaponType::ThunderOrb | WeaponType::ThunderstormWrath | WeaponType::ChainLightning | WeaponType::StormGodWrath | WeaponType::ChainFrost | WeaponType::AbsoluteZero => &[1],
+        WeaponType::HolyHammer | WeaponType::DivineShield | WeaponType::AegisOrbiters | WeaponType::InvincibleBastion | WeaponType::WindBlade | WeaponType::BladeStorm => &[2],
+        WeaponType::MagicWand | WeaponType::DeathRay | WeaponType::SingularityOrb | WeaponType::EventHorizon | WeaponType::VoidRift | WeaponType::SingularityCollapse => &[3],
+        WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver | WeaponType::BloodDaggers | WeaponType::BloodHarvest | WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => &[4],
+        WeaponType::CelestialBow | WeaponType::StarfallBarrage | WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage | WeaponType::DivineBell | WeaponType::CathedralAura | WeaponType::SoulPhantoms | WeaponType::BansheeWail => &[5],
+        WeaponType::IceShards | WeaponType::BlizzardStorm => &[1, 2],
+    }
+}
+
+fn get_passive_archetypes(kind: PassiveType) -> &'static [usize] {
+    match kind {
+        PassiveType::Pyromaniac | PassiveType::BloodStone | PassiveType::SolarRelic => &[0],
+        PassiveType::TeslaCoil | PassiveType::StaticCore | PassiveType::UkuleleResonance | PassiveType::ChronoHourglass => &[1],
+        PassiveType::LightArmor | PassiveType::TitanAegis | PassiveType::ImmortalAegis | PassiveType::SiegeMortar => &[2],
+        PassiveType::ColossalEye | PassiveType::CooldownTome | PassiveType::PrismaticFocus | PassiveType::ArchmageShard => &[3],
+        PassiveType::OctarineCore | PassiveType::SoulHarvester | PassiveType::CorrosiveFlask => &[4],
+        PassiveType::EagleScope | PassiveType::BlessedHeart | PassiveType::DivinityAura | PassiveType::SpeedGloves => &[5],
+        PassiveType::GiantHeart => &[0, 2],
+        PassiveType::CloverOfFate | PassiveType::FateWeaver => &[1, 4],
+        PassiveType::DivineRapier => &[4, 5],
+        PassiveType::FrostRing => &[1, 2],
+        PassiveType::MagnetSphere => &[3, 4],
+    }
+}
+
+fn evaluate_perk_choice(
+    choice: &PerkChoice,
+    inventory: &BossInventory,
+    model: Option<&crate::ai::models::BossModel>,
+    hp_ratio: f32,
+    melee_dmg: f32,
+    ranged_dmg: f32,
+    mob_count: usize,
+) -> f32 {
+    let mut score = 50.0f32;
+
+    let default_weights = crate::ai::models::default_combo_archetype_weights();
+    let archetype_weights = model.map(|m| &m.combo_archetype_weights).unwrap_or(&default_weights);
+    let synergy_seeking = model.map(|m| m.synergy_seeking_weight).unwrap_or(1.6);
+
+    let mut archetype_counts = [0usize; 6];
+    for w in &inventory.weapons {
+        for &a in get_weapon_archetypes(w.kind) {
+            archetype_counts[a] += 1;
+        }
+    }
+    for p in &inventory.passives {
+        for &a in get_passive_archetypes(p.kind) {
+            archetype_counts[a] += 1;
+        }
+    }
+
+    match choice {
+        PerkChoice::EvolveWeapon { from: _, to } => {
+            score += 380.0 * synergy_seeking;
+            for &a in get_weapon_archetypes(*to) {
+                let weight = archetype_weights.get(a).copied().unwrap_or(1.0);
+                score += weight * 60.0;
+            }
+        }
+        PerkChoice::UpgradeWeapon(kind) => {
+            let w_idx = get_weapon_index(*kind);
+            let genetic_priority = model
+                .and_then(|m| m.weapon_priorities.get(w_idx).copied())
+                .unwrap_or(1.0);
+            score += genetic_priority * 45.0;
+
+            if let Some(needed_passive) = BossInventory::get_evolution_passive_for_weapon(*kind) {
+                if inventory.has_passive(needed_passive) {
+                    score += 190.0 * synergy_seeking;
+                }
+            }
+
+            for &a in get_weapon_archetypes(*kind) {
+                let weight = archetype_weights.get(a).copied().unwrap_or(1.0);
+                let count = archetype_counts[a];
+                score += weight * (25.0 + count as f32 * 40.0) * synergy_seeking;
+            }
+
+            if let Some(w) = inventory.weapons.iter().find(|w| w.kind == *kind) {
+                score += (w.level as f32) * 12.0;
+            }
+        }
+        PerkChoice::UpgradePassive(kind) => {
+            let p_idx = get_passive_index(*kind);
+            let genetic_priority = model
+                .and_then(|m| m.passive_priorities.get(p_idx).copied())
+                .unwrap_or(1.0);
+            score += genetic_priority * 45.0;
+
+            for w in &inventory.weapons {
+                if BossInventory::is_evolution_partner(w.kind, *kind) {
+                    score += 210.0 * synergy_seeking;
+                }
+            }
+
+            for &a in get_passive_archetypes(*kind) {
+                let weight = archetype_weights.get(a).copied().unwrap_or(1.0);
+                let count = archetype_counts[a];
+                score += weight * (25.0 + count as f32 * 40.0) * synergy_seeking;
+            }
+
+            if *kind == PassiveType::GiantHeart && hp_ratio < 0.5 {
+                score += 80.0 + (1.0 - hp_ratio) * 70.0;
+            }
+            if *kind == PassiveType::LightArmor && melee_dmg > 30.0 {
+                score += 55.0;
+            }
+            if matches!(kind, PassiveType::SpeedGloves | PassiveType::CooldownTome) && ranged_dmg > 30.0 {
+                score += 50.0;
+            }
+            if *kind == PassiveType::FrostRing && mob_count > 100 {
+                score += 45.0;
+            }
+        }
+        PerkChoice::LimitBreakTitanVigor => {
+            if hp_ratio < 0.6 { score += 110.0; } else { score += 65.0; }
+        }
+        PerkChoice::LimitBreakAdaptiveArmor => {
+            score += 85.0;
+        }
+        PerkChoice::LimitBreakPredatorSpeed => {
+            score += 70.0;
+        }
+        PerkChoice::LimitBreakDamage { .. } | PerkChoice::LimitBreakCooldown { .. } | PerkChoice::LimitBreakProjectiles { .. } => {
+            score += 75.0;
+        }
+    }
+
+    score += rand::gen_range(0.0, 8.0);
+    score
+}
+
+/// Адаптивный выбор из 3 карт при Level-Up босса на основе синергий и ДНК-приоритетов
 pub fn handle_boss_level_up(world: &mut World) {
     let choices = generate_perk_choices(&world.boss_inventory);
     if choices.is_empty() {
         return;
     }
 
-    // Оценка каждой карты с адаптивными весами в зависимости от полученного урона и здоровья
-    let mut best_choice = choices[0].clone();
-    let mut best_score = -1000.0;
-
     let melee_dmg = world.boss_inventory.melee_damage_recent;
     let ranged_dmg = world.boss_inventory.ranged_damage_recent;
     let hp_ratio = world.boss_health.current / world.boss_health.max;
+    let mob_count = world.mobs.len();
+
+    let model_clone = world.boss_model.clone();
+
+    let mut best_choice = choices[0].clone();
+    let mut best_score = -1000.0;
 
     for choice in &choices {
-        let mut score = 50.0;
-
-        match choice {
-            PerkChoice::EvolveWeapon { to, .. } => {
-                // Эволюция — абсолютный приоритет!
-                score += 300.0;
-                match to {
-                    WeaponType::BladeStorm | WeaponType::Hellfire => {
-                        if melee_dmg > 50.0 {
-                            score += 50.0;
-                        }
-                    }
-                    WeaponType::DeathRay | WeaponType::BlizzardStorm => {
-                        if ranged_dmg > 50.0 {
-                            score += 50.0;
-                        }
-                    }
-                    WeaponType::DivineShield => {
-                        if hp_ratio < 0.4 {
-                            score += 80.0; // Вампиризм при низком здоровье!
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            PerkChoice::UpgradeWeapon(kind) => {
-                // Били вблизи -> берёт круговой урон (FireAura, WindBlade, HolyHammer)
-                if matches!(kind, WeaponType::FireAura | WeaponType::WindBlade | WeaponType::HolyHammer) {
-                    score += (melee_dmg * 0.4).min(45.0);
-                }
-                // Били издали -> берёт дальний бой и контроль (MagicWand, IceShards)
-                if matches!(kind, WeaponType::MagicWand | WeaponType::IceShards) {
-                    score += (ranged_dmg * 0.4).min(45.0);
-                }
-                // Если оружие высокого уровня (6-7), ускоряем его до 8 для эволюции!
-                if let Some(w) = world.boss_inventory.weapons.iter().find(|w| w.kind == *kind) {
-                    score += (w.level as f32) * 8.0;
-                }
-            }
-            PerkChoice::UpgradePassive(kind) => {
-                // Мало здоровья -> берёт Сердце Гиганта (реген/хп)
-                if *kind == PassiveType::GiantHeart && hp_ratio < 0.5 {
-                    score += 60.0 + (1.0 - hp_ratio) * 60.0;
-                }
-                // Били вблизи -> берёт Броню Света (плоская броня)
-                if *kind == PassiveType::LightArmor && melee_dmg > 30.0 {
-                    score += 50.0;
-                }
-                // Били издали -> берёт скорость атаки и кд (SpeedGloves, CooldownTome)
-                if matches!(kind, PassiveType::SpeedGloves | PassiveType::CooldownTome) && ranged_dmg > 30.0 {
-                    score += 45.0;
-                }
-                // Кольцо заморозки для контроля орд
-                if *kind == PassiveType::FrostRing && world.mobs.len() > 100 {
-                    score += 40.0;
-                }
-            }
-            PerkChoice::LimitBreakDamage { .. } | PerkChoice::LimitBreakCooldown { .. } | PerkChoice::LimitBreakProjectiles { .. } => {
-                score += 70.0;
-            }
-            PerkChoice::LimitBreakTitanVigor => {
-                if hp_ratio < 0.6 { score += 95.0; } else { score += 55.0; }
-            }
-            PerkChoice::LimitBreakAdaptiveArmor => {
-                score += 75.0;
-            }
-            PerkChoice::LimitBreakPredatorSpeed => {
-                score += 50.0;
-            }
-        }
-
-        // Небольшой случайный фактор для разнообразия билдов
-        score += rand::gen_range(0.0, 10.0);
+        let score = evaluate_perk_choice(
+            choice,
+            &world.boss_inventory,
+            model_clone.as_ref(),
+            hp_ratio,
+            melee_dmg,
+            ranged_dmg,
+            mob_count,
+        );
 
         if score > best_score {
             best_score = score;
@@ -779,7 +912,8 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
             world.spawn_particles(boss_pos, 25, PURPLE, 160.0);
         }
         PerkChoice::LimitBreakPredatorSpeed => {
-            let text = "⚡ ВОЗВЫШЕНИЕ: Скорость Хищника (+10% Рефлексы)".to_string();
+            world.boss_inventory.bonus_move_speed_multiplier += 0.08;
+            let text = "⚡ ВОЗВЫШЕНИЕ: Скорость Хищника (+8% Скорости бега)".to_string();
             world.boss_inventory.last_chosen_perk = Some(text.clone());
             world.boss_inventory.perk_announcement_timer = 2.5;
             world.add_floating_text(boss_pos, text, YELLOW, 1.3);

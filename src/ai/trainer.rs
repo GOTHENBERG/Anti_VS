@@ -42,7 +42,7 @@ struct DirectorEval {
     grades: (u32, u32, u32),
 }
 
-pub fn run_co_evolutionary_training(generations: usize, population_size: usize) {
+pub fn run_co_evolutionary_training(generations: usize, population_size: usize, reset: bool) {
     let gpu_info = detect_gpu_device();
     println!("============================================================");
     println!("🚀 ЗАПУСК ТУРНИРА СО-ЭВОЛЮЦИИ ИИ (LEAGUE SELF-PLAY)");
@@ -50,21 +50,31 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
     println!("⚡ Многопоточный движок: {} потоков (Rayon SIMD Parallel)", rayon::current_num_threads());
     println!("🏆 Поколений: {} | Размер популяции каждого агента: {}", generations, population_size);
     println!("🏛️ Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
+    if reset {
+        println!("🧹 РЕЖИМ СБРОСА (--clean): ИИ Босса полностью очищен, обучение начнется с нуля!");
+    }
     println!("============================================================");
 
-    let mut seed_boss = crate::ai::load_trained_boss_model().unwrap_or_default();
-    if seed_boss.neural_net.is_none() {
-        let net = crate::ai::neural_net::NeuralNet::new();
-        seed_boss.total_synapses = net.total_synapses();
-        seed_boss.neural_net = Some(net);
-    }
-    let seed_director = crate::ai::load_trained_director_model().unwrap_or_default();
-    let base_gen = seed_boss.generation;
+    let (seed_boss, seed_director, base_gen) = if reset {
+        let fresh_boss = BossModel::default();
+        let fresh_director = DirectorModel::default();
+        (fresh_boss, fresh_director, 0)
+    } else {
+        let mut loaded_boss = crate::ai::load_trained_boss_model().unwrap_or_default();
+        if loaded_boss.neural_net.is_none() || loaded_boss.total_synapses != crate::ai::neural_net::NeuralNet::new().total_synapses() {
+            let net = crate::ai::neural_net::NeuralNet::new();
+            loaded_boss.total_synapses = net.total_synapses();
+            loaded_boss.neural_net = Some(net);
+        }
+        let loaded_director = crate::ai::load_trained_director_model().unwrap_or_default();
+        let base_gen_val = loaded_boss.generation;
+        (loaded_boss, loaded_director, base_gen_val)
+    };
 
     if base_gen > 0 {
         println!("🔄 Дообучение (Warm Start): продолжаем с Поколения {} (Фитнес Босса: {:.0}, Синапсов: {})", base_gen, seed_boss.fitness, seed_boss.total_synapses);
     } else {
-        println!("🌱 Начало нового цикла обучения: инициализирована глубокая нейросеть ({} синапсов).", seed_boss.total_synapses);
+        println!("🌱 Начало нового цикла обучения: инициализирована глубокая нейросеть ({} синапсов, 42 входа).", seed_boss.total_synapses);
     }
 
     // 1. Инициализация Зала Славы (Hall of Fame) историческими чемпионами
@@ -84,6 +94,15 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                 m.gem_attraction_weight = (m.gem_attraction_weight + rand::gen_range(-25.0, 25.0)).clamp(100.0, 400.0);
                 m.sniper_hunt_aggression = (m.sniper_hunt_aggression + rand::gen_range(-30.0, 30.0)).clamp(150.0, 500.0);
                 m.altar_siege_aggression = (m.altar_siege_aggression + rand::gen_range(-25.0, 25.0)).clamp(150.0, 450.0);
+                for a in m.combo_archetype_weights.iter_mut() {
+                    *a = (*a + rand::gen_range(-0.4, 0.4)).clamp(0.2, 4.0);
+                }
+                for w in m.weapon_priorities.iter_mut() {
+                    *w = (*w + rand::gen_range(-0.3, 0.3)).clamp(0.2, 3.5);
+                }
+                for p in m.passive_priorities.iter_mut() {
+                    *p = (*p + rand::gen_range(-0.3, 0.3)).clamp(0.2, 3.5);
+                }
             }
             m
         })
@@ -374,7 +393,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             let p2 = &boss_pop[rand::gen_range(0, population_size / 2)];
             let mut child = p1.clone();
 
-            // Кроссовер и мутация глубокой нейросети (2,176 синапсов!)
+            // Кроссовер и мутация глубокой нейросети (2,368 синапсов, 42 сенсора)
             if let (Some(net1), Some(net2)) = (&p1.neural_net, &p2.neural_net) {
                 let mut child_net = net1.crossover(net2);
                 child_net.mutate(0.08, 0.20);
@@ -388,12 +407,30 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             child.altar_siege_aggression = (p1.altar_siege_aggression + p2.altar_siege_aggression) * 0.5;
             child.sniper_hunt_aggression = (p1.sniper_hunt_aggression + p2.sniper_hunt_aggression) * 0.5;
 
-            // Мутация
+            // Мутация базовых параметров
             child.mob_repulsion_weight = (child.mob_repulsion_weight + rand::gen_range(-25.0, 25.0)).clamp(250.0, 700.0);
             child.gem_attraction_weight = (child.gem_attraction_weight + rand::gen_range(-20.0, 20.0)).clamp(100.0, 400.0);
             child.altar_siege_aggression = (child.altar_siege_aggression + rand::gen_range(-25.0, 25.0)).clamp(150.0, 500.0);
             child.sniper_hunt_aggression = (child.sniper_hunt_aggression + rand::gen_range(-30.0, 30.0)).clamp(150.0, 500.0);
             child.dash_danger_threshold = (child.dash_danger_threshold as i32 + rand::gen_range(-1, 2)).clamp(8, 18) as usize;
+
+            // Кроссовер и мутация ДНК билдостроения и поиска имба-синергий
+            for w in child.weapon_priorities.iter_mut() {
+                if rand::gen_range(0.0, 1.0) < 0.25 {
+                    *w = (*w + rand::gen_range(-0.25, 0.25)).clamp(0.2, 3.5);
+                }
+            }
+            for p in child.passive_priorities.iter_mut() {
+                if rand::gen_range(0.0, 1.0) < 0.25 {
+                    *p = (*p + rand::gen_range(-0.25, 0.25)).clamp(0.2, 3.5);
+                }
+            }
+            for a in child.combo_archetype_weights.iter_mut() {
+                if rand::gen_range(0.0, 1.0) < 0.30 {
+                    *a = (*a + rand::gen_range(-0.30, 0.30)).clamp(0.2, 4.0);
+                }
+            }
+            child.synergy_seeking_weight = (child.synergy_seeking_weight + rand::gen_range(-0.15, 0.15)).clamp(0.5, 3.5);
 
             next_boss_pop.push(child);
         }
@@ -441,8 +478,28 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, i
     if let Some(ref net) = boss.neural_net {
         if let Ok(brain_json) = serde_json::to_string_pretty(net) {
             let _ = std::fs::write("models/boss_brain_neural.json", brain_json);
-            println!("  🧠 Развернутая матрица синапсов (36 сенсоров, 2 скрытых слоя) сохранена в: models/boss_brain_neural.json");
+            println!("  🧠 Развернутая матрица синапсов (42 сенсора, 2 скрытых слоя) сохранена в: models/boss_brain_neural.json");
         }
+    }
+
+    let archetype_names = [
+        "🔥 Инфернальный Пиромант (Огонь, Пламя, Сердце Пироманта)",
+        "⚡ Сверхпроводящий Громовержец (Молния, Тесла, Лира, Клевер)",
+        "🛡️ Несокрушимый Бастион (Орбиты, Молот, Щиты, Эгида)",
+        "🌌 Аннигилятор Бездны (Луч Смерти, Сингулярность, Око Колосса)",
+        "🩸 Кровавый Жнец (Топор, Кинжалы, Вампиризм, Клевер)",
+        "✨ Звёздный Охотник (Лук, Ракеты, Самонаведение, Орлиный Глаз)",
+    ];
+    let mut best_arch = 0;
+    let mut best_weight = 0.0f32;
+    for (i, &w) in boss.combo_archetype_weights.iter().enumerate() {
+        if w > best_weight {
+            best_weight = w;
+            best_arch = i;
+        }
+    }
+    if let Some(name) = archetype_names.get(best_arch) {
+        println!("  ✨ Доминирующий билд-архетип: {} (Вес: {:.2}, Поиск комбо: {:.2})", name, best_weight, boss.synergy_seeking_weight);
     }
 
     if let Ok(dir_json) = serde_json::to_string_pretty(director) {

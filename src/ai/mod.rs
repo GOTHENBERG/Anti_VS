@@ -1,5 +1,6 @@
 pub mod models;
 pub mod neural_net;
+pub mod pathing;
 pub mod sensors;
 pub mod simulation;
 pub mod trainer;
@@ -22,6 +23,14 @@ pub fn load_trained_boss_model() -> Option<BossModel> {
                 while model.passive_priorities.len() < default_p.len() {
                     let idx = model.passive_priorities.len();
                     model.passive_priorities.push(default_p[idx]);
+                }
+                let default_a = crate::ai::models::default_combo_archetype_weights();
+                while model.combo_archetype_weights.len() < default_a.len() {
+                    let idx = model.combo_archetype_weights.len();
+                    model.combo_archetype_weights.push(default_a[idx]);
+                }
+                if model.synergy_seeking_weight <= 0.01 {
+                    model.synergy_seeking_weight = crate::ai::models::default_synergy_seeking_weight();
                 }
                 return Some(model);
             }

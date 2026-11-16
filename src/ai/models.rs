@@ -27,9 +27,31 @@ pub struct BossModel {
     #[serde(default = "default_weapon_priorities")]
     pub weapon_priorities: Vec<f32>,
 
-    // Приоритеты выбора пассивок при Level-Up (10 пассивок)
+    // Приоритеты выбора пассивок при Level-Up (28 пассивок и реликвий)
     #[serde(default = "default_passive_priorities")]
     pub passive_priorities: Vec<f32>,
+
+    // Генетические веса 6 имба-архетипов билдостроения:
+    // [0] Инфернальный Пиромант (Огонь, Пламя, Сердце Пироманта)
+    // [1] Сверхпроводящий Громовержец (Молния, Тесла, Лира, Клевер)
+    // [2] Несокрушимый Бастион (Орбиты, Молот, Щиты, Эгида)
+    // [3] Аннигилятор Бездны (Луч Смерти, Сингулярность, Око Колосса)
+    // [4] Кровавый Жнец (Топор, Кинжалы, Вампиризм, Клевер)
+    // [5] Звёздный Охотник (Лук, Ракеты, Самонаведение, Орлиный Глаз)
+    #[serde(default = "default_combo_archetype_weights")]
+    pub combo_archetype_weights: Vec<f32>,
+
+    // Степень стремления к сбору синергий (1.0 = норма, 2.5 = фанатичный поиск комбо)
+    #[serde(default = "default_synergy_seeking_weight")]
+    pub synergy_seeking_weight: f32,
+}
+
+pub fn default_combo_archetype_weights() -> Vec<f32> {
+    vec![1.5, 1.5, 1.5, 1.5, 1.5, 1.5]
+}
+
+pub fn default_synergy_seeking_weight() -> f32 {
+    1.6
 }
 
 pub fn default_weapon_priorities() -> Vec<f32> {
@@ -74,6 +96,8 @@ impl Default for BossModel {
             sniper_engage_min_count: 2,
             weapon_priorities: default_weapon_priorities(),
             passive_priorities: default_passive_priorities(),
+            combo_archetype_weights: default_combo_archetype_weights(),
+            synergy_seeking_weight: default_synergy_seeking_weight(),
         }
     }
 }

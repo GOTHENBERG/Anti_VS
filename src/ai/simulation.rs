@@ -32,6 +32,7 @@ pub fn run_headless_simulation(
     max_duration_seconds: f32,
 ) -> MatchResult {
     let mut world = World::new();
+    world.boss_model = Some(boss_model.clone());
     let dt = 0.05f32; // 20 тиков на каждую виртуальную секунду
     let mut sim_time = 0.0f32;
     let mut director_decision_timer = 0.0f32;
@@ -265,21 +266,25 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
         }
     }
 
-    // 5. Отталкивание от стен
+    // 5. Отталкивание от стен (плавное параболическое замедление)
     let map_w = MAP_WIDTH;
     let map_h = MAP_HEIGHT;
-    let wall_margin = 80.0;
+    let wall_margin = 220.0;
     let push = model.wall_repel_weight;
 
     if boss_pos.x < wall_margin {
-        total_force.x += push * (1.0 - boss_pos.x / wall_margin).clamp(0.0, 1.0);
+        let factor = 1.0 - (boss_pos.x / wall_margin).clamp(0.0, 1.0);
+        total_force.x += push * factor * factor;
     } else if boss_pos.x > map_w - wall_margin {
-        total_force.x -= push * (1.0 - (map_w - boss_pos.x) / wall_margin).clamp(0.0, 1.0);
+        let factor = 1.0 - ((map_w - boss_pos.x) / wall_margin).clamp(0.0, 1.0);
+        total_force.x -= push * factor * factor;
     }
     if boss_pos.y < wall_margin {
-        total_force.y += push * (1.0 - boss_pos.y / wall_margin).clamp(0.0, 1.0);
+        let factor = 1.0 - (boss_pos.y / wall_margin).clamp(0.0, 1.0);
+        total_force.y += push * factor * factor;
     } else if boss_pos.y > map_h - wall_margin {
-        total_force.y -= push * (1.0 - (map_h - boss_pos.y) / wall_margin).clamp(0.0, 1.0);
+        let factor = 1.0 - ((map_h - boss_pos.y) / wall_margin).clamp(0.0, 1.0);
+        total_force.y -= push * factor * factor;
     }
 
     // 6. Экстренный рывок (Dash)
@@ -299,8 +304,25 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
         world.boss_invulnerable_timer = 0.25;
         world.boss_dash_cooldown = 7.0;
     } else {
-        let max_speed = 160.0;
-        let desired = total_force.clamp_length_max(max_speed);
+        let nearby_threats = world.spatial_grid.query_nearby(boss_pos, 220.0)
+            .iter()
+            .any(|&idx| {
+                if let Some(mob) = world.mobs.get(idx) {
+                    mob.pos.distance_squared(boss_pos) < 220.0 * 220.0
+                } else {
+                    false
+                }
+            });
+
+        let wants_meditation = !nearby_threats && (hp_ratio < 0.98 || world.boss_still_time > 0.0);
+        let max_speed = world.boss_inventory.get_movement_speed(160.0);
+        let desired = if wants_meditation {
+            Vec2::ZERO
+        } else if total_force.length_squared() > 4.0 {
+            total_force.clamp_length_max(max_speed)
+        } else {
+            Vec2::ZERO
+        };
         world.boss_vel = world.boss_vel.lerp(desired, (dt * 10.0).min(1.0));
         world.boss_pos += world.boss_vel * dt;
     }
