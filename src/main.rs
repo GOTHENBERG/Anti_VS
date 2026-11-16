@@ -3,12 +3,15 @@
 use macroquad::prelude::*;
 
 mod ai;
+mod audio;
 mod content;
 mod core;
 mod ecs;
 mod network;
 mod protocol;
 mod render;
+
+use crate::audio::AudioManager;
 
 use crate::content::mobs::{get_squad_config, spawn_squad_perimeter};
 use crate::content::structures::{spawn_blood_altar, BLOOD_ALTAR_COST};
@@ -59,7 +62,9 @@ async fn main() {
     let mut net_driver = LocalDriver::new();
     let fonts = GameFonts::load();
     let textures = GameTextures::load().await;
+    let mut audio = AudioManager::load().await;
     let mut is_paused = false;
+    let mut boss_death_sound_played = false;
 
     // Скрываем стандартный системный курсор мыши (заменяем демонической дланью Повелителя)
     show_mouse(false);
@@ -82,6 +87,11 @@ async fn main() {
 
     // Начальный разрушаемый алтарь игрока
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
+
+    // Запуск фоновой боевой темы (Symphonic Metal / Dark Gothic)
+    if !auto_screenshot && !auto_codex && !auto_dossier {
+        audio.start_music();
+    }
 
     loop {
         let dt = get_frame_time().min(0.05);
@@ -144,9 +154,15 @@ async fn main() {
             spawn_squad_perimeter(&mut world, 8);
         }
 
+        // Переключение звука по M
+        if is_key_pressed(KeyCode::M) {
+            audio.toggle_mute();
+        }
+
         // Пауза по Space или P
         if is_key_pressed(KeyCode::P) || is_key_pressed(KeyCode::Space) {
             is_paused = !is_paused;
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
 
         // Инфернальный кодекс по I
@@ -155,10 +171,14 @@ async fn main() {
                 active_dossier_tier = None;
                 opened_dossier_from_codex = false;
                 show_codex = false;
+                audio.handle_event(crate::audio::AudioEvent::BookClose);
             } else {
                 show_codex = !show_codex;
                 if show_codex {
                     active_dossier_tier = None;
+                    audio.handle_event(crate::audio::AudioEvent::BookOpen);
+                } else {
+                    audio.handle_event(crate::audio::AudioEvent::BookClose);
                 }
             }
         }
@@ -166,12 +186,14 @@ async fn main() {
         if is_key_pressed(KeyCode::Escape) {
             if active_dossier_tier.is_some() {
                 active_dossier_tier = None;
+                audio.handle_event(crate::audio::AudioEvent::BookClose);
                 if opened_dossier_from_codex {
                     show_codex = true;
                     opened_dossier_from_codex = false;
                 }
             } else if show_codex {
                 show_codex = false;
+                audio.handle_event(crate::audio::AudioEvent::BookClose);
             }
         }
 
@@ -182,6 +204,11 @@ async fn main() {
 
         // Перезапуск игры по R
         let is_game_over = !world.boss_health.is_alive() || clock.is_time_up();
+        if !world.boss_health.is_alive() && !boss_death_sound_played {
+            audio.handle_event(crate::audio::AudioEvent::BossDeath);
+            boss_death_sound_played = true;
+        }
+
         if is_key_pressed(KeyCode::R) {
             world = World::new();
             clock = GameClock::new();
@@ -191,6 +218,10 @@ async fn main() {
             is_paused = false;
             show_codex = false;
             active_dossier_tier = None;
+            boss_death_sound_played = false;
+            if !audio.is_muted && !audio.is_music_playing {
+                audio.start_music();
+            }
         }
 
         // 1. Управление камерой на большой карте: WASD + колесо мыши + центрирование по C
@@ -226,6 +257,7 @@ async fn main() {
             update_skills(&mut world, dt);
             update_movement(&mut world, dt);
             update_combat(&mut world, dt);
+            audio.process_events(&mut world);
         }
 
         // 5. Отрисовка мира через камеру
@@ -234,16 +266,24 @@ async fn main() {
 
         // 6. Отрисовка интерфейса на экране (screen-space)
         set_default_camera();
-        let ui_interaction = render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures);
+        let ui_interaction = render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures, audio.is_muted);
 
         // Обработка интеракций из UI
+        if ui_interaction.clicked_sound_toggle {
+            audio.toggle_mute();
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
+        }
         if ui_interaction.clicked_pause {
             is_paused = !is_paused;
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
         if ui_interaction.clicked_codex {
             show_codex = !show_codex;
             if show_codex {
                 active_dossier_tier = None;
+                audio.handle_event(crate::audio::AudioEvent::BookOpen);
+            } else {
+                audio.handle_event(crate::audio::AudioEvent::BookClose);
             }
         }
         if let Some(target) = ui_interaction.map_click_world_pos {
@@ -253,6 +293,7 @@ async fn main() {
         if let Some(tier) = ui_interaction.open_dossier_tier {
             active_dossier_tier = Some(tier);
             opened_dossier_from_codex = false;
+            audio.handle_event(crate::audio::AudioEvent::BookOpen);
         }
         if let Some(tier) = ui_interaction.direct_summon_tier {
             if let Some(director) = world.directors.first() {
@@ -298,11 +339,13 @@ async fn main() {
                 show_codex = false;
                 active_dossier_tier = Some(tier);
                 opened_dossier_from_codex = true;
+                audio.handle_event(crate::audio::AudioEvent::BookOpen);
             }
         } else if let Some(tier) = active_dossier_tier {
             let res = draw_mob_dossier(tier, &world, &fonts, &textures);
             if res.close_requested {
                 active_dossier_tier = None;
+                audio.handle_event(crate::audio::AudioEvent::BookClose);
                 if opened_dossier_from_codex {
                     show_codex = true;
                     opened_dossier_from_codex = false;
@@ -479,6 +522,7 @@ fn execute_command(world: &mut World, cmd: Command) {
             };
             if can_spawn {
                 spawn_squad_perimeter(world, tier);
+                world.push_audio(crate::audio::AudioEvent::SummonMob);
             }
         }
         Command::SpawnSquadMax { director_id, tier } => {
@@ -496,6 +540,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                 spawn_squad_perimeter(world, tier);
             }
             if count > 0 {
+                world.push_audio(crate::audio::AudioEvent::SummonMob);
                 world.add_floating_text(
                     world.boss_pos,
                     format!("⚡ ПРИЗЫВ НА ВСЕ: +{} отрядов {}!", count, config.name),
@@ -534,6 +579,7 @@ fn execute_command(world: &mut World, cmd: Command) {
             }
             if let Some((text, col)) = notification {
                 world.add_floating_text(world.boss_pos, text, col, 1.4);
+                world.push_audio(crate::audio::AudioEvent::UpgradeGrade);
             }
         }
         Command::UpgradeDirectorGradeMax { director_id, grade_type } => {
@@ -588,6 +634,7 @@ fn execute_command(world: &mut World, cmd: Command) {
             }
             if let Some((text, col)) = notification {
                 world.add_floating_text(world.boss_pos, text, col, 1.5);
+                world.push_audio(crate::audio::AudioEvent::UpgradeGrade);
             }
         }
         Command::PlaceStructure { director_id, pos, .. } => {
@@ -597,6 +644,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                 {
                     director.altar_cooldown = director.altar_max_cooldown;
                     spawn_blood_altar(world, pos.into());
+                    world.push_audio(crate::audio::AudioEvent::AltarBuild);
                 }
             }
         }

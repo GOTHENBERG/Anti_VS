@@ -16,6 +16,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let mut kamikaze_explosions = Vec::new();
 
     // 1. Коллизии мобов с Боссом и контактный урон
+    let mut contact_boss_hit = false;
+    let mut contact_kamikaze_blast = false;
     let nearby_mobs = world.spatial_grid.query_nearby(boss_pos, 120.0);
     for idx in nearby_mobs {
         if let Some(mob) = world.mobs.get_mut(idx) {
@@ -27,6 +29,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 if mob.tier == 5 {
                     kamikaze_explosions.push((mob.pos, 220.0, 95.0));
                     mob.health.take_damage(9999.0); // самоуничтожение
+                    contact_kamikaze_blast = true;
                 } else if !is_boss_invulnerable {
                     let packet = DamagePacket {
                         source_id: Some(mob.id),
@@ -39,6 +42,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     world.boss_health.take_damage(actual_dmg);
                     world.boss_inventory.melee_damage_recent += actual_dmg;
                     world.total_damage_dealt_to_boss += actual_dmg;
+                    contact_boss_hit = true;
 
                     // Скелеты слегка притормаживают босса
                     if mob.tier == 1 {
@@ -82,6 +86,13 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 world.boss_health.heal(dmg * 0.05);
             }
         }
+    }
+
+    if contact_kamikaze_blast {
+        world.push_audio(crate::audio::AudioEvent::FireBlast);
+    }
+    if contact_boss_hit {
+        world.push_audio(crate::audio::AudioEvent::BossHit);
     }
 
     // 1.3 Контактный урон аур по разрушаемым Алтарям Крови

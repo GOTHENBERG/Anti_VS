@@ -19,6 +19,7 @@ pub struct UiInteraction {
     pub upgrade_grade_max: Option<u8>,
     pub clicked_pause: bool,
     pub clicked_codex: bool,
+    pub clicked_sound_toggle: bool,
     pub is_mouse_over_ui: bool,
     pub map_click_world_pos: Option<Vec2>,
 }
@@ -38,6 +39,7 @@ pub fn render_ui(
     cam_pos: Vec2,
     cam_zoom: f32,
     textures: &GameTextures,
+    is_muted: bool,
 ) -> UiInteraction {
     let screen_w = screen_width();
     let screen_h = screen_height();
@@ -75,6 +77,25 @@ pub fn render_ui(
 
     if is_mouse_button_pressed(MouseButton::Left) && pause_hover {
         interaction.clicked_pause = true;
+    }
+
+    // 1.2 Кнопка переключения звука [M] под кнопкой паузы
+    let sound_btn_w = timer_box_w;
+    let sound_btn_h = 24.0;
+    let sound_btn_x = timer_box_x;
+    let sound_btn_y = pause_btn_y + pause_btn_h + 5.0;
+    let sound_hover = mx >= sound_btn_x && mx <= sound_btn_x + sound_btn_w && my >= sound_btn_y && my <= sound_btn_y + sound_btn_h;
+    if sound_hover {
+        interaction.is_mouse_over_ui = true;
+    }
+    draw_rectangle(sound_btn_x, sound_btn_y, sound_btn_w, sound_btn_h, if sound_hover { Color::new(0.25, 0.22, 0.32, 1.0) } else { Color::new(0.10, 0.11, 0.15, 0.95) });
+    draw_rectangle_lines(sound_btn_x, sound_btn_y, sound_btn_w, sound_btn_h, 1.2, if sound_hover { GOLD } else { DARKGRAY });
+    let s_label = if is_muted { "Звук: ВЫКЛ [M]" } else { "Звук: ВКЛ [M]" };
+    let sw = fonts.measure_heading(s_label, 11.0).width;
+    fonts.draw_heading(s_label, sound_btn_x + (sound_btn_w - sw) / 2.0, sound_btn_y + 16.0, 11.0, if is_muted { RED } else if sound_hover { GOLD } else { GREEN });
+
+    if is_mouse_button_pressed(MouseButton::Left) && sound_hover {
+        interaction.clicked_sound_toggle = true;
     }
 
     // 2. Полоска здоровья Босса и Опыт (сверху по центру)

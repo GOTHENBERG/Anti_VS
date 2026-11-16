@@ -118,6 +118,36 @@ pub fn update_skills(world: &mut World, dt: f32) {
             weapon.cooldown_timer = weapon.base_cooldown * cd_multiplier;
             let effective_damage = weapon.damage * dmg_mult;
 
+            // Звуковой эффект применения способности босса
+            let sfx = match weapon.kind {
+                WeaponType::WindBlade | WeaponType::BladeStorm | WeaponType::ExecutionerAxe |
+                WeaponType::WhirlwindCleaver | WeaponType::BloodDaggers | WeaponType::BloodHarvest => {
+                    Some(crate::audio::AudioEvent::BladeSlash)
+                }
+                WeaponType::FireAura | WeaponType::Hellfire | WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => {
+                    Some(crate::audio::AudioEvent::FireBlast)
+                }
+                WeaponType::MagicWand | WeaponType::HolyHammer | WeaponType::DivineShield |
+                WeaponType::CelestialBow | WeaponType::StarfallBarrage => {
+                    Some(crate::audio::AudioEvent::MagicWand)
+                }
+                WeaponType::DeathRay | WeaponType::BrimstoneRay | WeaponType::InfernalCataclysm => {
+                    Some(crate::audio::AudioEvent::LaserBeam)
+                }
+                WeaponType::ThunderOrb | WeaponType::ThunderstormWrath | WeaponType::SingularityOrb | WeaponType::EventHorizon => {
+                    Some(crate::audio::AudioEvent::LightningStrike)
+                }
+                WeaponType::IceShards | WeaponType::BlizzardStorm | WeaponType::ChainFrost | WeaponType::AbsoluteZero => {
+                    Some(crate::audio::AudioEvent::IceFreeze)
+                }
+                WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage => {
+                    Some(crate::audio::AudioEvent::RocketSwarm)
+                }
+            };
+            if let Some(ev) = sfx {
+                world.push_audio(ev);
+            }
+
             match weapon.kind {
                 // 1.1 Клинок Ветра: веер из 4-6 клинков
                 WeaponType::WindBlade => {
@@ -772,6 +802,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
     // Применение Луча Смерти по тактической цели
     if death_ray_fire {
+        world.push_audio(crate::audio::AudioEvent::LaserBeam);
         let target_dir = if let Some(target_pos) = tactical_target_pos {
             (target_pos - boss_pos).normalize_or_zero()
         } else {

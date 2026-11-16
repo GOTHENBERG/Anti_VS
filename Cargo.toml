@@ -6,7 +6,7 @@ license = "GPL-3.0-or-later"
 description = "Reverse Survivor: The Director — a reverse auto-battler roguelite game built in Rust"
 
 [dependencies]
-macroquad = "0.4.16"
+macroquad = { version = "0.4.16", features = ["audio"] }
 rayon = "1.12.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0"

@@ -217,6 +217,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         world.boss_pos = dash_target;
         world.boss_invulnerable_timer = 0.25;
         world.boss_dash_cooldown = 7.0;
+        world.push_audio(crate::audio::AudioEvent::BossDash);
 
         // Визуальный эффект рывка
         world.spawn_particles(old_pos, 20, GOLD, 120.0);
@@ -528,6 +529,7 @@ fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
 }
 
 fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
+    world.push_audio(crate::audio::AudioEvent::BossLevelUp);
     let boss_pos = world.boss_pos;
     match choice {
         PerkChoice::EvolveWeapon { from, to } => {

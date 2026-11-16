@@ -172,9 +172,16 @@ pub struct World {
     pub total_damage_dealt_to_boss: f32,
     pub screen_shake: f32,
     pub boss_model: Option<crate::ai::models::BossModel>,
+    pub audio_events: Vec<crate::audio::AudioEvent>,
 }
 
 impl World {
+    pub fn push_audio(&mut self, event: crate::audio::AudioEvent) {
+        if self.audio_events.len() < 32 {
+            self.audio_events.push(event);
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             boss_pos: Vec2::new(crate::core::MAP_WIDTH * 0.5, crate::core::MAP_HEIGHT * 0.5),
@@ -209,6 +216,7 @@ impl World {
             total_damage_dealt_to_boss: 0.0,
             screen_shake: 0.0,
             boss_model: crate::ai::load_trained_boss_model(),
+            audio_events: Vec::new(),
         }
     }
 
