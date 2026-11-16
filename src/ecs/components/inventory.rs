@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::ecs::components::combat::DamageType;
 
 pub const MAX_WEAPON_SLOTS: usize = 6;
 pub const MAX_PASSIVE_SLOTS: usize = 10; // Расширено до 10 слотов для создания глубоких синергетических билдов!
@@ -119,6 +120,115 @@ pub enum PerkChoice {
     LimitBreakPredatorSpeed,  // +6% Move Speed
 }
 
+/// Источник входящего урона по Боссу
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DamageSourceKind {
+    Melee,
+    Ranged,
+    Hazard, // Взрывы камикадзе, чумные споры, периодический урон
+}
+
+/// Детализация урона по всем типам метаданных 1C/Anti_VS
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct DamageTypeBreakdown {
+    pub physical: f32,
+    pub fire: f32,
+    pub ice: f32,
+    pub poison: f32,
+    pub holy: f32,
+    pub true_damage: f32,
+}
+
+impl DamageTypeBreakdown {
+    pub fn add(&mut self, damage_type: DamageType, amount: f32) {
+        match damage_type {
+            DamageType::Physical => self.physical += amount,
+            DamageType::Fire => self.fire += amount,
+            DamageType::Ice => self.ice += amount,
+            DamageType::Poison => self.poison += amount,
+            DamageType::Holy => self.holy += amount,
+            DamageType::True => self.true_damage += amount,
+        }
+    }
+
+    pub fn decay(&mut self, factor: f32) {
+        self.physical *= factor;
+        self.fire *= factor;
+        self.ice *= factor;
+        self.poison *= factor;
+        self.holy *= factor;
+        self.true_damage *= factor;
+    }
+
+    pub fn get(&self, damage_type: DamageType) -> f32 {
+        match damage_type {
+            DamageType::Physical => self.physical,
+            DamageType::Fire => self.fire,
+            DamageType::Ice => self.ice,
+            DamageType::Poison => self.poison,
+            DamageType::Holy => self.holy,
+            DamageType::True => self.true_damage,
+        }
+    }
+
+    pub fn total(&self) -> f32 {
+        self.physical + self.fire + self.ice + self.poison + self.holy + self.true_damage
+    }
+}
+
+/// Полная внутренняя статистика полученного Боссом урона
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct BossDamageStats {
+    // Недавний скользящий урон (с затуханием, для тактической реакции и сенсоров)
+    pub melee_recent: f32,
+    pub ranged_recent: f32,
+    pub hazard_recent: f32,
+    pub type_recent: DamageTypeBreakdown,
+
+    // Накопительная статистика урона за весь матч
+    pub melee_total: f32,
+    pub ranged_total: f32,
+    pub hazard_total: f32,
+    pub type_total: DamageTypeBreakdown,
+
+    // Количество полученных попаданий / тиков
+    pub melee_hits_count: usize,
+    pub ranged_hits_count: usize,
+    pub hazard_hits_count: usize,
+}
+
+impl BossDamageStats {
+    pub fn record_hit(&mut self, amount: f32, damage_type: DamageType, source: DamageSourceKind) {
+        match source {
+            DamageSourceKind::Melee => {
+                self.melee_recent += amount;
+                self.melee_total += amount;
+                self.melee_hits_count += 1;
+            }
+            DamageSourceKind::Ranged => {
+                self.ranged_recent += amount;
+                self.ranged_total += amount;
+                self.ranged_hits_count += 1;
+            }
+            DamageSourceKind::Hazard => {
+                self.hazard_recent += amount;
+                self.hazard_total += amount;
+                self.hazard_hits_count += 1;
+            }
+        }
+        self.type_recent.add(damage_type, amount);
+        self.type_total.add(damage_type, amount);
+    }
+
+    pub fn decay(&mut self, dt: f32) {
+        let decay_factor = (1.0 - (dt * 0.25)).max(0.0);
+        self.melee_recent *= decay_factor;
+        self.ranged_recent *= decay_factor;
+        self.hazard_recent *= decay_factor;
+        self.type_recent.decay(decay_factor);
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BossInventory {
     pub weapons: Vec<WeaponSlot>,
@@ -128,9 +238,10 @@ pub struct BossInventory {
     pub xp_to_next_level: f32,
     pub magnet_radius: f32,
 
-    // Адаптивная телеметрия для ИИ выбора перков
+    // Адаптивная телеметрия и полная статистика урона
     pub melee_damage_recent: f32,
     pub ranged_damage_recent: f32,
+    pub damage_stats: BossDamageStats,
     pub last_chosen_perk: Option<String>,
     pub perk_announcement_timer: f32,
 
@@ -159,11 +270,26 @@ impl BossInventory {
             magnet_radius: 120.0,
             melee_damage_recent: 0.0,
             ranged_damage_recent: 0.0,
+            damage_stats: BossDamageStats::default(),
             last_chosen_perk: None,
             perk_announcement_timer: 0.0,
             has_used_aegis_revive: false,
             bonus_move_speed_multiplier: 1.0,
         }
+    }
+
+    /// Регистрирует входящий урон по Боссу с классификацией источника и типа урона
+    pub fn record_damage_taken(&mut self, amount: f32, damage_type: DamageType, source: DamageSourceKind) {
+        self.damage_stats.record_hit(amount, damage_type, source);
+        self.melee_damage_recent = self.damage_stats.melee_recent;
+        self.ranged_damage_recent = self.damage_stats.ranged_recent;
+    }
+
+    /// Обновляет временное затухание недавнего урона
+    pub fn update_damage_decay(&mut self, dt: f32) {
+        self.damage_stats.decay(dt);
+        self.melee_damage_recent = self.damage_stats.melee_recent;
+        self.ranged_damage_recent = self.damage_stats.ranged_recent;
     }
 
     pub fn add_xp(&mut self, amount: f32) -> usize {

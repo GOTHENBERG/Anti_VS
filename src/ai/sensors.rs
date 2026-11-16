@@ -5,18 +5,21 @@ use crate::core::{MAP_WIDTH, MAP_HEIGHT};
 use crate::ai::neural_net::INPUT_SIZE;
 use crate::ai::pathing::WaypointPlanner;
 
-/// Извлекает 148-мерный вектор сенсорного восприятия Босса из игрового мира.
+/// Извлекает 150-мерный вектор сенсорного восприятия Босса из игрового мира.
 /// Архитектура восприятия (Двухслойная эго-центрическая сетка "Матрешка"):
 /// 1. [0..120] Внутренняя 2D-сетка 11x11 (ячейки по 55 px, радиус 302.5 px, охват 605x605 px):
 ///    - Плотность ближней толпы мобов (0.0..1.0)
 ///    - Опасность летящих снарядов Директора (снаряды фракции Director с весом урона)
+///    - Опасность Чумных Спор Директора (лужи яда acid_pools на земле)
 ///    - Центр [5, 5] (позиция самого Босса) исключен -> 120 ячеек.
 /// 2. [120..136] Внешний макро-пояс (16 радиальных секторов, радиус 302.5..550.0 px):
-///    - Плотность дальнобойщиков (Тир 3, 11 и 16) без высокочастотного шума таймеров.
-/// 3. [136..148] Стратегические сенсоры (12 входов):
+///    - Плотность дальнобойщиков (Тир 3, 11 и 16) без шумящих таймеров.
+/// 3. [136..150] Стратегические сенсоры (14 входов):
 ///    - Координаты, вектор, % ХП и расчетное время прибытия до ближайшего Алтаря Крови
 ///    - Флаг активности, вектор и время прибытия до супер-кристалла "Магнит"
 ///    - Внутренний статус: % HP и готовность рывка (Dash)
+///    - Статус медитации: прогресс таймера покоя (0.0..1.0)
+///    - Текущая скорость движения Босса (0.0..1.5)
 pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     let mut obs = [0.0f32; INPUT_SIZE];
     let boss_pos = world.boss_pos;
@@ -30,8 +33,9 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
 
     let mut mob_grid = [[0.0f32; GRID_SIZE]; GRID_SIZE];
     let mut proj_grid = [[0.0f32; GRID_SIZE]; GRID_SIZE];
+    let mut spore_grid = [[0.0f32; GRID_SIZE]; GRID_SIZE];
 
-    // Опрос мобов в радиусе 305 px через Spatial Grid
+    // А. Опрос мобов в радиусе 305 px через Spatial Grid
     let nearby_mobs = world.spatial_grid.query_nearby(boss_pos, HALF_GRID_PX + 5.0);
     for idx in nearby_mobs {
         if let Some(mob) = world.mobs.get(idx) {
@@ -48,7 +52,7 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
         }
     }
 
-    // Опрос летящих снарядов Директора (вражеские пули и стрелы)
+    // Б. Опрос летящих снарядов Директора (вражеские пули и стрелы)
     for proj in &world.projectiles {
         if proj.faction == Faction::Director {
             let dx = proj.pos.x - boss_pos.x;
@@ -57,9 +61,31 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
                 let col = ((dx + HALF_GRID_PX) / CELL_SIZE).floor() as isize;
                 let row = ((dy + HALF_GRID_PX) / CELL_SIZE).floor() as isize;
                 if row >= 0 && row < GRID_SIZE as isize && col >= 0 && col < GRID_SIZE as isize {
-                    // Вес опасности пули пропорционален её урону
                     let danger = (proj.damage / 80.0).clamp(0.2, 2.0);
                     proj_grid[row as usize][col as usize] += danger;
+                }
+            }
+        }
+    }
+
+    // В. Опрос Чумных Спор Директора (лужи яда acid_pools)
+    for pool in &world.acid_pools {
+        if pool.is_director_source {
+            let dx = pool.pos.x - boss_pos.x;
+            let dy = pool.pos.y - boss_pos.y;
+            // Проверяем, пересекает ли окружность споры внутреннюю сетку
+            if dx.abs() < HALF_GRID_PX + pool.radius && dy.abs() < HALF_GRID_PX + pool.radius {
+                for r in 0..GRID_SIZE {
+                    let cell_y = -HALF_GRID_PX + (r as f32 + 0.5) * CELL_SIZE;
+                    for c in 0..GRID_SIZE {
+                        let cell_x = -HALF_GRID_PX + (c as f32 + 0.5) * CELL_SIZE;
+                        let dist_sq = (cell_x - dx) * (cell_x - dx) + (cell_y - dy) * (cell_y - dy);
+                        // Если центр ячейки (или ее граница) попадает под ядовитую спору
+                        if dist_sq < (pool.radius + CELL_SIZE * 0.4) * (pool.radius + CELL_SIZE * 0.4) {
+                            let hazard = (pool.dps / 15.0).clamp(0.4, 1.2);
+                            spore_grid[r][c] += hazard;
+                        }
+                    }
                 }
             }
         }
@@ -74,8 +100,9 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
             }
             let mob_val = (mob_grid[r][c] / 5.0).clamp(0.0, 1.0);
             let proj_val = proj_grid[r][c].clamp(0.0, 1.0);
-            // Комплексная опасность ячейки: сочетание толпы и летящих пуль
-            obs[out_idx] = (mob_val * 0.4 + proj_val * 0.8).clamp(0.0, 1.0);
+            let spore_val = spore_grid[r][c].clamp(0.0, 1.0);
+            // Комплексная опасность ячейки: сочетание толпы, летящих пуль и чумных спор
+            obs[out_idx] = (mob_val * 0.35 + proj_val * 0.70 + spore_val * 0.60).clamp(0.0, 1.0);
             out_idx += 1;
         }
     }
@@ -108,7 +135,7 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     }
 
     // ------------------------------------------------------------------------------------
-    // 3. [136..148] Стратегические сенсоры (12 входов)
+    // 3. [136..150] Стратегические сенсоры (14 входов)
     // ------------------------------------------------------------------------------------
     let nav = WaypointPlanner::calculate_strategic_navigation(world);
 
@@ -155,6 +182,10 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     // Статус Босса [146..148]
     obs[146] = (world.boss_health.current / world.boss_health.max).clamp(0.0, 1.0);
     obs[147] = if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 };
+
+    // Сенсор медитации и скорости [148..150]
+    obs[148] = (world.boss_still_time / 1.2).clamp(0.0, 1.0); // 0.0 = в движении, 1.0 = активная медитация
+    obs[149] = (world.boss_vel.length() / 160.0).clamp(0.0, 1.5); // Нормализованная скорость
 
     obs
 }

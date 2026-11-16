@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 use rayon::prelude::*;
 use crate::ecs::components::combat::{DamagePacket, DamageType};
+use crate::ecs::components::inventory::DamageSourceKind;
 use crate::ecs::world::World;
 
 pub fn update_movement(world: &mut World, dt: f32) {
@@ -170,6 +171,7 @@ pub fn update_movement(world: &mut World, dt: f32) {
         let effective_dps = max_director_dps * stack_mult * (1.0 - poison_res);
         let poison_dmg = effective_dps * dt;
         world.boss_health.take_damage(poison_dmg);
+        world.boss_inventory.record_damage_taken(poison_dmg, DamageType::Poison, DamageSourceKind::Hazard);
         world.total_damage_dealt_to_boss += poison_dmg;
 
         if corrosive_active {

@@ -26,6 +26,9 @@ struct BossEval {
     avg_survival: f32,
     avg_level: u32,
     avg_damage_taken: f32,
+    avg_melee_damage: f32,
+    avg_ranged_damage: f32,
+    avg_hazard_damage: f32,
     avg_altars_destroyed: usize,
     avg_altars_built: usize,
     mobs_spawned: [usize; 16],
@@ -74,7 +77,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
     if base_gen > 0 {
         println!("🔄 Дообучение (Warm Start): продолжаем с Поколения {} (Фитнес Босса: {:.0}, Синапсов: {})", base_gen, seed_boss.fitness, seed_boss.total_synapses);
     } else {
-        println!("🌱 Начало нового цикла обучения: инициализирована глубокая нейросеть ({} синапсов, 148 входов).", seed_boss.total_synapses);
+        println!("🌱 Начало нового цикла обучения: инициализирована глубокая нейросеть ({} синапсов, 150 входов).", seed_boss.total_synapses);
     }
 
     // 1. Инициализация Зала Славы (Hall of Fame) историческими чемпионами
@@ -139,6 +142,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                 let mut total_level = 0;
                 let mut total_score = 0.0;
                 let mut total_damage_taken = 0.0;
+                let mut total_melee_damage = 0.0;
+                let mut total_ranged_damage = 0.0;
+                let mut total_hazard_damage = 0.0;
                 let mut total_altars_destroyed = 0;
                 let mut total_altars_built = 0;
                 let mut total_mobs = [0usize; 16];
@@ -159,6 +165,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     total_survival += res.survival_time;
                     total_level += res.boss_level;
                     total_damage_taken += res.damage_dealt_to_boss;
+                    total_melee_damage += res.boss_damage_stats.melee_total;
+                    total_ranged_damage += res.boss_damage_stats.ranged_total;
+                    total_hazard_damage += res.boss_damage_stats.hazard_total;
                     total_altars_destroyed += res.altars_destroyed;
                     total_altars_built += res.altars_built;
                     for t in 0..16 {
@@ -174,10 +183,13 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     let level_reward = res.boss_level as f32 * 12.0;
                     let altar_reward = res.altars_destroyed as f32 * 35.0;
 
+                    // ПРЯНИК ЗА МЕДИТАЦИЮ — награда за время осознанного покоя и регенерации (даже при Full HP)
+                    let meditation_reward = res.total_meditation_time * 3.0;
+
                     // ВТОРОСТЕПЕННЫЙ КНУТ — мягкий штраф за полученный урон (стимул кайтить и уклоняться)
                     let damage_penalty = res.damage_dealt_to_boss * 0.04;
 
-                    let score = (time_reward + win_bonus + level_reward + altar_reward - damage_penalty).max(10.0);
+                    let score = (time_reward + win_bonus + level_reward + altar_reward + meditation_reward - damage_penalty).max(10.0);
                     total_score += score;
                 }
 
@@ -193,6 +205,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     avg_survival: total_survival / m_f,
                     avg_level: (total_level as f32 / m_f).round() as u32,
                     avg_damage_taken: total_damage_taken / m_f,
+                    avg_melee_damage: total_melee_damage / m_f,
+                    avg_ranged_damage: total_ranged_damage / m_f,
+                    avg_hazard_damage: total_hazard_damage / m_f,
                     avg_altars_destroyed: ((total_altars_destroyed as f32) / m_f).round() as usize,
                     avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
                     mobs_spawned: avg_mobs,
@@ -347,6 +362,12 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_boss_eval.avg_altars_destroyed,
         );
         println!(
+            "      ↳ 🛡️ Разрез полученного урона: [⚔️Ближний бой: {:.0}, 🏹Дальний бой: {:.0}, ☣️Окружение/Споры: {:.0}]",
+            best_boss_eval.avg_melee_damage,
+            best_boss_eval.avg_ranged_damage,
+            best_boss_eval.avg_hazard_damage,
+        );
+        println!(
             "   👁️ Лучший Директор: сбрил за {:.1}с (Фитнес {:.0}) | ⚡ Скорость: +{:.0} (Кнут времени: -{:.0}) | Урон: {:.0} HP (+{:.0}) | Построил алтарей: {} | Грейды: [🔥Ярость: {}, 🛡️Панцирь: {}, 🧪Мор: {}]",
             best_dir_eval.avg_kill_speed, best_dir_eval.fitness,
             dir_speed_reward, dir_time_whip,
@@ -478,7 +499,7 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, i
     if let Some(ref net) = boss.neural_net {
         if let Ok(brain_json) = serde_json::to_string_pretty(net) {
             let _ = std::fs::write("models/boss_brain_neural.json", brain_json);
-            println!("  🧠 Развернутая матрица синапсов (148 сенсоров, 2 скрытых слоя) сохранена в: models/boss_brain_neural.json");
+            println!("  🧠 Развернутая матрица синапсов (150 сенсоров, 2 скрытых слоя) сохранена в: models/boss_brain_neural.json");
         }
     }
 

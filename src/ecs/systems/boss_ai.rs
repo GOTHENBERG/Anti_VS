@@ -18,16 +18,15 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         world.boss_inventory.perk_announcement_timer = (world.boss_inventory.perk_announcement_timer - dt).max(0.0);
     }
 
-    // Затухание недавнего урона
-    world.boss_inventory.melee_damage_recent *= 1.0 - (dt * 0.25);
-    world.boss_inventory.ranged_damage_recent *= 1.0 - (dt * 0.25);
+    // Затухание недавнего урона и обновление внутренней телеметрии
+    world.boss_inventory.update_damage_decay(dt);
 
     let boss_pos = world.boss_pos;
     let mut total_force = Vec2::ZERO;
 
-    // Извлекаем сенсорный вектор (36 входов) и пропускаем через глубокую нейросеть
+    // Извлекаем сенсорный вектор (150 входов) и пропускаем через глубокую нейросеть
     let nn_steering_bias;
-    let (repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp, neural_dash_trigger) =
+    let (repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp, neural_dash_trigger, nn_stand_still) =
         if let Some(ref model) = world.boss_model {
             if let Some(ref net) = model.neural_net {
                 let obs = crate::ai::sensors::extract_boss_observations(world);
@@ -39,8 +38,9 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
                     150.0 + nn_out[4] * 400.0,
                     150.0 + nn_out[5] * 400.0,
                     (8.0 + nn_out[6] * 10.0) as usize,
-                    0.15 + nn_out[7] * 0.35,
+                    model.retreat_hp_threshold,
                     nn_out[6] > 0.70,
+                    nn_out[7] > 0.60,
                 )
             } else {
                 nn_steering_bias = Vec2::ZERO;
@@ -52,11 +52,12 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
                     model.dash_danger_threshold,
                     model.retreat_hp_threshold,
                     false,
+                    false,
                 )
             }
         } else {
             nn_steering_bias = Vec2::ZERO;
-            (440.0, 180.0, 260.0, 310.0, 13, 0.32, false)
+            (440.0, 180.0, 260.0, 310.0, 13, 0.32, false, false)
         };
 
     total_force += nn_steering_bias;
@@ -180,13 +181,13 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         total_force.y -= wall_push * factor * factor;
     }
 
-    // 4. Экстренный рывок: 8-лучевой Context Steering Dash
-    // Триггер: в радиусе 90px > dash_threshold мобов ИЛИ HP < retreat_hp ИЛИ плотный обстрел дальников ИЛИ импульс нейросети
+    // 4. Экстренный рывок: RL автономия и Context Steering Dash
+    // Триггер: импульс нейросети (neural_dash_trigger) ИЛИ опасность (мобы в упор, критическое HP, плотный обстрел)
     let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
     let should_dash = (mobs_in_close_radius >= dash_threshold
-        || (is_critical_hp && mobs_in_close_radius >= 3)
-        || (heavy_ranged_fire && mobs_in_close_radius >= 4)
-        || (neural_dash_trigger && mobs_in_close_radius >= 4))
+        || is_critical_hp
+        || heavy_ranged_fire
+        || neural_dash_trigger)
         && world.boss_dash_cooldown <= 0.0;
 
     if should_dash {
@@ -227,9 +228,18 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
             }
         }
 
+        // Если рывок вызван нейросетью — вектор рывка определяется решением нейросети!
+        let dash_dir = if neural_dash_trigger && nn_steering_bias.length_squared() > 1.0 {
+            nn_steering_bias.normalize()
+        } else if total_force.length_squared() > 1.0 {
+            total_force.normalize()
+        } else {
+            best_dir
+        };
+
         // Мгновенный рывок на 180 пикселей с неуязвимостью на 0.25 сек!
         let old_pos = world.boss_pos;
-        let dash_target = (boss_pos + best_dir * 180.0)
+        let dash_target = (boss_pos + dash_dir * 180.0)
             .clamp(Vec2::new(60.0, 60.0), Vec2::new(map_w - 60.0, map_h - 60.0));
 
         world.boss_pos = dash_target;
@@ -257,30 +267,15 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
                 if mob.pos.distance_squared(dash_target) < 90.0 * 90.0 {
                     mob.health.take_damage(80.0);
                     if !mob.knockback_immune {
-                        mob.knockback_vel += best_dir * 240.0;
+                        mob.knockback_vel += dash_dir * 240.0;
                     }
                 }
             }
         }
     } else {
-        // Проверяем возможность тактической медитации (если в радиусе 220px нет врагов)
-        let nearby_threats = world.spatial_grid.query_nearby(boss_pos, 220.0)
-            .iter()
-            .any(|&idx| {
-                if let Some(mob) = world.mobs.get(idx) {
-                    mob.pos.distance_squared(boss_pos) < 220.0 * 220.0
-                } else {
-                    false
-                }
-            });
-
-        let hp_ratio = world.boss_health.current / world.boss_health.max;
-        // Если вокруг безопасно и здоровье не полное (или босс уже начал медитировать) -> останавливается и медитирует!
-        let wants_meditation = !nearby_threats && (hp_ratio < 0.98 || world.boss_still_time > 0.0);
-
-        // Обычное передвижение по вектору сил
+        // Обычное передвижение по вектору сил (или осознанная остановка для медитации по желанию нейросети)
         let max_speed = world.boss_inventory.get_movement_speed(160.0);
-        let desired_vel = if wants_meditation {
+        let desired_vel = if nn_stand_still {
             Vec2::ZERO
         } else if total_force.length_squared() > 4.0 {
             total_force.clamp_length_max(max_speed)
@@ -389,10 +384,6 @@ fn evaluate_perk_choice(
     choice: &PerkChoice,
     inventory: &BossInventory,
     model: Option<&crate::ai::models::BossModel>,
-    hp_ratio: f32,
-    melee_dmg: f32,
-    ranged_dmg: f32,
-    mob_count: usize,
 ) -> f32 {
     let mut score = 50.0f32;
 
@@ -461,22 +452,9 @@ fn evaluate_perk_choice(
                 let count = archetype_counts[a];
                 score += weight * (25.0 + count as f32 * 40.0) * synergy_seeking;
             }
-
-            if *kind == PassiveType::GiantHeart && hp_ratio < 0.5 {
-                score += 80.0 + (1.0 - hp_ratio) * 70.0;
-            }
-            if *kind == PassiveType::LightArmor && melee_dmg > 30.0 {
-                score += 55.0;
-            }
-            if matches!(kind, PassiveType::SpeedGloves | PassiveType::CooldownTome) && ranged_dmg > 30.0 {
-                score += 50.0;
-            }
-            if *kind == PassiveType::FrostRing && mob_count > 100 {
-                score += 45.0;
-            }
         }
         PerkChoice::LimitBreakTitanVigor => {
-            if hp_ratio < 0.6 { score += 110.0; } else { score += 65.0; }
+            score += 85.0;
         }
         PerkChoice::LimitBreakAdaptiveArmor => {
             score += 85.0;
@@ -500,11 +478,6 @@ pub fn handle_boss_level_up(world: &mut World) {
         return;
     }
 
-    let melee_dmg = world.boss_inventory.melee_damage_recent;
-    let ranged_dmg = world.boss_inventory.ranged_damage_recent;
-    let hp_ratio = world.boss_health.current / world.boss_health.max;
-    let mob_count = world.mobs.len();
-
     let model_clone = world.boss_model.clone();
 
     let mut best_choice = choices[0].clone();
@@ -515,10 +488,6 @@ pub fn handle_boss_level_up(world: &mut World) {
             choice,
             &world.boss_inventory,
             model_clone.as_ref(),
-            hp_ratio,
-            melee_dmg,
-            ranged_dmg,
-            mob_count,
         );
 
         if score > best_score {

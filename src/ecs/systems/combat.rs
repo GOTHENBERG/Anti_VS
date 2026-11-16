@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 use crate::core::rand;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction};
-use crate::ecs::components::inventory::{PassiveType, WeaponType};
+use crate::ecs::components::inventory::{DamageSourceKind, PassiveType, WeaponType};
 use crate::ecs::systems::boss_ai::handle_boss_level_up;
 use crate::ecs::world::{SoulGemEntity, World};
 
@@ -44,7 +44,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     };
                     let actual_dmg = world.boss_resistances.calculate_damage(&packet, false);
                     world.boss_health.take_damage(actual_dmg);
-                    world.boss_inventory.melee_damage_recent += actual_dmg;
+                    world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, DamageSourceKind::Melee);
                     world.total_damage_dealt_to_boss += actual_dmg;
 
                     // Скелеты слегка притормаживают босса
@@ -165,6 +165,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let actual_dmg = world.boss_resistances.calculate_damage(&packet, false);
             world.boss_health.take_damage(actual_dmg);
+            world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, DamageSourceKind::Hazard);
             world.total_damage_dealt_to_boss += actual_dmg;
             world.add_floating_text(boss_pos, format!("-{:.0}", actual_dmg), RED, 1.4);
         }
@@ -188,6 +189,12 @@ pub fn update_combat(world: &mut World, dt: f32) {
             if !is_boss_invulnerable {
                 let actual_dmg = world.boss_resistances.calculate_damage(&packet, false);
                 world.boss_health.take_damage(actual_dmg);
+                let source_kind = if packet.source_id.is_none() {
+                    DamageSourceKind::Hazard
+                } else {
+                    DamageSourceKind::Melee
+                };
+                world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, source_kind);
                 world.total_damage_dealt_to_boss += actual_dmg;
             }
         } else if let Some(mob) = world.mobs.iter_mut().find(|m| m.id == packet.target_id) {
@@ -331,7 +338,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     };
                     let actual_dmg = world.boss_resistances.calculate_damage(&packet, false);
                     world.boss_health.take_damage(actual_dmg);
-                    world.boss_inventory.ranged_damage_recent += actual_dmg;
+                    world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, DamageSourceKind::Ranged);
                     world.total_damage_dealt_to_boss += actual_dmg;
                     boss_hits.push(actual_dmg);
                 }

@@ -23,6 +23,8 @@ pub struct MatchResult {
     pub altars_destroyed: usize,
     pub mobs_spawned_by_tier: [usize; 16],
     pub director_grades: (u32, u32, u32),
+    pub total_meditation_time: f32,
+    pub boss_damage_stats: crate::ecs::components::inventory::BossDamageStats,
 }
 
 /// Выполняет один раунд автономной ускоренной симуляции сражения без рендеринга
@@ -37,6 +39,7 @@ pub fn run_headless_simulation(
     let mut sim_time = 0.0f32;
     let mut director_decision_timer = 0.0f32;
     let mut altars_built = 1;
+    let mut total_meditation_time = 0.0f32;
     let mut mobs_spawned_by_tier = [0usize; 16];
 
     // Начальный алтарь
@@ -145,6 +148,9 @@ pub fn run_headless_simulation(
         update_director(&mut world, dt);
         update_boss_ai_sim(&mut world, dt, boss_model);
         update_meditation(&mut world, dt);
+        if world.boss_still_time >= 1.2 {
+            total_meditation_time += dt;
+        }
         update_skills(&mut world, dt);
         update_movement(&mut world, dt);
         update_combat(&mut world, dt);
@@ -166,6 +172,8 @@ pub fn run_headless_simulation(
         altars_destroyed: altars_built.saturating_sub(world.structures.len()),
         mobs_spawned_by_tier,
         director_grades,
+        total_meditation_time,
+        boss_damage_stats: world.boss_inventory.damage_stats.clone(),
     }
 }
 
@@ -178,10 +186,13 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
         world.boss_invulnerable_timer = (world.boss_invulnerable_timer - dt).max(0.0);
     }
 
+    // Затухание недавнего урона и обновление внутренней телеметрии
+    world.boss_inventory.update_damage_decay(dt);
+
     let boss_pos = world.boss_pos;
     let mut total_force = Vec2::ZERO;
 
-    let (nn_bias, repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp, neural_dash) =
+    let (nn_bias, repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp, neural_dash, nn_stand_still) =
         if let Some(ref net) = model.neural_net {
             let obs = crate::ai::sensors::extract_boss_observations(world);
             let nn_out = net.forward(&obs);
@@ -192,8 +203,9 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
                 150.0 + nn_out[4] * 400.0,
                 150.0 + nn_out[5] * 400.0,
                 (8.0 + nn_out[6] * 10.0) as usize,
-                0.15 + nn_out[7] * 0.35,
+                model.retreat_hp_threshold,
                 nn_out[6] > 0.70,
+                nn_out[7] > 0.60,
             )
         } else {
             (
@@ -204,6 +216,7 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
                 model.sniper_hunt_aggression,
                 model.dash_danger_threshold,
                 model.retreat_hp_threshold,
+                false,
                 false,
             )
         };
@@ -303,12 +316,15 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
         total_force.y -= push * factor * factor;
     }
 
-    // 6. Экстренный рывок (Dash)
-    let should_dash = (mobs_in_close >= dash_threshold || hp_ratio < retreat_hp || (neural_dash && mobs_in_close >= 4))
+    // 6. Экстренный рывок (Dash): RL автономия
+    let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
+    let should_dash = (mobs_in_close >= dash_threshold || hp_ratio < retreat_hp || heavy_ranged_fire || neural_dash)
         && world.boss_dash_cooldown <= 0.0;
 
     if should_dash {
-        let dash_dir = if total_force.length_squared() > 1.0 {
+        let dash_dir = if neural_dash && nn_bias.length_squared() > 1.0 {
+            nn_bias.normalize()
+        } else if total_force.length_squared() > 1.0 {
             total_force.normalize()
         } else {
             Vec2::X
@@ -320,19 +336,8 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
         world.boss_invulnerable_timer = 0.25;
         world.boss_dash_cooldown = 7.0;
     } else {
-        let nearby_threats = world.spatial_grid.query_nearby(boss_pos, 220.0)
-            .iter()
-            .any(|&idx| {
-                if let Some(mob) = world.mobs.get(idx) {
-                    mob.pos.distance_squared(boss_pos) < 220.0 * 220.0
-                } else {
-                    false
-                }
-            });
-
-        let wants_meditation = !nearby_threats && (hp_ratio < 0.98 || world.boss_still_time > 0.0);
         let max_speed = world.boss_inventory.get_movement_speed(160.0);
-        let desired = if wants_meditation {
+        let desired = if nn_stand_still {
             Vec2::ZERO
         } else if total_force.length_squared() > 4.0 {
             total_force.clamp_length_max(max_speed)
