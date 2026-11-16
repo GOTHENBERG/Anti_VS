@@ -32,6 +32,13 @@ pub fn load_trained_boss_model() -> Option<BossModel> {
                 if model.synergy_seeking_weight <= 0.01 {
                     model.synergy_seeking_weight = crate::ai::models::default_synergy_seeking_weight();
                 }
+                if let Some(net) = &model.neural_net {
+                    if net.input_size != crate::ai::neural_net::INPUT_SIZE {
+                        model.neural_net = Some(crate::ai::neural_net::NeuralNet::new());
+                    }
+                } else {
+                    model.neural_net = Some(crate::ai::neural_net::NeuralNet::new());
+                }
                 return Some(model);
             }
         }

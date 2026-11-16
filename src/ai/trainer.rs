@@ -74,7 +74,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
     if base_gen > 0 {
         println!("🔄 Дообучение (Warm Start): продолжаем с Поколения {} (Фитнес Босса: {:.0}, Синапсов: {})", base_gen, seed_boss.fitness, seed_boss.total_synapses);
     } else {
-        println!("🌱 Начало нового цикла обучения: инициализирована глубокая нейросеть ({} синапсов, 48 входов).", seed_boss.total_synapses);
+        println!("🌱 Начало нового цикла обучения: инициализирована глубокая нейросеть ({} синапсов, 148 входов).", seed_boss.total_synapses);
     }
 
     // 1. Инициализация Зала Славы (Hall of Fame) историческими чемпионами
@@ -478,7 +478,7 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, i
     if let Some(ref net) = boss.neural_net {
         if let Ok(brain_json) = serde_json::to_string_pretty(net) {
             let _ = std::fs::write("models/boss_brain_neural.json", brain_json);
-            println!("  🧠 Развернутая матрица синапсов (48 сенсоров, 2 скрытых слоя) сохранена в: models/boss_brain_neural.json");
+            println!("  🧠 Развернутая матрица синапсов (148 сенсоров, 2 скрытых слоя) сохранена в: models/boss_brain_neural.json");
         }
     }
 
