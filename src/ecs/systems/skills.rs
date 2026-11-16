@@ -553,7 +553,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
                 // 1.20 Кровавая Жатва (ЭВОЛЮЦИЯ): веер кинжалов с вампиризмом
                 WeaponType::BloodHarvest => {
-                    let count = 8;
+                    let count = 8 + weapon.bonus_projectiles as usize;
                     for i in 0..count {
                         let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
                         let dir = Vec2::new(angle.cos(), angle.sin());
@@ -571,6 +571,192 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             source_weapon: Some(WeaponType::BloodHarvest),
                         });
                     }
+                }
+
+                // 1.21 Гравитационная Сфера (Черная Дыра): притягивает мобов и взрывается
+                WeaponType::SingularityOrb => {
+                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                        (target_pos - boss_pos).normalize_or_zero()
+                    } else {
+                        Vec2::X
+                    };
+
+                    new_projectiles.push(ProjectileEntity {
+                        id: 0,
+                        pos: boss_pos,
+                        vel: base_dir * (220.0 * spd_mult),
+                        damage: effective_damage,
+                        damage_type: DamageType::True,
+                        armor_penetration: 0.8,
+                        lifetime: 2.2,
+                        radius: 18.0,
+                        pierce: 10,
+                        faction: Faction::Boss,
+                        source_weapon: Some(WeaponType::SingularityOrb),
+                    });
+                }
+
+                // 1.22 Горизонт Событий (ЭВОЛЮЦИЯ): червоточина с притяжением и молниями
+                WeaponType::EventHorizon => {
+                    let count = 2 + weapon.bonus_projectiles as usize;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (180.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::True,
+                            armor_penetration: 1.0,
+                            lifetime: 3.0,
+                            radius: 28.0,
+                            pierce: 20,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::EventHorizon),
+                        });
+                    }
+                }
+
+                // 1.23 Цепной Ледяной Шар: отскакивает и замораживает
+                WeaponType::ChainFrost => {
+                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                        (target_pos - boss_pos).normalize_or_zero()
+                    } else {
+                        Vec2::X
+                    };
+                    let count = 1 + weapon.bonus_projectiles as usize;
+                    for i in 0..count {
+                        let offset_angle = ((i as f32) - (count as f32 - 1.0) * 0.5) * 0.2;
+                        let sin = offset_angle.sin();
+                        let cos = offset_angle.cos();
+                        let dir = Vec2::new(base_dir.x * cos - base_dir.y * sin, base_dir.x * sin + base_dir.y * cos);
+
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (420.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Ice,
+                            armor_penetration: armor_pen,
+                            lifetime: 2.0,
+                            radius: 12.0,
+                            pierce: 6,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::ChainFrost),
+                        });
+                    }
+                }
+
+                // 1.24 Абсолютный Ноль (ЭВОЛЮЦИЯ): каскад ледяных сфер
+                WeaponType::AbsoluteZero => {
+                    let count = 4 + weapon.bonus_projectiles as usize;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (460.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Ice,
+                            armor_penetration: armor_pen + 0.3,
+                            lifetime: 2.5,
+                            radius: 16.0,
+                            pierce: 12,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::AbsoluteZero),
+                        });
+                    }
+                }
+
+                // 1.25 Кровавый Гиперлуч: огненный пробивающий луч
+                WeaponType::BrimstoneRay => {
+                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                        (target_pos - boss_pos).normalize_or_zero()
+                    } else {
+                        Vec2::X
+                    };
+                    new_projectiles.push(ProjectileEntity {
+                        id: 0,
+                        pos: boss_pos,
+                        vel: base_dir * (650.0 * spd_mult),
+                        damage: effective_damage,
+                        damage_type: DamageType::Fire,
+                        armor_penetration: 0.5,
+                        lifetime: 1.5,
+                        radius: 20.0,
+                        pierce: 15,
+                        faction: Faction::Boss,
+                        source_weapon: Some(WeaponType::BrimstoneRay),
+                    });
+                }
+
+                // 1.26 Инфернальный Катаклизм (ЭВОЛЮЦИЯ): 4 крестовых плазменных луча
+                WeaponType::InfernalCataclysm => {
+                    let count = 4;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 0.5;
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (650.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Fire,
+                            armor_penetration: 0.75,
+                            lifetime: 1.8,
+                            radius: 24.0,
+                            pierce: 25,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::InfernalCataclysm),
+                        });
+                    }
+                }
+
+                // 1.27 Рой Микроракет: самонаводящиеся ракеты
+                WeaponType::MissileSwarm => {
+                    let count = 4 + weapon.bonus_projectiles as usize;
+                    for _ in 0..count {
+                        let angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (360.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Physical,
+                            armor_penetration: armor_pen + 0.25,
+                            lifetime: 2.0,
+                            radius: 11.0,
+                            pierce: 2,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::MissileSwarm),
+                        });
+                    }
+                }
+
+                // 1.28 Осада Судного Дня (ЭВОЛЮЦИЯ): ураганный залп кассетных ракет
+                WeaponType::DoomsdayBarrage => {
+                    let count = 8 + weapon.bonus_projectiles as usize;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32) + rand::gen_range(-0.15, 0.15);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos,
+                            vel: dir * (420.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Physical,
+                            armor_penetration: armor_pen + 0.50,
+                            lifetime: 2.2,
+                            radius: 15.0,
+                            pierce: 4,
+                            faction: Faction::Boss,
+                            source_weapon: Some(WeaponType::DoomsdayBarrage),
+                        });
+                    }
+                    world.spawn_particles(boss_pos, 25, RED, 180.0);
                 }
             }
         }

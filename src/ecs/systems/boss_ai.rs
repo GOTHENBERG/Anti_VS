@@ -352,6 +352,18 @@ pub fn handle_boss_level_up(world: &mut World) {
                     score += 40.0;
                 }
             }
+            PerkChoice::LimitBreakDamage { .. } | PerkChoice::LimitBreakCooldown { .. } | PerkChoice::LimitBreakProjectiles { .. } => {
+                score += 70.0;
+            }
+            PerkChoice::LimitBreakTitanVigor => {
+                if hp_ratio < 0.6 { score += 95.0; } else { score += 55.0; }
+            }
+            PerkChoice::LimitBreakAdaptiveArmor => {
+                score += 75.0;
+            }
+            PerkChoice::LimitBreakPredatorSpeed => {
+                score += 50.0;
+            }
         }
 
         // Небольшой случайный фактор для разнообразия билдов
@@ -368,24 +380,25 @@ pub fn handle_boss_level_up(world: &mut World) {
 }
 
 fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
-    let mut available = Vec::new();
+    let mut available: Vec<(PerkChoice, f32)> = Vec::new();
 
-    // 1. Проверяем готовые эволюции
+    // 1. Проверяем готовые эволюции (приоритетнейшие карты)
     for i in 0..inventory.weapons.len() {
         if let Some(evolved) = inventory.can_evolve(i) {
             let from = inventory.weapons[i].kind;
-            available.push(PerkChoice::EvolveWeapon { from, to: evolved });
+            available.push((PerkChoice::EvolveWeapon { from, to: evolved }, 500.0));
         }
     }
 
-    // 2. Улучшение существующих оружий
+    // 2. Улучшение существующих оружий (приоритет возрастает к 8 уровню)
     for w in &inventory.weapons {
         if w.level < MAX_WEAPON_LEVEL && !w.is_evolved {
-            available.push(PerkChoice::UpgradeWeapon(w.kind));
+            let weight = if w.level >= 6 { 140.0 } else { 75.0 };
+            available.push((PerkChoice::UpgradeWeapon(w.kind), weight));
         }
     }
 
-    // 3. Добавление новых базовых оружий (если есть слоты)
+    // 3. Добавление новых базовых оружий (14 видов)
     if inventory.weapons.len() < MAX_WEAPON_SLOTS {
         let base_weapons = [
             WeaponType::WindBlade,
@@ -398,10 +411,32 @@ fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             WeaponType::CelestialBow,
             WeaponType::ThunderOrb,
             WeaponType::BloodDaggers,
+            WeaponType::SingularityOrb,
+            WeaponType::ChainFrost,
+            WeaponType::BrimstoneRay,
+            WeaponType::MissileSwarm,
         ];
         for bw in base_weapons {
             if !inventory.has_weapon(bw) {
-                available.push(PerkChoice::UpgradeWeapon(bw));
+                let has_pair = match bw {
+                    WeaponType::WindBlade => inventory.has_passive(PassiveType::SpeedGloves),
+                    WeaponType::FireAura => inventory.has_passive(PassiveType::GiantHeart),
+                    WeaponType::MagicWand => inventory.has_passive(PassiveType::CooldownTome),
+                    WeaponType::HolyHammer => inventory.has_passive(PassiveType::LightArmor),
+                    WeaponType::IceShards => inventory.has_passive(PassiveType::FrostRing),
+                    WeaponType::PoisonOrbs => inventory.has_passive(PassiveType::CorrosiveFlask),
+                    WeaponType::ExecutionerAxe => inventory.has_passive(PassiveType::BloodStone),
+                    WeaponType::CelestialBow => inventory.has_passive(PassiveType::EagleScope),
+                    WeaponType::ThunderOrb => inventory.has_passive(PassiveType::ChronoHourglass),
+                    WeaponType::BloodDaggers => inventory.has_passive(PassiveType::MagnetSphere),
+                    WeaponType::SingularityOrb => inventory.has_passive(PassiveType::TeslaCoil),
+                    WeaponType::ChainFrost => inventory.has_passive(PassiveType::CloverOfFate),
+                    WeaponType::BrimstoneRay => inventory.has_passive(PassiveType::PrismaticFocus),
+                    WeaponType::MissileSwarm => inventory.has_passive(PassiveType::TitanAegis),
+                    _ => false,
+                };
+                let weight = if has_pair { 180.0 } else { 45.0 };
+                available.push((PerkChoice::UpgradeWeapon(bw), weight));
             }
         }
     }
@@ -409,11 +444,12 @@ fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
     // 4. Улучшение существующих пассивок
     for p in &inventory.passives {
         if p.level < MAX_PASSIVE_LEVEL {
-            available.push(PerkChoice::UpgradePassive(p.kind));
+            let weight = 70.0 + (p.level as f32 * 10.0);
+            available.push((PerkChoice::UpgradePassive(p.kind), weight));
         }
     }
 
-    // 5. Добавление новых пассивок (если есть слоты)
+    // 5. Добавление новых пассивок (14 видов)
     if inventory.passives.len() < MAX_PASSIVE_SLOTS {
         let all_passives = [
             PassiveType::SpeedGloves,
@@ -426,24 +462,66 @@ fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             PassiveType::EagleScope,
             PassiveType::ChronoHourglass,
             PassiveType::MagnetSphere,
+            PassiveType::TeslaCoil,
+            PassiveType::CloverOfFate,
+            PassiveType::PrismaticFocus,
+            PassiveType::TitanAegis,
         ];
         for ap in all_passives {
             if !inventory.has_passive(ap) {
-                available.push(PerkChoice::UpgradePassive(ap));
+                let has_pair = match ap {
+                    PassiveType::SpeedGloves => inventory.has_weapon(WeaponType::WindBlade),
+                    PassiveType::GiantHeart => inventory.has_weapon(WeaponType::FireAura),
+                    PassiveType::CooldownTome => inventory.has_weapon(WeaponType::MagicWand),
+                    PassiveType::LightArmor => inventory.has_weapon(WeaponType::HolyHammer),
+                    PassiveType::FrostRing => inventory.has_weapon(WeaponType::IceShards),
+                    PassiveType::CorrosiveFlask => inventory.has_weapon(WeaponType::PoisonOrbs),
+                    PassiveType::BloodStone => inventory.has_weapon(WeaponType::ExecutionerAxe),
+                    PassiveType::EagleScope => inventory.has_weapon(WeaponType::CelestialBow),
+                    PassiveType::ChronoHourglass => inventory.has_weapon(WeaponType::ThunderOrb),
+                    PassiveType::MagnetSphere => inventory.has_weapon(WeaponType::BloodDaggers),
+                    PassiveType::TeslaCoil => inventory.has_weapon(WeaponType::SingularityOrb),
+                    PassiveType::CloverOfFate => inventory.has_weapon(WeaponType::ChainFrost),
+                    PassiveType::PrismaticFocus => inventory.has_weapon(WeaponType::BrimstoneRay),
+                    PassiveType::TitanAegis => inventory.has_weapon(WeaponType::MissileSwarm),
+                };
+                let weight = if has_pair { 180.0 } else { 40.0 };
+                available.push((PerkChoice::UpgradePassive(ap), weight));
             }
         }
     }
 
-    // Перемешиваем и выбираем до 3 уникальных карт
-    let mut selected = Vec::new();
-    let mut indices: Vec<usize> = (0..available.len()).collect();
-    for i in 0..indices.len() {
-        let swap_with = rand::gen_range(i, indices.len());
-        indices.swap(i, swap_with);
+    // 6. ЗАПРЕДЕЛЬНОЕ ВОЗВЫШЕНИЕ (Limit Break после 10-й минуты)
+    if available.is_empty() {
+        for (i, w) in inventory.weapons.iter().enumerate() {
+            let def = crate::content::weapons::get_weapon_def(w.kind);
+            available.push((PerkChoice::LimitBreakDamage { weapon_idx: i, name: def.name.to_string() }, 90.0));
+            available.push((PerkChoice::LimitBreakCooldown { weapon_idx: i, name: def.name.to_string() }, 70.0));
+            available.push((PerkChoice::LimitBreakProjectiles { weapon_idx: i, name: def.name.to_string() }, 85.0));
+        }
+        available.push((PerkChoice::LimitBreakTitanVigor, 110.0));
+        available.push((PerkChoice::LimitBreakAdaptiveArmor, 100.0));
+        available.push((PerkChoice::LimitBreakPredatorSpeed, 60.0));
     }
 
-    for idx in indices.into_iter().take(3) {
-        selected.push(available[idx].clone());
+    // Взвешенный выбор 3 уникальных карт (Рулетка)
+    let mut selected = Vec::new();
+    while selected.len() < 3 && !available.is_empty() {
+        let total_w: f32 = available.iter().map(|(_, w)| *w).sum();
+        if total_w <= 0.0 {
+            break;
+        }
+        let mut pick_val = rand::gen_range(0.0, total_w);
+        let mut chosen_idx = 0;
+        for (idx, (_, w)) in available.iter().enumerate() {
+            if pick_val <= *w {
+                chosen_idx = idx;
+                break;
+            }
+            pick_val -= *w;
+        }
+        let (choice, _) = available.remove(chosen_idx);
+        selected.push(choice);
     }
 
     selected
@@ -470,6 +548,10 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     WeaponType::StarfallBarrage => "ЗВЕЗДОПАДНЫЙ ЗАЛП",
                     WeaponType::ThunderstormWrath => "ГНЕВ ГРОЗЫ",
                     WeaponType::BloodHarvest => "КРОВАВАЯ ЖАТВА",
+                    WeaponType::EventHorizon => "ГОРИЗОНТ СОБЫТИЙ",
+                    WeaponType::AbsoluteZero => "АБСОЛЮТНЫЙ НОЛЬ",
+                    WeaponType::InfernalCataclysm => "ИНФЕРНАЛЬНЫЙ КАТАКЛИЗМ",
+                    WeaponType::DoomsdayBarrage => "ОСАДА СУДНОГО ДНЯ",
                     _ => "ЭВОЛЮЦИЯ ОРУЖИЯ",
                 };
                 let text = format!("ЭВОЛЮЦИЯ: {}!", name);
@@ -500,6 +582,10 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     WeaponType::CelestialBow => 0.85,
                     WeaponType::ThunderOrb => 1.5,
                     WeaponType::BloodDaggers => 0.65,
+                    WeaponType::SingularityOrb => 1.4,
+                    WeaponType::ChainFrost => 1.1,
+                    WeaponType::BrimstoneRay => 1.2,
+                    WeaponType::MissileSwarm => 0.9,
                     _ => 1.1,
                 };
                 let base_dmg = match kind {
@@ -510,6 +596,10 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     WeaponType::CelestialBow => 32.0,
                     WeaponType::ThunderOrb => 50.0,
                     WeaponType::BloodDaggers => 24.0,
+                    WeaponType::SingularityOrb => 38.0,
+                    WeaponType::ChainFrost => 30.0,
+                    WeaponType::BrimstoneRay => 42.0,
+                    WeaponType::MissileSwarm => 34.0,
                     _ => 25.0,
                 };
                 world.boss_inventory.weapons.push(crate::ecs::components::inventory::WeaponSlot {
@@ -519,6 +609,8 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     base_cooldown: base_cd,
                     damage: base_dmg,
                     is_evolved: false,
+                    limit_break_level: 0,
+                    bonus_projectiles: 0,
                 });
                 let text = format!("НОВОЕ ОРУЖИЕ: {:?}", kind);
                 world.boss_inventory.last_chosen_perk = Some(text.clone());
@@ -550,6 +642,10 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     world.boss_health.max += 150.0;
                     world.boss_health.heal(150.0);
                 }
+                PassiveType::TitanAegis => {
+                    world.boss_resistances.flat_armor += 3.0;
+                    world.boss_resistances.physical_res = (world.boss_resistances.physical_res + 0.04).min(0.70);
+                }
                 _ => {}
             }
 
@@ -557,6 +653,65 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
             world.boss_inventory.last_chosen_perk = Some(text.clone());
             world.boss_inventory.perk_announcement_timer = 2.0;
             world.add_floating_text(boss_pos, text, VIOLET, 1.2);
+        }
+        PerkChoice::LimitBreakDamage { weapon_idx, name } => {
+            if let Some(w) = world.boss_inventory.weapons.get_mut(weapon_idx) {
+                w.limit_break_level += 1;
+                w.damage *= 1.12;
+                let text = format!("⚡ ВОЗВЫШЕНИЕ: {} (+12% Урона)", name);
+                world.boss_inventory.last_chosen_perk = Some(text.clone());
+                world.boss_inventory.perk_announcement_timer = 2.5;
+                world.add_floating_text(boss_pos, text, GOLD, 1.4);
+                world.spawn_particles(boss_pos, 25, GOLD, 150.0);
+            }
+        }
+        PerkChoice::LimitBreakCooldown { weapon_idx, name } => {
+            if let Some(w) = world.boss_inventory.weapons.get_mut(weapon_idx) {
+                w.limit_break_level += 1;
+                w.base_cooldown = (w.base_cooldown * 0.94).max(0.12);
+                let text = format!("⚡ ВОЗВЫШЕНИЕ: {} (-6% КД)", name);
+                world.boss_inventory.last_chosen_perk = Some(text.clone());
+                world.boss_inventory.perk_announcement_timer = 2.5;
+                world.add_floating_text(boss_pos, text, SKYBLUE, 1.4);
+                world.spawn_particles(boss_pos, 20, SKYBLUE, 140.0);
+            }
+        }
+        PerkChoice::LimitBreakProjectiles { weapon_idx, name } => {
+            if let Some(w) = world.boss_inventory.weapons.get_mut(weapon_idx) {
+                w.limit_break_level += 1;
+                w.bonus_projectiles += 1;
+                let text = format!("⚡ ВОЗВЫШЕНИЕ: {} (+1 Снаряд)", name);
+                world.boss_inventory.last_chosen_perk = Some(text.clone());
+                world.boss_inventory.perk_announcement_timer = 2.5;
+                world.add_floating_text(boss_pos, text, ORANGE, 1.4);
+                world.spawn_particles(boss_pos, 30, ORANGE, 160.0);
+            }
+        }
+        PerkChoice::LimitBreakTitanVigor => {
+            world.boss_health.max += 160.0;
+            world.boss_health.heal(world.boss_health.max * 0.25);
+            let text = "🛡️ ВОЗВЫШЕНИЕ: Закалка Титана (+160 HP, Лечение)".to_string();
+            world.boss_inventory.last_chosen_perk = Some(text.clone());
+            world.boss_inventory.perk_announcement_timer = 3.0;
+            world.add_floating_text(boss_pos, text, GREEN, 1.5);
+            world.spawn_particles(boss_pos, 35, GREEN, 180.0);
+        }
+        PerkChoice::LimitBreakAdaptiveArmor => {
+            world.boss_resistances.flat_armor += 2.0;
+            world.boss_resistances.physical_res = (world.boss_resistances.physical_res + 0.03).min(0.75);
+            world.boss_resistances.fire_res = (world.boss_resistances.fire_res + 0.03).min(0.75);
+            let text = "🛡️ ВОЗВЫШЕНИЕ: Адаптивная Броня (+2 Брони, +3% Резисты)".to_string();
+            world.boss_inventory.last_chosen_perk = Some(text.clone());
+            world.boss_inventory.perk_announcement_timer = 3.0;
+            world.add_floating_text(boss_pos, text, PURPLE, 1.5);
+            world.spawn_particles(boss_pos, 25, PURPLE, 160.0);
+        }
+        PerkChoice::LimitBreakPredatorSpeed => {
+            let text = "⚡ ВОЗВЫШЕНИЕ: Скорость Хищника (+10% Рефлексы)".to_string();
+            world.boss_inventory.last_chosen_perk = Some(text.clone());
+            world.boss_inventory.perk_announcement_timer = 2.5;
+            world.add_floating_text(boss_pos, text, YELLOW, 1.3);
+            world.spawn_particles(boss_pos, 20, YELLOW, 140.0);
         }
     }
 }

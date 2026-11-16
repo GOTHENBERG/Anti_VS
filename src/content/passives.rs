@@ -58,5 +58,25 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Сфера Притяжения",
             description: "+45px к радиусу притяжения кристаллов душ. Нужна для Кровавой Жатвы.",
         },
+        PassiveType::TeslaCoil => PassiveDefinition {
+            kind,
+            name: "Катушка Теслы",
+            description: "+12% шанс цепной молнии на 3 цели. Нужна для Горизонта Событий.",
+        },
+        PassiveType::CloverOfFate => PassiveDefinition {
+            kind,
+            name: "Клевер Судьбы",
+            description: "+12% шанс критического удара (х2 урон). Нужен для Абсолютного Ноля.",
+        },
+        PassiveType::PrismaticFocus => PassiveDefinition {
+            kind,
+            name: "Призматический Фокус",
+            description: "+15% к радиусу поражения (AoE). Нужен для Инфернального Катаклизма.",
+        },
+        PassiveType::TitanAegis => PassiveDefinition {
+            kind,
+            name: "Черный Эгис",
+            description: "-2.5 плоского урона от каждого удара. Нужен для Осады Судного Дня.",
+        },
     }
 }

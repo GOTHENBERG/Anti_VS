@@ -148,11 +148,22 @@ pub fn render_ui(
                 );
             }
 
-            // Бейдж уровня в правом нижнем углу слота
-            let lvl_tag = if w.is_evolved { "MAX".to_string() } else { format!("{}", w.level) };
+            // Бейдж уровня в правом нижнем углу слота (с поддержкой Запредельного Возвышения Limit Break)
+            let lvl_tag = if w.limit_break_level > 0 {
+                format!("+{}", w.limit_break_level)
+            } else if w.is_evolved {
+                "MAX".to_string()
+            } else {
+                format!("{}", w.level)
+            };
             let tag_w = fonts.measure_heading(&lvl_tag, 10.0).width + 4.0;
-            draw_rectangle(sx + slot_size - tag_w, wep_slots_y + slot_size - 11.0, tag_w, 11.0, Color::new(0.0, 0.0, 0.0, 0.85));
-            fonts.draw_heading(&lvl_tag, sx + slot_size - tag_w + 2.0, wep_slots_y + slot_size - 2.0, 10.0, if w.is_evolved { GOLD } else { WHITE });
+            let tag_bg = if w.limit_break_level > 0 {
+                Color::new(0.50, 0.12, 0.65, 0.95)
+            } else {
+                Color::new(0.0, 0.0, 0.0, 0.85)
+            };
+            draw_rectangle(sx + slot_size - tag_w, wep_slots_y + slot_size - 11.0, tag_w, 11.0, tag_bg);
+            fonts.draw_heading(&lvl_tag, sx + slot_size - tag_w + 2.0, wep_slots_y + slot_size - 2.0, 10.0, if w.limit_break_level > 0 || w.is_evolved { GOLD } else { WHITE });
 
             if is_hover {
                 hovered_tooltip = Some(HoverTooltip::Weapon(w.clone(), sx, wep_slots_y));
@@ -934,7 +945,11 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
     let border_color = if w.is_evolved { GOLD } else { SKYBLUE };
     draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, border_color);
 
-    let title = format!("{} [Ур. {}/8]", def.name, w.level);
+    let title = if w.limit_break_level > 0 {
+        format!("{} [MAX +{}]", def.name, w.limit_break_level)
+    } else {
+        format!("{} [Ур. {}/8]", def.name, w.level)
+    };
     fonts.draw_heading(&title, card_x + 12.0, card_y + 22.0, 16.0, border_color);
 
     let dmg_type_str = match def.damage_type {
@@ -950,7 +965,9 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
 
     fonts.draw_text(def.description, card_x + 12.0, card_y + 68.0, 12.0, LIGHTGRAY);
 
-    let (evo_str, evo_col) = if w.is_evolved {
+    let (evo_str, evo_col) = if w.limit_break_level > 0 {
+        (format!("⚡ ЗАПРЕДЕЛЬНОЕ ВОЗВЫШЕНИЕ: +{}% Урона, +{} Снарядов", w.limit_break_level * 12, w.bonus_projectiles), GOLD)
+    } else if w.is_evolved {
         ("⭐ СУПЕРОРУЖИЕ: Максимальная боевая эволюция".to_string(), GOLD)
     } else {
         let (req_passive, evo_weapon) = match w.kind {
@@ -964,6 +981,10 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
             WeaponType::CelestialBow => ("Орлиный Прицел", "Звездопадный Залп"),
             WeaponType::ThunderOrb => ("Песочные Часы", "Гнев Грозы"),
             WeaponType::BloodDaggers => ("Сфера Притяжения", "Кровавая Жатва"),
+            WeaponType::SingularityOrb => ("Катушка Теслы", "Горизонт Событий"),
+            WeaponType::ChainFrost => ("Клевер Судьбы", "Абсолютный Ноль"),
+            WeaponType::BrimstoneRay => ("Призматический Фокус", "Инфернальный Катаклизм"),
+            WeaponType::MissileSwarm => ("Черный Эгис", "Осада Судного Дня"),
             _ => ("-", "-"),
         };
         (format!("Эволюция (Ур. 8 + {}): -> {}", req_passive, evo_weapon), YELLOW)
@@ -997,6 +1018,10 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::EagleScope => format!("Текущий бонус: +{}% к скорости и дальности полета снарядов", p.level * 20),
         PassiveType::ChronoHourglass => format!("Текущий бонус: +{}% к длительности эффектов", p.level * 25),
         PassiveType::MagnetSphere => format!("Текущий бонус: +{} px к радиусу сбора кристаллов", p.level * 45),
+        PassiveType::TeslaCoil => format!("Текущий бонус: +{}% шанс цепной молнии на 3 цели", p.level * 12),
+        PassiveType::CloverOfFate => format!("Текущий бонус: +{}% шанс критического удара (х2 урон)", p.level * 12),
+        PassiveType::PrismaticFocus => format!("Текущий бонус: +{}% к площади поражения (AoE)", p.level * 15),
+        PassiveType::TitanAegis => format!("Текущий бонус: -{:.1} плоского урона от каждого удара", p.level as f32 * 2.5),
     };
     fonts.draw_text(&bonus_text, card_x + 12.0, card_y + 44.0, 13.0, GREEN);
 
@@ -1013,6 +1038,10 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::EagleScope => "Связка для эволюции: Небесный Лук -> Звездопадный Залп",
         PassiveType::ChronoHourglass => "Связка для эволюции: Грозовая Сфера -> Гнев Грозы",
         PassiveType::MagnetSphere => "Связка для эволюции: Кровавые Кинжалы -> Кровавая Жатва",
+        PassiveType::TeslaCoil => "Связка для эволюции: Гравитационная Сфера -> Горизонт Событий",
+        PassiveType::CloverOfFate => "Связка для эволюции: Цепной Ледяной Шар -> Абсолютный Ноль",
+        PassiveType::PrismaticFocus => "Связка для эволюции: Кровавый Гиперлуч -> Инфернальный Катаклизм",
+        PassiveType::TitanAegis => "Связка для эволюции: Рой Микроракет -> Осада Судного Дня",
     };
     fonts.draw_text(evo_synergy, card_x + 12.0, card_y + 92.0, 12.0, YELLOW);
 }

@@ -33,11 +33,11 @@ pub struct BossModel {
 }
 
 pub fn default_weapon_priorities() -> Vec<f32> {
-    vec![1.2, 1.4, 1.5, 1.3, 1.3, 1.1, 1.4, 1.3, 1.5, 1.4]
+    vec![1.2, 1.4, 1.5, 1.3, 1.3, 1.1, 1.4, 1.3, 1.5, 1.4, 1.5, 1.4, 1.6, 1.5]
 }
 
 pub fn default_passive_priorities() -> Vec<f32> {
-    vec![1.3, 1.5, 1.4, 1.4, 1.2, 1.2, 1.5, 1.3, 1.3, 1.4]
+    vec![1.3, 1.5, 1.4, 1.4, 1.2, 1.2, 1.5, 1.3, 1.3, 1.4, 1.5, 1.6, 1.4, 1.5]
 }
 
 pub fn default_squad_weights() -> Vec<f32> {

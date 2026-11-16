@@ -135,7 +135,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                         &director_pop[d_idx]
                     };
 
-                    let res = run_headless_simulation(boss, director, 600.0); // 10 минут раунд
+                    let res = run_headless_simulation(boss, director, 1020.0); // 17 минут раунд (1020с)
 
                     total_survival += res.survival_time;
                     total_level += res.boss_level;
@@ -147,16 +147,16 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                     }
 
                     // 1. Фитнес Босса:
-                    // ГЛАВНЫЙ ПРЯНИК — время выживания (до 2400 очков) + бонус за победу (600 очков)
-                    let time_reward = res.survival_time * 4.0;
-                    let win_bonus = if res.boss_won { 600.0 } else { 0.0 };
+                    // ГЛАВНЫЙ ПРЯНИК — время выживания (до 2550 очков) + бонус за победу (1000 очков)
+                    let time_reward = res.survival_time * 2.5;
+                    let win_bonus = if res.boss_won { 1000.0 } else { 0.0 };
 
                     // ВТОРОСТЕПЕННЫЕ ПРЯНИКИ — уровень героя и разрушение алтарей
-                    let level_reward = res.boss_level as f32 * 15.0;
-                    let altar_reward = res.altars_destroyed as f32 * 40.0;
+                    let level_reward = res.boss_level as f32 * 12.0;
+                    let altar_reward = res.altars_destroyed as f32 * 35.0;
 
                     // ВТОРОСТЕПЕННЫЙ КНУТ — мягкий штраф за полученный урон (стимул кайтить и уклоняться)
-                    let damage_penalty = res.damage_dealt_to_boss * 0.06;
+                    let damage_penalty = res.damage_dealt_to_boss * 0.04;
 
                     let score = (time_reward + win_bonus + level_reward + altar_reward - damage_penalty).max(10.0);
                     total_score += score;
@@ -203,26 +203,26 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
                         &boss_pop[b_idx]
                     };
 
-                    let res = run_headless_simulation(boss, director, 600.0);
+                    let res = run_headless_simulation(boss, director, 1020.0);
 
                     // 2. Фитнес Директора:
-                    // ГЛАВНЫЙ ПРЯНИК — скорость сбривания босса (до 3000 очков) + бонус за добивание (600 очков)
-                    let time_saved = (600.0 - res.survival_time).max(0.0);
-                    let speed_reward = time_saved * 5.0;
-                    let kill_bonus = if !res.boss_won { 600.0 } else { 0.0 };
+                    // ГЛАВНЫЙ ПРЯНИК — скорость сбривания босса (до 3000 очков) + бонус за добивание (800 очков)
+                    let time_saved = (1020.0 - res.survival_time).max(0.0);
+                    let speed_reward = time_saved * 3.0;
+                    let kill_bonus = if !res.boss_won { 800.0 } else { 0.0 };
 
                     // ГЛАВНЫЙ КНУТ ДИРЕКТОРА — время, которое босс прожил!
-                    // Если босс живет дольше 4 минут (>240с), включается растущий штраф за затягивание боя
-                    let time_drag_whip = if res.survival_time > 240.0 {
-                        (res.survival_time - 240.0) * 2.0
+                    // Если босс живет дольше 7 минут (>420с), включается растущий штраф за затягивание боя
+                    let time_drag_whip = if res.survival_time > 420.0 {
+                        (res.survival_time - 420.0) * 1.5
                     } else {
                         0.0
                     };
-                    let survived_boss_whip = if res.boss_won { 500.0 } else { 0.0 };
+                    let survived_boss_whip = if res.boss_won { 800.0 } else { 0.0 };
                     let total_time_whip = time_drag_whip + survived_boss_whip;
 
                     // ВТОРОСТЕПЕННЫЕ ПРЯНИКИ — нанесенный урон и постройка алтарей
-                    let damage_reward = res.damage_dealt_to_boss * 0.08;
+                    let damage_reward = res.damage_dealt_to_boss * 0.06;
                     let altar_reward = res.altars_built as f32 * 20.0;
 
                     let kill_score = (speed_reward + kill_bonus + damage_reward + altar_reward - total_time_whip).max(10.0);
@@ -306,15 +306,15 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize) 
             .unwrap();
 
         let total_mobs_spawned: usize = best_dir_eval.mobs_spawned.iter().sum();
-        let boss_time_reward = best_boss_eval.avg_survival * 4.0;
-        let boss_whip = best_boss_eval.avg_damage_taken * 0.06;
-        let dir_speed_reward = (600.0 - best_dir_eval.avg_kill_speed).max(0.0) * 5.0;
-        let dir_time_whip = if best_dir_eval.avg_kill_speed > 240.0 {
-            (best_dir_eval.avg_kill_speed - 240.0) * 2.0
+        let boss_time_reward = best_boss_eval.avg_survival * 2.5;
+        let boss_whip = best_boss_eval.avg_damage_taken * 0.04;
+        let dir_speed_reward = (1020.0 - best_dir_eval.avg_kill_speed).max(0.0) * 3.0;
+        let dir_time_whip = if best_dir_eval.avg_kill_speed > 420.0 {
+            (best_dir_eval.avg_kill_speed - 420.0) * 1.5
         } else {
             0.0
         };
-        let dir_dmg_reward = best_dir_eval.avg_damage_dealt * 0.08;
+        let dir_dmg_reward = best_dir_eval.avg_damage_dealt * 0.06;
 
         println!(
             "🏆 Раунд {:02}/{:02} (Поколение #{:02}) [🏛️ Зал Славы: {}]",

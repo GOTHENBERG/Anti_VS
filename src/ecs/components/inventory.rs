@@ -7,7 +7,7 @@ pub const MAX_PASSIVE_LEVEL: u8 = 5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WeaponType {
-    // Базовые оружия
+    // Базовые оружия (14 видов)
     WindBlade,        // 1. Клинок Ветра
     FireAura,         // 2. Огненная Аура
     MagicWand,        // 3. Магический Жезл
@@ -18,8 +18,12 @@ pub enum WeaponType {
     CelestialBow,     // 8. Небесный Лук
     ThunderOrb,       // 9. Грозовая Сфера
     BloodDaggers,     // 10. Кровавые Кинжалы
+    SingularityOrb,   // 11. Гравитационная Сфера (Черная дыра)
+    ChainFrost,       // 12. Цепной Ледяной Шар (Прыгающий мороз)
+    BrimstoneRay,     // 13. Кровавый Гиперлуч (Прожигающий лазер)
+    MissileSwarm,     // 14. Рой Микроракет (Самонаводящиеся ракеты)
 
-    // Эволюции (10 эволюций)
+    // Эволюции (14 эволюций)
     BladeStorm,       // Эволюция: Буря Клинков (Клинок Ветра + Перчатка Скорости)
     Hellfire,         // Эволюция: Адское Пекло (Огненная Аура + Сердце Гиганта)
     DeathRay,         // Эволюция: Луч Смерти (Магический Жезл + Фолиант Времени)
@@ -30,6 +34,10 @@ pub enum WeaponType {
     StarfallBarrage,  // Эволюция: Звездопадный Залп (Небесный Лук + Орлиный Прицел)
     ThunderstormWrath,// Эволюция: Гнев Грозы (Грозовая Сфера + Песочные Часы)
     BloodHarvest,     // Эволюция: Кровавая Жатва (Кровавые Кинжалы + Сфера Притяжения)
+    EventHorizon,     // Эволюция: Горизонт Событий (Гравитационная Сфера + Катушка Теслы)
+    AbsoluteZero,     // Эволюция: Абсолютный Ноль (Цепной Ледяной Шар + Клевер Судьбы)
+    InfernalCataclysm,// Эволюция: Инфернальный Катаклизм (Кровавый Гиперлуч + Призматический Фокус)
+    DoomsdayBarrage,  // Эволюция: Осада Судного Дня (Рой Микроракет + Черный Эгис)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -44,6 +52,10 @@ pub enum PassiveType {
     EagleScope,       // 8. Орлиный Прицел (+скорость полета снарядов)
     ChronoHourglass,  // 9. Песочные Часы (+длительность эффектов)
     MagnetSphere,     // 10. Сфера Притяжения (+радиус сбора душ)
+    TeslaCoil,        // 11. Катушка Теслы (+шанс цепной молнии)
+    CloverOfFate,     // 12. Клевер Судьбы (+шанс крит. удара)
+    PrismaticFocus,   // 13. Призматический Фокус (+радиус поражения AoE)
+    TitanAegis,       // 14. Черный Эгис (плоское снижение входящего урона)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,6 +66,8 @@ pub struct WeaponSlot {
     pub base_cooldown: f32,
     pub damage: f32,
     pub is_evolved: bool,
+    pub limit_break_level: u32,
+    pub bonus_projectiles: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -67,6 +81,13 @@ pub enum PerkChoice {
     UpgradeWeapon(WeaponType),
     UpgradePassive(PassiveType),
     EvolveWeapon { from: WeaponType, to: WeaponType },
+    // Запредельное Возвышение (Limit Break после 10-й минуты)
+    LimitBreakDamage { weapon_idx: usize, name: String },
+    LimitBreakCooldown { weapon_idx: usize, name: String },
+    LimitBreakProjectiles { weapon_idx: usize, name: String },
+    LimitBreakTitanVigor,     // +150 Max HP, +25% Heal
+    LimitBreakAdaptiveArmor,  // +2.0 Flat Armor, +3% Resists
+    LimitBreakPredatorSpeed,  // +6% Move Speed
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -95,6 +116,8 @@ impl BossInventory {
                 base_cooldown: 1.1,
                 damage: 28.0,
                 is_evolved: false,
+                limit_break_level: 0,
+                bonus_projectiles: 0,
             }],
             passives: Vec::new(),
             level: 1,
@@ -171,8 +194,44 @@ impl BossInventory {
             WeaponType::BloodDaggers if self.has_passive(PassiveType::MagnetSphere) => {
                 Some(WeaponType::BloodHarvest)
             }
+            WeaponType::SingularityOrb if self.has_passive(PassiveType::TeslaCoil) => {
+                Some(WeaponType::EventHorizon)
+            }
+            WeaponType::ChainFrost if self.has_passive(PassiveType::CloverOfFate) => {
+                Some(WeaponType::AbsoluteZero)
+            }
+            WeaponType::BrimstoneRay if self.has_passive(PassiveType::PrismaticFocus) => {
+                Some(WeaponType::InfernalCataclysm)
+            }
+            WeaponType::MissileSwarm if self.has_passive(PassiveType::TitanAegis) => {
+                Some(WeaponType::DoomsdayBarrage)
+            }
             _ => None,
         }
+    }
+
+    /// Шанс удара цепной молнией от TeslaCoil (Катушка Теслы)
+    pub fn get_tesla_chain_chance(&self) -> f32 {
+        let lvl = self.get_passive_level(PassiveType::TeslaCoil);
+        (lvl as f32 * 0.12).min(0.60)
+    }
+
+    /// Шанс критического удара от CloverOfFate (Клевер Судьбы)
+    pub fn get_crit_chance(&self) -> f32 {
+        let lvl = self.get_passive_level(PassiveType::CloverOfFate);
+        (lvl as f32 * 0.12).min(0.60)
+    }
+
+    /// Множитель размера области поражения AoE от PrismaticFocus (Призматический Фокус)
+    pub fn get_aoe_multiplier(&self) -> f32 {
+        let lvl = self.get_passive_level(PassiveType::PrismaticFocus);
+        1.0 + (lvl as f32 * 0.15)
+    }
+
+    /// Плоское снижение любого входящего урона от TitanAegis (Черный Эгис)
+    pub fn get_flat_damage_reduction(&self) -> f32 {
+        let lvl = self.get_passive_level(PassiveType::TitanAegis);
+        lvl as f32 * 2.5
     }
 
     /// Множитель урона от пассивок (BloodStone)

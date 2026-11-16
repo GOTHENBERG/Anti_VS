@@ -70,6 +70,14 @@ pub struct GameTextures {
     pub icon_eagle_scope: Option<Texture2D>,
     pub icon_magnet_sphere: Option<Texture2D>,
     pub icon_corrosive_flask: Option<Texture2D>,
+    pub icon_singularity: Option<Texture2D>,
+    pub icon_chain_frost: Option<Texture2D>,
+    pub icon_brimstone: Option<Texture2D>,
+    pub icon_missiles: Option<Texture2D>,
+    pub icon_tesla_coil: Option<Texture2D>,
+    pub icon_clover: Option<Texture2D>,
+    pub icon_prismatic: Option<Texture2D>,
+    pub icon_aegis: Option<Texture2D>,
 }
 
 async fn load_filtered(path: &str, filter: FilterMode) -> Option<Texture2D> {
@@ -167,6 +175,14 @@ impl GameTextures {
         let icon_eagle_scope = load_filtered("assets/icons/icon_eagle_scope.png", ui_filter).await;
         let icon_magnet_sphere = load_filtered("assets/icons/icon_magnet_sphere.png", ui_filter).await;
         let icon_corrosive_flask = load_filtered("assets/icons/icon_corrosive_flask.png", ui_filter).await;
+        let icon_singularity = load_filtered("assets/icons/icon_singularity.png", ui_filter).await;
+        let icon_chain_frost = load_filtered("assets/icons/icon_chain_frost.png", ui_filter).await;
+        let icon_brimstone = load_filtered("assets/icons/icon_brimstone.png", ui_filter).await;
+        let icon_missiles = load_filtered("assets/icons/icon_missiles.png", ui_filter).await;
+        let icon_tesla_coil = load_filtered("assets/icons/icon_tesla_coil.png", ui_filter).await;
+        let icon_clover = load_filtered("assets/icons/icon_clover.png", ui_filter).await;
+        let icon_prismatic = load_filtered("assets/icons/icon_prismatic.png", ui_filter).await;
+        let icon_aegis = load_filtered("assets/icons/icon_aegis.png", ui_filter).await;
 
         Self {
             skeleton,
@@ -225,6 +241,14 @@ impl GameTextures {
             icon_eagle_scope,
             icon_magnet_sphere,
             icon_corrosive_flask,
+            icon_singularity,
+            icon_chain_frost,
+            icon_brimstone,
+            icon_missiles,
+            icon_tesla_coil,
+            icon_clover,
+            icon_prismatic,
+            icon_aegis,
         }
     }
 
@@ -240,6 +264,10 @@ impl GameTextures {
             WeaponType::CelestialBow | WeaponType::StarfallBarrage => self.icon_bow.as_ref(),
             WeaponType::ThunderOrb | WeaponType::ThunderstormWrath => self.icon_thunder.as_ref().or(self.icon_jewel.as_ref()),
             WeaponType::BloodDaggers | WeaponType::BloodHarvest => self.icon_blood_daggers.as_ref().or(self.icon_sword.as_ref()),
+            WeaponType::SingularityOrb | WeaponType::EventHorizon => self.icon_singularity.as_ref().or(self.icon_jewel.as_ref()),
+            WeaponType::ChainFrost | WeaponType::AbsoluteZero => self.icon_chain_frost.as_ref().or(self.icon_ring.as_ref()),
+            WeaponType::BrimstoneRay | WeaponType::InfernalCataclysm => self.icon_brimstone.as_ref().or(self.icon_fire_aura.as_ref()),
+            WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage => self.icon_missiles.as_ref().or(self.icon_bow.as_ref()),
         }
     }
 
@@ -255,6 +283,10 @@ impl GameTextures {
             PassiveType::EagleScope => self.icon_eagle_scope.as_ref().or(self.icon_ring.as_ref()),
             PassiveType::ChronoHourglass => self.icon_hourglass.as_ref(),
             PassiveType::MagnetSphere => self.icon_magnet_sphere.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::TeslaCoil => self.icon_tesla_coil.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::CloverOfFate => self.icon_clover.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::PrismaticFocus => self.icon_prismatic.as_ref().or(self.icon_ring.as_ref()),
+            PassiveType::TitanAegis => self.icon_aegis.as_ref().or(self.icon_armor.as_ref()),
         }
     }
 
