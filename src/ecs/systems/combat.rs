@@ -16,7 +16,6 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let mut kamikaze_explosions = Vec::new();
 
     // 1. Коллизии мобов с Боссом и контактный урон
-    let mut contact_boss_hit = false;
     let mut contact_kamikaze_blast = false;
     let nearby_mobs = world.spatial_grid.query_nearby(boss_pos, 120.0);
     for idx in nearby_mobs {
@@ -42,7 +41,6 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     world.boss_health.take_damage(actual_dmg);
                     world.boss_inventory.melee_damage_recent += actual_dmg;
                     world.total_damage_dealt_to_boss += actual_dmg;
-                    contact_boss_hit = true;
 
                     // Скелеты слегка притормаживают босса
                     if mob.tier == 1 {
@@ -91,9 +89,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
     if contact_kamikaze_blast {
         world.push_audio(crate::audio::AudioEvent::FireBlast);
     }
-    if contact_boss_hit {
-        world.push_audio(crate::audio::AudioEvent::BossHit);
-    }
+    // Звук урона по боссу отключен для чистоты аудиомикса
 
     // 1.3 Контактный урон аур по разрушаемым Алтарям Крови
     for st in &mut world.structures {

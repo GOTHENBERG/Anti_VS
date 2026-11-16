@@ -91,6 +91,10 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
 
 /// Спавн отряда мобов кольцом вокруг босса на границе видимости
 pub fn spawn_squad_perimeter(world: &mut World, tier: u8) {
+    spawn_squad_at_dist(world, tier, 820.0);
+}
+
+pub fn spawn_squad_at_dist(world: &mut World, tier: u8, ring_radius: f32) {
     let config = get_squad_config(tier);
     let boss_pos = world.boss_pos;
     let map_w = crate::core::MAP_WIDTH;
@@ -98,7 +102,6 @@ pub fn spawn_squad_perimeter(world: &mut World, tier: u8) {
 
     // Случайный сдвиг угла, чтобы отряды распределялись органично по кольцу
     let base_angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
-    let ring_radius = 820.0; // Вне стандартного поля зрения камеры
 
     for i in 0..config.count {
         let id = world.alloc_id();

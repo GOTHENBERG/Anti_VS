@@ -141,10 +141,29 @@ impl AudioManager {
         self.sfx_volume = vol.clamp(0.0, 1.0);
     }
 
+    /// Пространственное позиционирование музыки: джаз исходит от босса.
+    /// Чем ближе камера к боссу, тем ярче и сочнее звучит джаз;
+    /// при удалении камеры на край арены музыка плавно затухает.
+    pub fn update_spatial_music(&mut self, cam_pos: macroquad::prelude::Vec2, boss_pos: macroquad::prelude::Vec2) {
+        if self.is_muted || !self.is_music_playing { return; }
+        let dist = cam_pos.distance(boss_pos);
+        let max_dist = 1800.0;
+        let factor = if dist <= 300.0 {
+            1.0
+        } else {
+            let t = ((dist - 300.0) / (max_dist - 300.0)).clamp(0.0, 1.0);
+            1.0 - t * 0.82
+        };
+        let effective_vol = (self.music_volume * factor).clamp(0.0, 1.0);
+        if let Some(sound) = &self.music_battle {
+            set_sound_volume(sound, effective_vol);
+        }
+    }
+
     pub fn handle_event(&self, event: AudioEvent) {
         if self.is_muted { return; }
         match event {
-            AudioEvent::BossHit => self.play_sfx(self.boss_hit.as_ref(), 0.65),
+            AudioEvent::BossHit => {}, // Отключено: избыточный шум при столкновениях
             AudioEvent::BossDash => self.play_sfx(self.boss_dash.as_ref(), 0.70),
             AudioEvent::BossLevelUp => self.play_sfx(self.boss_level_up.as_ref(), 0.90),
             AudioEvent::BossDeath => self.play_sfx(self.boss_death.as_ref(), 0.85),

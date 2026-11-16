@@ -75,19 +75,21 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
             } else if gem.xp_value > 30.0 {
                 (LIME, 1.1)
             } else {
-                (SKYBLUE, 0.9)
+                (WHITE, 1.0)
             };
             let size = 18.0 * scale;
-            let rot = time * 2.0 + (gem.pos.x * 0.1);
+            let bob = (time * 4.0 + (gem.pos.x * 0.1)).sin() * 2.0;
+
+            // Мягкое эфирное свечение под кристаллом души
+            draw_ellipse(gem.pos.x, gem.pos.y + 6.0, 7.0, 3.2, 0.0, Color::new(0.2, 0.6, 1.0, 0.30));
+
             draw_texture_ex(
                 c_tex,
                 gem.pos.x - size / 2.0,
-                gem.pos.y - size / 2.0,
+                gem.pos.y - size / 2.0 + bob,
                 tint,
                 DrawTextureParams {
                     dest_size: Some(Vec2::new(size, size)),
-                    rotation: rot,
-                    pivot: Some(gem.pos),
                     ..Default::default()
                 },
             );
@@ -105,9 +107,9 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures) 
         }
     }
 
-    // 5. Отрисовка мобов со спрайтами
+    // 5. Отрисовка мобов со спрайтами и джазовым танцем
     for mob in &world.mobs {
-        draw_mob_sprite(mob, time, textures);
+        draw_mob_sprite(mob, time, textures, world.boss_pos);
 
         // Наложение статусных эффектов (заморозка, горение, яд)
         if mob.status.is_frozen() {

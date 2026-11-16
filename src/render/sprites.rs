@@ -257,9 +257,23 @@ pub fn draw_boss(pos: Vec2, vel: Vec2, invulnerable: bool, time: f32, textures: 
 }
 
 /// Отрисовка моба (текстурные спрайты с процедурным fallback)
-pub fn draw_mob_sprite(mob: &MobEntity, time: f32, textures: &GameTextures) {
+pub fn draw_mob_sprite(mob: &MobEntity, time: f32, textures: &GameTextures, boss_pos: Vec2) {
     let frame_idx = (time * 8.0 + (mob.id as f32) * 0.7) as usize;
     let flip_x = mob.vel.x < -0.1;
+
+    // Джазовый танец мобов: при приближении к боссу мобы заражаются свинговым ритмом и начинают качаться
+    let dist_to_boss = mob.pos.distance(boss_pos);
+    let jazz_radius = 520.0;
+    let (dance_rot, dance_bob) = if dist_to_boss < jazz_radius {
+        let intensity = (1.0 - dist_to_boss / jazz_radius).powf(0.8);
+        let tempo = 10.0; // быстрый свинговый темп
+        let phase = (mob.id as f32) * 1.35;
+        let rot = (time * tempo + phase).sin() * (0.24 * intensity);
+        let bob = -((time * tempo * 2.0 + phase).sin().abs()) * (4.5 * intensity);
+        (rot, bob)
+    } else {
+        (0.0, 0.0)
+    };
 
     if let Some(tex) = textures.get_mob_texture(mob.tier, frame_idx) {
         // Тень под мобом
@@ -301,14 +315,14 @@ pub fn draw_mob_sprite(mob: &MobEntity, time: f32, textures: &GameTextures) {
             WHITE
         };
 
-        // Покачивание/левитация при ходьбе
+        // Покачивание/левитация при ходьбе + джазовый подскок
         let bob_y = if mob.tier == 1 || mob.tier == 5 {
             (time * 12.0 + (mob.id as f32)).sin() * 2.0
         } else if mob.tier == 3 {
             (time * 4.0 + (mob.id as f32)).sin() * 3.0 // Культист левитирует
         } else {
             0.0
-        };
+        } + dance_bob;
 
         draw_texture_ex(
             tex,
@@ -318,9 +332,21 @@ pub fn draw_mob_sprite(mob: &MobEntity, time: f32, textures: &GameTextures) {
             DrawTextureParams {
                 dest_size: Some(Vec2::new(draw_w, draw_h)),
                 flip_x,
+                rotation: dance_rot,
+                pivot: Some(mob.pos),
                 ..Default::default()
             },
         );
+
+        // Джазовые парящие нотки над танцующими в ритм существами
+        if dist_to_boss < 280.0 && mob.id % 3 == 0 {
+            let note_time = time * 3.5 + (mob.id as f32);
+            let note_y = mob.pos.y - draw_h / 2.0 - 7.0 - (note_time.sin() * 3.0);
+            let note_x = mob.pos.x + (note_time.cos() * 5.0);
+            draw_circle(note_x, note_y, 2.0, Color::new(1.0, 0.85, 0.3, 0.8));
+            draw_line(note_x + 1.2, note_y, note_x + 1.2, note_y - 5.5, 1.2, Color::new(1.0, 0.85, 0.3, 0.8));
+            draw_line(note_x + 1.2, note_y - 5.5, note_x + 4.2, note_y - 4.5, 1.2, Color::new(1.0, 0.85, 0.3, 0.8));
+        }
 
         // Полоска здоровья голема (Тир 4)
         if mob.tier == 4 {
@@ -631,9 +657,10 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
     if let Some(w_kind) = proj.source_weapon {
         match w_kind {
             // Клинок Ветра: светящийся ветряной клинок
-            crate::ecs::components::inventory::WeaponType::WindBlade => {
+            crate::ecs::components::inventory::WeaponType::WindBlade | crate::ecs::components::inventory::WeaponType::BladeStorm => {
                 if let Some(tex) = textures.proj_wind.as_ref() {
                     let size = radius * 3.4;
+                    draw_line(pos.x - dir.x * 18.0, pos.y - dir.y * 18.0, pos.x, pos.y, 2.5, Color::new(0.4, 0.9, 0.9, 0.5));
                     draw_texture_ex(
                         tex,
                         pos.x - size / 2.0,
@@ -641,7 +668,7 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
                         WHITE,
                         DrawTextureParams {
                             dest_size: Some(Vec2::new(size, size)),
-                            rotation: angle + std::f32::consts::PI / 2.0,
+                            rotation: angle,
                             pivot: Some(pos),
                             ..Default::default()
                         },
@@ -661,7 +688,7 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
                 return;
             }
             // Магический Жезл: пульсирующая сфера тайной магии
-            crate::ecs::components::inventory::WeaponType::MagicWand => {
+            crate::ecs::components::inventory::WeaponType::MagicWand | crate::ecs::components::inventory::WeaponType::DeathRay => {
                 if let Some(tex) = textures.proj_magic.as_ref() {
                     let size = radius * 3.2;
                     let rot = get_time() as f32 * 8.0;
@@ -684,11 +711,12 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
                 draw_circle(pos.x, pos.y, radius * 0.4, WHITE);
                 return;
             }
-            // Святой Молот: небесный молот
-            crate::ecs::components::inventory::WeaponType::HolyHammer => {
+            // Святой Молот: сияющий золотой молот паладинов
+            crate::ecs::components::inventory::WeaponType::HolyHammer | crate::ecs::components::inventory::WeaponType::DivineShield => {
                 if let Some(tex) = textures.proj_holy.as_ref() {
                     let rot = get_time() as f32 * 12.0;
-                    let size = radius * 3.0;
+                    let size = radius * 3.2;
+                    draw_circle(pos.x, pos.y, radius * 1.15, Color::new(1.0, 0.88, 0.3, 0.35));
                     draw_texture_ex(
                         tex,
                         pos.x - size / 2.0,
@@ -706,10 +734,11 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
                 let rot_time = get_time() as f32 * 12.0;
                 let h_dir = Vec2::new(rot_time.cos(), rot_time.sin());
                 let h_norm = Vec2::new(-h_dir.y, h_dir.x);
-                draw_line(pos.x - h_dir.x * 14.0, pos.y - h_dir.y * 14.0, pos.x + h_dir.x * 10.0, pos.y + h_dir.y * 10.0, 4.0, Color::new(0.55, 0.38, 0.18, 1.0));
-                let head_c = pos + h_dir * 10.0;
-                draw_line(head_c.x - h_norm.x * 12.0, head_c.y - h_norm.y * 12.0, head_c.x + h_norm.x * 12.0, head_c.y + h_norm.y * 12.0, 8.0, GOLD);
-                draw_circle(head_c.x, head_c.y, 5.0, WHITE);
+                draw_circle(pos.x, pos.y, radius * 1.1, Color::new(1.0, 0.85, 0.2, 0.35));
+                draw_line(pos.x - h_dir.x * 12.0, pos.y - h_dir.y * 12.0, pos.x + h_dir.x * 6.0, pos.y + h_dir.y * 6.0, 3.5, Color::new(0.6, 0.4, 0.2, 1.0));
+                let head_c = pos + h_dir * 8.0;
+                draw_line(head_c.x - h_norm.x * 10.0, head_c.y - h_norm.y * 10.0, head_c.x + h_norm.x * 10.0, head_c.y + h_norm.y * 10.0, 7.0, GOLD);
+                draw_circle(head_c.x, head_c.y, 3.5, WHITE);
                 return;
             }
             // Ледяные Осколки: ограненные кристаллы льда
@@ -841,6 +870,38 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
                     );
                     return;
                 }
+            }
+            // Рой Микроракет и Осада Судного Дня: скоростные ракеты с реактивным следом
+            crate::ecs::components::inventory::WeaponType::MissileSwarm | crate::ecs::components::inventory::WeaponType::DoomsdayBarrage => {
+                let m_len = radius * 2.2;
+                let m_w = radius * 0.75;
+                let flame_len = radius * 2.2 + (get_time() as f32 * 25.0).sin() * 4.0;
+                draw_line(pos.x, pos.y, pos.x - dir.x * flame_len, pos.y - dir.y * flame_len, 3.5, ORANGE);
+                draw_line(pos.x, pos.y, pos.x - dir.x * (flame_len * 0.6), pos.y - dir.y * (flame_len * 0.6), 2.0, YELLOW);
+                let tip = pos + dir * m_len;
+                let back_l = pos - dir * (m_len * 0.5) + norm * m_w;
+                let back_r = pos - dir * (m_len * 0.5) - norm * m_w;
+                draw_triangle(tip, back_l, back_r, Color::new(0.35, 0.38, 0.45, 1.0));
+                let warhead = pos + dir * (m_len * 0.5);
+                draw_triangle(tip, warhead + norm * (m_w * 0.8), warhead - norm * (m_w * 0.8), RED);
+                return;
+            }
+            // Черная дыра и Горизонт событий: гравитационная червоточина
+            crate::ecs::components::inventory::WeaponType::SingularityOrb | crate::ecs::components::inventory::WeaponType::EventHorizon => {
+                let pulse = (get_time() as f32 * 10.0).sin() * 2.5;
+                draw_circle(pos.x, pos.y, radius * 1.35 + pulse, Color::new(0.45, 0.05, 0.7, 0.35));
+                draw_circle_lines(pos.x, pos.y, radius * 1.2, 2.0, Color::new(0.85, 0.4, 1.0, 0.85));
+                draw_circle(pos.x, pos.y, radius * 0.85, BLACK);
+                draw_circle_lines(pos.x, pos.y, radius * 0.6, 1.5, WHITE);
+                return;
+            }
+            // Кровавый Гиперлуч и Инфернальный Катаклизм: плазменные лучи
+            crate::ecs::components::inventory::WeaponType::BrimstoneRay | crate::ecs::components::inventory::WeaponType::InfernalCataclysm => {
+                let ray_len = radius * 2.8;
+                draw_line(pos.x - dir.x * ray_len, pos.y - dir.y * ray_len, pos.x + dir.x * ray_len, pos.y + dir.y * ray_len, radius * 1.2, Color::new(0.9, 0.15, 0.1, 0.85));
+                draw_line(pos.x - dir.x * ray_len, pos.y - dir.y * ray_len, pos.x + dir.x * ray_len, pos.y + dir.y * ray_len, radius * 0.5, Color::new(1.0, 0.8, 0.2, 1.0));
+                draw_circle(pos.x, pos.y, radius * 0.85, WHITE);
+                return;
             }
             _ => {}
         }

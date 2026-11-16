@@ -153,6 +153,10 @@ async fn main() {
             spawn_squad_perimeter(&mut world, 6);
             spawn_squad_perimeter(&mut world, 7);
             spawn_squad_perimeter(&mut world, 8);
+
+            // Спавним отряды в радиусе слышимости джаза (240-320px) для демонстрации подтанцовки
+            crate::content::mobs::spawn_squad_at_dist(&mut world, 1, 230.0);
+            crate::content::mobs::spawn_squad_at_dist(&mut world, 2, 310.0);
         }
 
         // Переключение звука по M
@@ -262,6 +266,7 @@ async fn main() {
             update_movement(&mut world, dt);
             update_combat(&mut world, dt);
             audio.process_events(&mut world);
+            audio.update_spatial_music(cam_pos, world.boss_pos);
         }
 
         // 5. Отрисовка мира через камеру
