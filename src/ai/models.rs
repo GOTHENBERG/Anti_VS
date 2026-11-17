@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
+use crate::ecs::components::inventory::{PassiveType, WeaponType};
 
 /// Версия формата фитнеса/архитектуры. Старые модели нельзя сравнивать с новыми:
 /// их fitness измерялся другой формулой, поэтому при загрузке он инвалидируется.
-pub const MODEL_FORMAT_VERSION: u32 = 3;
+pub const MODEL_FORMAT_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BossModel {
@@ -16,7 +17,7 @@ pub struct BossModel {
     pub avg_survival_time: f32,
     pub total_synapses: usize,
 
-    // Полносвязная глубокая нейросеть (150 сенсоров -> 64 -> 48 -> 7 выходов)
+    // Полносвязная глубокая нейросеть (154 сенсора -> 64 -> 48 -> 7 выходов)
     #[serde(default)]
     pub neural_net: Option<crate::ai::neural_net::NeuralNet>,
 
@@ -32,11 +33,11 @@ pub struct BossModel {
     pub retreat_hp_threshold: f32,      // Порог здоровья для панического отступления (0.20 - 0.45)
     pub sniper_engage_min_count: usize, // Сколько стрелков триггерят анти-снайперский натиск (1 - 4)
 
-    // Приоритеты выбора оружия при Level-Up (10 оружий)
+    // Приоритеты выбора оружия при Level-Up (20 базовых семейств)
     #[serde(default = "default_weapon_priorities")]
     pub weapon_priorities: Vec<f32>,
 
-    // Приоритеты выбора пассивок при Level-Up (28 пассивок и реликвий)
+    // Приоритеты выбора пассивок при Level-Up (29 пассивок и реликвий)
     #[serde(default = "default_passive_priorities")]
     pub passive_priorities: Vec<f32>,
 
@@ -59,6 +60,37 @@ pub fn default_combo_archetype_weights() -> Vec<f32> {
     vec![1.5, 1.5, 1.5, 1.5, 1.5, 1.5]
 }
 
+/// Семантические семейства для выбора сборки Босса и наблюдений Директора.
+/// Общая таблица не даёт сенсорам и политике выбора перков разойтись.
+pub fn weapon_archetypes(kind: WeaponType) -> &'static [usize] {
+    match kind {
+        WeaponType::FireAura | WeaponType::Hellfire | WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => &[0],
+        WeaponType::BrimstoneRay | WeaponType::InfernalCataclysm => &[0, 3],
+        WeaponType::ThunderOrb | WeaponType::ThunderstormWrath | WeaponType::ChainLightning | WeaponType::StormGodWrath | WeaponType::ChainFrost | WeaponType::AbsoluteZero => &[1],
+        WeaponType::HolyHammer | WeaponType::DivineShield | WeaponType::AegisOrbiters | WeaponType::InvincibleBastion | WeaponType::WindBlade | WeaponType::BladeStorm => &[2],
+        WeaponType::MagicWand | WeaponType::DeathRay | WeaponType::SingularityOrb | WeaponType::EventHorizon | WeaponType::VoidRift | WeaponType::SingularityCollapse => &[3],
+        WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver | WeaponType::BloodDaggers | WeaponType::BloodHarvest | WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => &[4],
+        WeaponType::CelestialBow | WeaponType::StarfallBarrage | WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage | WeaponType::DivineBell | WeaponType::CathedralAura | WeaponType::SoulPhantoms | WeaponType::BansheeWail => &[5],
+        WeaponType::IceShards | WeaponType::BlizzardStorm => &[1, 2],
+    }
+}
+
+pub fn passive_archetypes(kind: PassiveType) -> &'static [usize] {
+    match kind {
+        PassiveType::Pyromaniac | PassiveType::BloodStone | PassiveType::SolarRelic => &[0],
+        PassiveType::TeslaCoil | PassiveType::StaticCore | PassiveType::UkuleleResonance | PassiveType::ChronoHourglass => &[1],
+        PassiveType::LightArmor | PassiveType::TitanAegis | PassiveType::ImmortalAegis | PassiveType::SiegeMortar => &[2],
+        PassiveType::ColossalEye | PassiveType::CooldownTome | PassiveType::PrismaticFocus | PassiveType::ArchmageShard => &[3],
+        PassiveType::OctarineCore | PassiveType::SoulHarvester | PassiveType::CorrosiveFlask => &[4],
+        PassiveType::EagleScope | PassiveType::BlessedHeart | PassiveType::DivinityAura | PassiveType::SpeedGloves => &[5],
+        PassiveType::GiantHeart | PassiveType::SporeMushroom => &[0, 2],
+        PassiveType::CloverOfFate | PassiveType::FateWeaver => &[1, 4],
+        PassiveType::DivineRapier => &[4, 5],
+        PassiveType::FrostRing => &[1, 2],
+        PassiveType::MagnetSphere => &[3, 4],
+    }
+}
+
 pub fn default_synergy_seeking_weight() -> f32 {
     1.6
 }
@@ -74,6 +106,7 @@ pub fn default_passive_priorities() -> Vec<f32> {
     vec![
         1.3, 1.5, 1.4, 1.4, 1.2, 1.2, 1.5, 1.3, 1.3, 1.4, 1.5, 1.6, 1.4, 1.5, // 1..14 (Базовые пассивки)
         1.8, 1.7, 1.6, 1.8, 2.0, 1.6, 1.5, 1.7, 1.6, 1.6, 1.7, 1.5, 1.6, 1.7, // 15..28 (Легендарные реликвии)
+        1.6, // 29: Споровый Мицелий
     ]
 }
 
@@ -89,7 +122,7 @@ impl Default for BossModel {
         let net = crate::ai::neural_net::NeuralNet::new();
         let synapses = net.total_synapses();
         Self {
-            version: "v3.0-end-to-end".to_string(),
+            version: "v4.0-coevolution".to_string(),
             model_version: MODEL_FORMAT_VERSION,
             fitness_version: MODEL_FORMAT_VERSION,
             generation: 0,
@@ -124,7 +157,7 @@ pub struct DirectorModel {
     pub fitness: f32,
     pub avg_boss_kill_time: f32,
 
-    // Глубокая многоголовая нейросеть Директора (132 -> 64 -> 48, 3 головы)
+    // Глубокая многоголовая нейросеть Директора (139 -> 64 -> 48, 3 головы)
     #[serde(default)]
     pub neural_net: Option<crate::ai::neural_net::DirectorBrainNet>,
     #[serde(default)]
@@ -144,7 +177,7 @@ impl Default for DirectorModel {
         let net = crate::ai::neural_net::DirectorBrainNet::new();
         let synapses = net.total_synapses();
         Self {
-            version: "v3.0-end-to-end".to_string(),
+            version: "v4.0-coevolution".to_string(),
             model_version: MODEL_FORMAT_VERSION,
             fitness_version: MODEL_FORMAT_VERSION,
             generation: 0,

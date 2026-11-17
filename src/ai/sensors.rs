@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use crate::content::structures::BLOOD_ALTAR_COST;
+use crate::content::structures::{can_place_blood_altar, BLOOD_ALTAR_COST};
 use crate::ecs::components::combat::Faction;
 use crate::ecs::components::inventory::{WeaponType, PassiveType};
 use crate::ecs::world::World;
@@ -25,7 +25,7 @@ fn boss_cell_of(dx: f32, dy: f32) -> Option<(usize, usize)> {
 }
 
 /// ============================================================================
-/// СЕНСОРЫ БОССА — 150 входов
+/// СЕНСОРЫ БОССА — 154 входа
 /// ============================================================================
 /// [0..100]   4 канала × сетка 5×5 (ячейка 100 px, охват 500×500 px):
 ///            канал 0 — мобы, канал 1 — снаряды Директора,
@@ -39,6 +39,7 @@ fn boss_cell_of(dx: f32, dy: f32) -> Option<(usize, usize)> {
 ///            мобы в 160 px, стрелки в 400 px, элиты в 500 px.
 /// [135..150] Цели: ближайший алтарь (вектор, HP, ETA), магнит, кристалл душ,
 ///            флаг атаки алтаря, время матча, недавний урон, дистанция до элиты.
+/// [150..154] Урон от окружения, длительность/сила яда, дистанция промаха снаряда.
 ///
 /// Ключевое отличие от старой версии: типы угроз больше не смешаны в один
 /// скаляр, у снарядов есть time-to-impact, а собственные ресурсы Босса
@@ -242,19 +243,28 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     // --- 5. Агрегаты угроз [130..135] ---
     let mut best_tti = f32::MAX;
     let mut best_lateral = 0.0f32;
+    let mut best_miss_distance = f32::MAX;
     for proj in &world.projectiles {
         if proj.faction != Faction::Director || proj.lifetime <= 0.0 || proj.pierce == 0 {
             continue;
         }
-        let diff = boss_pos - proj.pos;
-        let dist = diff.length();
-        let speed = proj.vel.length().max(1.0);
-        let tti = dist / speed;
-        if tti < best_tti {
-            best_tti = tti;
-            let dir = proj.vel / speed;
-            let lateral = dir.x * diff.y - dir.y * diff.x;
-            best_lateral = (lateral / dist.max(20.0)).clamp(-1.0, 1.0);
+        let relative_pos = proj.pos - boss_pos;
+        let relative_vel = proj.vel - world.boss_vel;
+        let relative_speed_sq = relative_vel.length_squared();
+        if relative_speed_sq <= 1.0 {
+            continue;
+        }
+
+        let t_closest = (-relative_pos.dot(relative_vel) / relative_speed_sq)
+            .clamp(0.0, proj.lifetime.max(0.0).min(3.0));
+        let closest_offset = relative_pos + relative_vel * t_closest;
+        let miss_distance = closest_offset.length();
+        let danger_radius = 60.0 + proj.radius.max(0.0);
+        if miss_distance <= danger_radius && t_closest < best_tti {
+            best_tti = t_closest;
+            best_miss_distance = miss_distance;
+            let lateral = relative_vel.x * relative_pos.y - relative_vel.y * relative_pos.x;
+            best_lateral = (lateral / relative_pos.length().max(20.0)).clamp(-1.0, 1.0);
         }
     }
     obs[130] = if best_tti.is_finite() {
@@ -340,14 +350,34 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     } else {
         1.0
     };
+    obs[150] = (world.boss_inventory.damage_stats.hazard_recent / 200.0).clamp(0.0, 1.0);
+    obs[151] = (world.boss_poison_timer / 5.0).clamp(0.0, 1.0);
+    obs[152] = (world.boss_poison_dps / 200.0).clamp(0.0, 1.0);
+    obs[153] = if best_miss_distance.is_finite() {
+        (best_miss_distance / 160.0).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
 
     obs
 }
 
 /// ============================================================================
-/// СЕНСОРЫ ДИРЕКТОРА — 132 входа
+/// СЕНСОРЫ ДИРЕКТОРА — 139 входов
 /// ============================================================================
 pub const DIRECTOR_INPUT_SIZE: usize = crate::ai::neural_net::DIRECTOR_INPUT_SIZE;
+pub const DIRECTOR_ALTAR_SLOT_COUNT: usize = 25;
+
+/// Legal slots are shared by the observation and the action mask so the
+/// Director never trains against a position rule different from execution.
+pub fn director_altar_slot_mask(world: &World) -> [bool; DIRECTOR_ALTAR_SLOT_COUNT] {
+    std::array::from_fn(|slot| {
+        can_place_blood_altar(
+            world,
+            crate::ai::neural_net::DirectorBrainNet::altar_slot_position(slot),
+        )
+    })
+}
 
 /// Преобразует тип оружия Босса в фиксированный индекс [0..39]
 pub fn weapon_type_to_index(w: WeaponType) -> usize {
@@ -395,7 +425,7 @@ pub fn weapon_type_to_index(w: WeaponType) -> usize {
     }
 }
 
-/// Преобразует тип пассивки/реликвии Босса в фиксированный индекс [0..27]
+/// Преобразует тип пассивки/реликвии Босса в фиксированный индекс [0..28]
 pub fn passive_type_to_index(p: PassiveType) -> usize {
     match p {
         PassiveType::SpeedGloves => 0,
@@ -430,7 +460,7 @@ pub fn passive_type_to_index(p: PassiveType) -> usize {
     }
 }
 
-/// 132-мерный вектор Директора.
+/// 139-мерный вектор Директора.
 ///
 /// [0..9]     кинематика Босса
 /// [9..18]    HP/XP/уровень/действия Босса
@@ -442,6 +472,8 @@ pub fn passive_type_to_index(p: PassiveType) -> usize {
 /// [88..104]  агрегаты арсенала Босса вместо 40 разреженных уровней
 /// [104..112] агрегаты пассивок Босса вместо 28 разреженных уровней
 /// [112..132] тактические признаки: доступность действий, давление, цели
+/// [132..138] присутствие шести семантических архетипов оружия/пассивок
+/// [138]       доля свободных слотов для Алтарей Крови
 pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRECTOR_INPUT_SIZE] {
     let mut obs = [0.0f32; DIRECTOR_INPUT_SIZE];
     let boss_pos = world.boss_pos;
@@ -639,7 +671,7 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     let mut levels = [0.0f32; 8];
     let mut type_levels = [0.0f32; 5]; // Physical, Fire, Ice, Poison, Holy
     let mut true_levels = 0.0f32;
-    let mut archetype_mask = 0u8;
+    let mut archetype_counts = [0usize; 6];
 
     for w in &world.boss_inventory.weapons {
         weapon_count += 1;
@@ -661,7 +693,14 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
             crate::ecs::components::combat::DamageType::Holy => type_levels[4] += v,
             crate::ecs::components::combat::DamageType::True => true_levels += v,
         }
-        archetype_mask |= 1 << (weapon_type_to_index(w.kind) % 6);
+        for &archetype in crate::ai::models::weapon_archetypes(w.kind) {
+            archetype_counts[archetype] += 1;
+        }
+    }
+    for p in &world.boss_inventory.passives {
+        for &archetype in crate::ai::models::passive_archetypes(p.kind) {
+            archetype_counts[archetype] += 1;
+        }
     }
 
     if weapon_count > 0 {
@@ -688,7 +727,11 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     obs[100] = (type_levels[4] / 20.0).clamp(0.0, 1.5); // Holy
     obs[101] = (type_levels[0] / 20.0).clamp(0.0, 1.5); // Physical
     obs[102] = (true_levels / 20.0).clamp(0.0, 1.5);
-    obs[103] = (archetype_mask.count_ones() as f32 / 6.0).clamp(0.0, 1.0);
+    obs[103] = (archetype_counts.iter().filter(|&&count| count > 0).count() as f32 / 6.0)
+        .clamp(0.0, 1.0);
+    for (i, count) in archetype_counts.iter().enumerate() {
+        obs[132 + i] = if *count > 0 { 1.0 } else { 0.0 };
+    }
 
     // 8. [104..112] Агрегаты пассивок
     let mut passive_count = 0usize;
@@ -725,11 +768,16 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
             | PassiveType::UkuleleResonance => off_levels += lvl,
             _ => util_levels += lvl,
         }
-        if crate::ecs::components::inventory::BossInventory::get_evolution_passive_for_weapon(
-            world.boss_inventory.weapons.first().map(|w| w.kind).unwrap_or(WeaponType::WindBlade),
-        ) == Some(p.kind)
+    }
+    for weapon in &world.boss_inventory.weapons {
+        if let Some(needed_passive) =
+            crate::ecs::components::inventory::BossInventory::get_evolution_passive_for_weapon(
+                weapon.kind,
+            )
         {
-            evolution_pairs += 1;
+            if world.boss_inventory.passives.iter().any(|p| p.kind == needed_passive) {
+                evolution_pairs += 1;
+            }
         }
     }
     let avg_passive = if passive_count > 0 {
@@ -815,6 +863,10 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     obs[129] = boss_to_altar;
     obs[130] = boss_to_center.clamp(0.0, 1.0);
     obs[131] = (director_spent / 100000.0).clamp(0.0, 1.0);
+    let valid_altar_slots = director_altar_slot_mask(world);
+    obs[138] = (valid_altar_slots.iter().filter(|&&valid| valid).count() as f32
+        / DIRECTOR_ALTAR_SLOT_COUNT as f32)
+        .clamp(0.0, 1.0);
 
     obs
 }

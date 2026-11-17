@@ -2,7 +2,8 @@ use macroquad::prelude::*;
 use crate::core::rand;
 use crate::core::math::{calculate_attract_force, calculate_repel_force};
 use crate::ai::neural_net::{
-    OUT_DASH, OUT_DASH_X, OUT_DASH_Y, OUT_MOVE_MAG, OUT_MOVE_X, OUT_MOVE_Y, OUT_REST,
+    BOSS_DECISION_INTERVAL, OUT_DASH, OUT_DASH_X, OUT_DASH_Y, OUT_MOVE_MAG, OUT_MOVE_X,
+    OUT_MOVE_Y, OUT_REST,
 };
 use crate::ecs::components::inventory::{
     BossInventory, PassiveType, PerkChoice, WeaponType, MAX_PASSIVE_LEVEL, MAX_PASSIVE_SLOTS,
@@ -30,35 +31,55 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
 
     let (desired_vel, should_dash, dash_dir) = if let Some(ref model) = world.boss_model {
         if let Some(ref net) = model.neural_net {
-            // --- 100% ЧИСТЫЙ END-TO-END REINFORCEMENT LEARNING ---
-            // Никаких вспомогательных сил, потенциальных полей или эвристических триггеров!
-            // Вся кинематика движения и триггер рывка определяются исключительно прямым проходом через синапсы нейросети.
-            let obs = crate::ai::sensors::extract_boss_observations(world);
-            let nn_out = net.forward(&obs);
-            let move_intent = Vec2::new(nn_out[OUT_MOVE_X], nn_out[OUT_MOVE_Y]);
-            let move_mag = nn_out[OUT_MOVE_MAG].clamp(0.0, 1.0);
-            let rest = nn_out[OUT_REST] > 0.5;
+            // Inference cadence matches the 5 Hz headless training simulation.
+            world.boss_policy_think_timer += dt;
+            if !world.boss_policy_has_cached_action
+                || world.boss_policy_think_timer >= BOSS_DECISION_INTERVAL
+            {
+                world.boss_policy_think_timer = 0.0;
+                let obs = crate::ai::sensors::extract_boss_observations(world);
+                let nn_out = net.forward(&obs);
+                let move_intent = Vec2::new(nn_out[OUT_MOVE_X], nn_out[OUT_MOVE_Y]);
+                let move_mag = nn_out[OUT_MOVE_MAG].clamp(0.0, 1.0);
+                let rest = nn_out[OUT_REST] > 0.5;
+                let move_dir = if move_intent.length_squared() > 0.0025 {
+                    move_intent.normalize()
+                } else {
+                    Vec2::ZERO
+                };
+                let max_speed = world.boss_inventory.get_movement_speed(160.0);
+
+                let velocity = if !rest {
+                    move_dir * max_speed * move_mag
+                } else {
+                    Vec2::ZERO
+                };
+                let dash_raw = Vec2::new(nn_out[OUT_DASH_X], nn_out[OUT_DASH_Y]);
+                world.boss_policy_move_dir = move_dir;
+                world.boss_policy_move_mag = move_mag;
+                world.boss_policy_dash = nn_out[OUT_DASH] > 0.5;
+                world.boss_policy_dash_dir = if dash_raw.length_squared() > 0.04 {
+                    dash_raw.normalize()
+                } else if velocity.length_squared() > 1.0 {
+                    move_dir
+                } else {
+                    Vec2::X
+                };
+                world.boss_policy_rest = rest;
+                world.boss_policy_has_cached_action = true;
+            }
+
             let max_speed = world.boss_inventory.get_movement_speed(160.0);
-
-            // Непрерывная скорость: направление задаёт вектор, темп — отдельный выход.
-            // Канал REST позволяет осознанно замереть (медитация/позиционирование).
-            let (vel, d_dir) = if !rest && move_intent.length_squared() > 0.0025 {
-                let dir = move_intent.normalize();
-                (dir * max_speed * move_mag, dir)
+            let desired_velocity = if world.boss_policy_rest {
+                Vec2::ZERO
             } else {
-                (Vec2::ZERO, Vec2::X)
+                world.boss_policy_move_dir * max_speed * world.boss_policy_move_mag
             };
-
-            let dash = nn_out[OUT_DASH] > 0.5 && world.boss_dash_cooldown <= 0.0;
-            let dash_raw = Vec2::new(nn_out[OUT_DASH_X], nn_out[OUT_DASH_Y]);
-            let dash_dir = if dash_raw.length_squared() > 0.04 {
-                dash_raw.normalize()
-            } else if vel.length_squared() > 1.0 {
-                d_dir
-            } else {
-                Vec2::X
-            };
-            (vel, dash, dash_dir)
+            (
+                desired_velocity,
+                world.boss_policy_dash && world.boss_dash_cooldown <= 0.0,
+                world.boss_policy_dash_dir,
+            )
         } else {
             compute_heuristic_movement(world, boss_pos, map_w, map_h, model)
         }
@@ -265,36 +286,6 @@ fn get_passive_index(kind: PassiveType) -> usize {
     }
 }
 
-fn get_weapon_archetypes(kind: WeaponType) -> &'static [usize] {
-    match kind {
-        WeaponType::FireAura | WeaponType::Hellfire | WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => &[0],
-        WeaponType::BrimstoneRay | WeaponType::InfernalCataclysm => &[0, 3],
-        WeaponType::ThunderOrb | WeaponType::ThunderstormWrath | WeaponType::ChainLightning | WeaponType::StormGodWrath | WeaponType::ChainFrost | WeaponType::AbsoluteZero => &[1],
-        WeaponType::HolyHammer | WeaponType::DivineShield | WeaponType::AegisOrbiters | WeaponType::InvincibleBastion | WeaponType::WindBlade | WeaponType::BladeStorm => &[2],
-        WeaponType::MagicWand | WeaponType::DeathRay | WeaponType::SingularityOrb | WeaponType::EventHorizon | WeaponType::VoidRift | WeaponType::SingularityCollapse => &[3],
-        WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver | WeaponType::BloodDaggers | WeaponType::BloodHarvest | WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => &[4],
-        WeaponType::CelestialBow | WeaponType::StarfallBarrage | WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage | WeaponType::DivineBell | WeaponType::CathedralAura | WeaponType::SoulPhantoms | WeaponType::BansheeWail => &[5],
-        WeaponType::IceShards | WeaponType::BlizzardStorm => &[1, 2],
-    }
-}
-
-fn get_passive_archetypes(kind: PassiveType) -> &'static [usize] {
-    match kind {
-        PassiveType::Pyromaniac | PassiveType::BloodStone | PassiveType::SolarRelic => &[0],
-        PassiveType::TeslaCoil | PassiveType::StaticCore | PassiveType::UkuleleResonance | PassiveType::ChronoHourglass => &[1],
-        PassiveType::LightArmor | PassiveType::TitanAegis | PassiveType::ImmortalAegis | PassiveType::SiegeMortar => &[2],
-        PassiveType::ColossalEye | PassiveType::CooldownTome | PassiveType::PrismaticFocus | PassiveType::ArchmageShard => &[3],
-        PassiveType::OctarineCore | PassiveType::SoulHarvester | PassiveType::CorrosiveFlask => &[4],
-        PassiveType::EagleScope | PassiveType::BlessedHeart | PassiveType::DivinityAura | PassiveType::SpeedGloves => &[5],
-        PassiveType::GiantHeart => &[0, 2],
-        PassiveType::SporeMushroom => &[0, 2],
-        PassiveType::CloverOfFate | PassiveType::FateWeaver => &[1, 4],
-        PassiveType::DivineRapier => &[4, 5],
-        PassiveType::FrostRing => &[1, 2],
-        PassiveType::MagnetSphere => &[3, 4],
-    }
-}
-
 fn evaluate_perk_choice(
     choice: &PerkChoice,
     inventory: &BossInventory,
@@ -308,12 +299,12 @@ fn evaluate_perk_choice(
 
     let mut archetype_counts = [0usize; 6];
     for w in &inventory.weapons {
-        for &a in get_weapon_archetypes(w.kind) {
+        for &a in crate::ai::models::weapon_archetypes(w.kind) {
             archetype_counts[a] += 1;
         }
     }
     for p in &inventory.passives {
-        for &a in get_passive_archetypes(p.kind) {
+        for &a in crate::ai::models::passive_archetypes(p.kind) {
             archetype_counts[a] += 1;
         }
     }
@@ -321,7 +312,7 @@ fn evaluate_perk_choice(
     match choice {
         PerkChoice::EvolveWeapon { from: _, to } => {
             score += 380.0 * synergy_seeking;
-            for &a in get_weapon_archetypes(*to) {
+            for &a in crate::ai::models::weapon_archetypes(*to) {
                 let weight = archetype_weights.get(a).copied().unwrap_or(1.0);
                 score += weight * 60.0;
             }
@@ -339,7 +330,7 @@ fn evaluate_perk_choice(
                 }
             }
 
-            for &a in get_weapon_archetypes(*kind) {
+            for &a in crate::ai::models::weapon_archetypes(*kind) {
                 let weight = archetype_weights.get(a).copied().unwrap_or(1.0);
                 let count = archetype_counts[a];
                 score += weight * (25.0 + count as f32 * 40.0) * synergy_seeking;
@@ -362,7 +353,7 @@ fn evaluate_perk_choice(
                 }
             }
 
-            for &a in get_passive_archetypes(*kind) {
+            for &a in crate::ai::models::passive_archetypes(*kind) {
                 let weight = archetype_weights.get(a).copied().unwrap_or(1.0);
                 let count = archetype_counts[a];
                 score += weight * (25.0 + count as f32 * 40.0) * synergy_seeking;

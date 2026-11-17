@@ -354,7 +354,9 @@ pub fn run_co_evolutionary_training(
     round_duration: Option<f32>,
 ) {
     let generations = generations.max(1);
-    let population_size = population_size.max(2);
+    // Два элита занимают всю популяцию; при размере 2 следующие поколения
+    // не получают потомков и перестают исследовать новые политики.
+    let population_size = population_size.max(3);
     let duration_info = match round_duration {
         Some(d) => format!("ФИКСИРОВАННЫЙ ({:.0} сек / {:.1} мин)", d, d / 60.0),
         None => format!("Curriculum (300с -> 1020с)"),
@@ -820,7 +822,8 @@ pub fn run_co_evolutionary_training(
 
         append_to_history_log(&round_log);
 
-        // 4. Селекция: элита + турнир + кроссовер + мутация + weight decay
+        // 4. Селекция: элита + турнир; нейросеть клонируется и мутирует,
+        //    скалярные генетические приоритеты смешиваются и мутируют.
         let mut next_boss_pop = vec![boss_pop[0].clone(), boss_pop[1].clone()];
         let boss_fitness: Vec<f32> = boss_pop.iter().map(|m| m.fitness).collect();
 
@@ -831,8 +834,10 @@ pub fn run_co_evolutionary_training(
             let p2 = &boss_pop[p2_idx];
             let mut child = p1.clone();
 
-            if let (Some(net1), Some(net2)) = (&p1.neural_net, &p2.neural_net) {
-                let mut child_net = net1.crossover(net2);
+            if let Some(net1) = &p1.neural_net {
+                // Сохранение скрытых нейронов одного родителя избегает
+                // покомпонентного скрещивания несогласованных нейронных признаков.
+                let mut child_net = net1.clone();
                 child_net.mutate(0.08, boss_sigma);
                 child_net.decay(0.002);
                 child.total_synapses = child_net.total_synapses();
@@ -885,12 +890,13 @@ pub fn run_co_evolutionary_training(
             let p2 = &director_pop[p2_idx];
             let mut child = p1.clone();
 
-            if let (Some(net1), Some(net2)) = (&p1.neural_net, &p2.neural_net) {
-                let mut crossed_net = net1.crossover(net2);
-                crossed_net.mutate(0.08, director_sigma);
-                crossed_net.decay(0.002);
-                child.total_synapses = crossed_net.total_synapses();
-                child.neural_net = Some(crossed_net);
+            if let Some(net1) = &p1.neural_net {
+                // Сохраняем выученную структуру скрытых нейронов родителя p1.
+                let mut child_net = net1.clone();
+                child_net.mutate(0.08, director_sigma);
+                child_net.decay(0.002);
+                child.total_synapses = child_net.total_synapses();
+                child.neural_net = Some(child_net);
             } else {
                 let mut net = crate::ai::neural_net::DirectorBrainNet::new();
                 net.mutate(0.10, director_sigma);
@@ -957,7 +963,7 @@ fn save_models(
     let mut boss_out = boss.clone();
     boss_out.model_version = MODEL_FORMAT_VERSION;
     boss_out.fitness_version = MODEL_FORMAT_VERSION;
-    boss_out.version = format!("v{}.0-end-to-end", MODEL_FORMAT_VERSION);
+    boss_out.version = format!("v{}.0-coevolution", MODEL_FORMAT_VERSION);
     if let Some(ref net) = boss_out.neural_net {
         boss_out.total_synapses = net.total_synapses();
     }
@@ -965,7 +971,7 @@ fn save_models(
     let mut director_out = director.clone();
     director_out.model_version = MODEL_FORMAT_VERSION;
     director_out.fitness_version = MODEL_FORMAT_VERSION;
-    director_out.version = format!("v{}.0-end-to-end", MODEL_FORMAT_VERSION);
+    director_out.version = format!("v{}.0-coevolution", MODEL_FORMAT_VERSION);
     if let Some(ref net) = director_out.neural_net {
         director_out.total_synapses = net.total_synapses();
     }

@@ -833,7 +833,7 @@ pub fn render_ui(
             let ai_str = if let Some(ref model) = world.boss_model {
                 let syn = model.total_synapses;
                 let desc = if syn > 0 {
-                    format!("🧠 ИИ: Глубокая нейросеть ({} синапсов, 36 сенсоров, Пок. {})", syn, model.generation)
+                    format!("🧠 ИИ: Глубокая нейросеть ({} параметров, 154 сенсора, Пок. {})", syn, model.generation)
                 } else {
                     format!("🧠 ИИ: Обученная модель (Поколение {}, Фитнес {:.0})", model.generation, model.fitness)
                 };

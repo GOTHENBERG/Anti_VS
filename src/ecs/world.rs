@@ -150,6 +150,13 @@ pub struct World {
     pub boss_inventory: BossInventory,
     pub boss_dash_cooldown: f32,
     pub boss_invulnerable_timer: f32,
+    pub boss_policy_think_timer: f32,
+    pub boss_policy_has_cached_action: bool,
+    pub boss_policy_move_dir: Vec2,
+    pub boss_policy_move_mag: f32,
+    pub boss_policy_dash: bool,
+    pub boss_policy_dash_dir: Vec2,
+    pub boss_policy_rest: bool,
     pub boss_still_time: f32, // Время стояния на месте (для медитации)
     pub boss_damage_taken_timer: f32, // Кулдаун после получения урона (3 сек блокирует медитацию)
     pub boss_mushroom_still_time: f32, // Время стояния для регенерации от Спорового Мицелия
@@ -211,6 +218,13 @@ impl World {
             boss_inventory: BossInventory::new(),
             boss_dash_cooldown: 0.0,
             boss_invulnerable_timer: 0.0,
+            boss_policy_think_timer: 0.0,
+            boss_policy_has_cached_action: false,
+            boss_policy_move_dir: Vec2::ZERO,
+            boss_policy_move_mag: 0.0,
+            boss_policy_dash: false,
+            boss_policy_dash_dir: Vec2::X,
+            boss_policy_rest: false,
             boss_still_time: 0.0,
             boss_damage_taken_timer: 0.0,
             boss_mushroom_still_time: 0.0,

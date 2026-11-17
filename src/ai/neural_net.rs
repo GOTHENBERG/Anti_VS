@@ -2,12 +2,13 @@ use crate::core::rand;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
-// БОСС: 150 сенсоров -> 64 -> 48 -> 7 действий
+// БОСС: 154 сенсора -> 64 -> 48 -> 7 действий
 // ============================================================================
-pub const INPUT_SIZE: usize = 150;
+pub const INPUT_SIZE: usize = 154;
 pub const HIDDEN1_SIZE: usize = 64;
 pub const HIDDEN2_SIZE: usize = 48;
 pub const OUTPUT_SIZE: usize = 7;
+pub const BOSS_DECISION_INTERVAL: f32 = 0.2;
 
 // Семантика выходов Босса:
 // [0..2]  направление движения (tanh)
@@ -24,7 +25,7 @@ pub const OUT_DASH_Y: usize = 5;
 pub const OUT_REST: usize = 6;
 
 /// Полносвязная глубокая нейронная сеть (Deep MLP)
-/// Архитектура: 150 сенсорных входов -> 64 (Leaky ReLU) -> 48 (Leaky ReLU) -> 7 выходов.
+/// Архитектура: 154 сенсорных входа -> 64 (Leaky ReLU) -> 48 (Leaky ReLU) -> 7 выходов.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NeuralNet {
     pub input_size: usize,
@@ -32,7 +33,7 @@ pub struct NeuralNet {
     pub hidden2_size: usize,
     pub output_size: usize,
 
-    // Слой 1: 150 -> 64
+    // Слой 1: 154 -> 64
     pub w1: Vec<Vec<f32>>,
     pub b1: Vec<f32>,
 
@@ -83,6 +84,35 @@ impl NeuralNet {
 
     /// Проверяет, что размеры матриц соответствуют текущей архитектуре.
     /// Нужно для безопасной загрузки старых/битых JSON-моделей.
+    pub fn upgrade_input_schema(&mut self) -> bool {
+        let old_input = self.input_size;
+        let old_shape_ok = old_input > 0
+            && old_input <= INPUT_SIZE
+            && self.hidden1_size == HIDDEN1_SIZE
+            && self.hidden2_size == HIDDEN2_SIZE
+            && self.output_size == OUTPUT_SIZE
+            && self.w1.len() == HIDDEN1_SIZE
+            && self.w1.iter().all(|r| r.len() == old_input)
+            && self.b1.len() == HIDDEN1_SIZE
+            && self.w2.len() == HIDDEN2_SIZE
+            && self.w2.iter().all(|r| r.len() == HIDDEN1_SIZE)
+            && self.b2.len() == HIDDEN2_SIZE
+            && self.w3.len() == OUTPUT_SIZE
+            && self.w3.iter().all(|r| r.len() == HIDDEN2_SIZE)
+            && self.b3.len() == OUTPUT_SIZE;
+        if !old_shape_ok {
+            return false;
+        }
+
+        if old_input < INPUT_SIZE {
+            for row in &mut self.w1 {
+                row.resize(INPUT_SIZE, 0.0);
+            }
+            self.input_size = INPUT_SIZE;
+        }
+        self.is_compatible()
+    }
+
     pub fn is_compatible(&self) -> bool {
         self.input_size == INPUT_SIZE
             && self.hidden1_size == HIDDEN1_SIZE
@@ -262,17 +292,16 @@ impl NeuralNet {
 }
 
 // ============================================================================
-// ДИРЕКТОР: 132 сенсора -> 64 -> 48 -> три головы
+// ДИРЕКТОР: 139 сенсоров -> 64 -> 48 -> три головы
 // ============================================================================
-pub const DIRECTOR_INPUT_SIZE: usize = 132;
+pub const DIRECTOR_INPUT_SIZE: usize = 139;
 pub const DIRECTOR_HIDDEN1_SIZE: usize = 64;
 pub const DIRECTOR_HIDDEN2_SIZE: usize = 48;
 pub const DIRECTOR_ECONOMY_HEAD_SIZE: usize = 20; // 0: Пас, 1..16: Тиры, 17: Ярость, 18: Панцирь, 19: Чумные споры
 pub const DIRECTOR_ALTAR_HEAD_SIZE: usize = 3; // [0]: триггер, [1]: X-слот, [2]: Y-слот
 pub const DIRECTOR_SPAWN_HEAD_SIZE: usize = 8; // 8 секторов спавна вокруг Босса
 
-/// Контекст, без которого argmax по экономической голове нечестен:
-/// маска доступности должна учитывать не только tech-tree, но и цену/кулдауны.
+/// Контекст для маски доступности и совместного бюджета действий Директора.
 #[derive(Clone, Copy, Debug)]
 pub struct DirectorActionContext {
     pub points: f32,
@@ -283,6 +312,7 @@ pub struct DirectorActionContext {
     pub grade_carapace: u32,
     pub grade_pestilence: u32,
     pub squad_cooldowns: [f32; 16],
+    pub valid_altar_slots: [bool; 25],
 }
 
 #[derive(Clone, Debug)]
@@ -293,14 +323,14 @@ pub struct DirectorDecision {
     pub spawn_sector: usize, // 0..7 — сектор появления отряда вокруг Босса
 }
 
-/// Двухголовая + спавн-голова нейросеть Директора.
+/// Три головы Директора: экономика, алтарь и сектор спавна.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DirectorBrainNet {
     pub input_size: usize,
     pub hidden1_size: usize,
     pub hidden2_size: usize,
 
-    // Слой 1: 132 -> 64
+    // Слой 1: 139 -> 64
     pub w1: Vec<Vec<f32>>,
     pub b1: Vec<f32>,
 
@@ -371,6 +401,41 @@ impl DirectorBrainNet {
         }
     }
 
+    /// Расширяет входной слой, сохраняя старые признаки и нулевые веса новых.
+    pub fn upgrade_input_schema(&mut self) -> bool {
+        let old_input = self.input_size;
+        let old_shape_ok = old_input > 0
+            && old_input <= DIRECTOR_INPUT_SIZE
+            && self.hidden1_size == DIRECTOR_HIDDEN1_SIZE
+            && self.hidden2_size == DIRECTOR_HIDDEN2_SIZE
+            && self.w1.len() == DIRECTOR_HIDDEN1_SIZE
+            && self.w1.iter().all(|r| r.len() == old_input)
+            && self.b1.len() == DIRECTOR_HIDDEN1_SIZE
+            && self.w2.len() == DIRECTOR_HIDDEN2_SIZE
+            && self.w2.iter().all(|r| r.len() == DIRECTOR_HIDDEN1_SIZE)
+            && self.b2.len() == DIRECTOR_HIDDEN2_SIZE
+            && self.w_econ.len() == DIRECTOR_ECONOMY_HEAD_SIZE
+            && self.w_econ.iter().all(|r| r.len() == DIRECTOR_HIDDEN2_SIZE)
+            && self.b_econ.len() == DIRECTOR_ECONOMY_HEAD_SIZE
+            && self.w_altar.len() == DIRECTOR_ALTAR_HEAD_SIZE
+            && self.w_altar.iter().all(|r| r.len() == DIRECTOR_HIDDEN2_SIZE)
+            && self.b_altar.len() == DIRECTOR_ALTAR_HEAD_SIZE
+            && self.w_spawn.len() == DIRECTOR_SPAWN_HEAD_SIZE
+            && self.w_spawn.iter().all(|r| r.len() == DIRECTOR_HIDDEN2_SIZE)
+            && self.b_spawn.len() == DIRECTOR_SPAWN_HEAD_SIZE;
+        if !old_shape_ok {
+            return false;
+        }
+
+        if old_input < DIRECTOR_INPUT_SIZE {
+            for row in &mut self.w1 {
+                row.resize(DIRECTOR_INPUT_SIZE, 0.0);
+            }
+            self.input_size = DIRECTOR_INPUT_SIZE;
+        }
+        self.is_compatible()
+    }
+
     pub fn is_compatible(&self) -> bool {
         self.input_size == DIRECTOR_INPUT_SIZE
             && self.hidden1_size == DIRECTOR_HIDDEN1_SIZE
@@ -408,7 +473,22 @@ impl DirectorBrainNet {
                 .all(|b| b.is_finite())
     }
 
-    /// Прямой проход с честным action masking по цене и кулдаунам.
+    /// Позиция одного из 25 слотов сетки размещения алтарей.
+    pub fn altar_slot_position(slot: usize) -> macroquad::prelude::Vec2 {
+        const ALTAR_SLOTS: f32 = 5.0;
+        const ALTAR_MARGIN: f32 = 60.0;
+        let slot = slot.min(24);
+        let slot_w = (crate::core::MAP_WIDTH - ALTAR_MARGIN * 2.0) / ALTAR_SLOTS;
+        let slot_h = (crate::core::MAP_HEIGHT - ALTAR_MARGIN * 2.0) / ALTAR_SLOTS;
+        let sx = (slot % 5) as f32;
+        let sy = (slot / 5) as f32;
+        macroquad::prelude::Vec2::new(
+            ALTAR_MARGIN + (sx + 0.5) * slot_w,
+            ALTAR_MARGIN + (sy + 0.5) * slot_h,
+        )
+    }
+
+    /// Прямой проход с маской цены, разблокировки и общего бюджета алтаря.
     pub fn forward(
         &self,
         inputs: &[f32; DIRECTOR_INPUT_SIZE],
@@ -436,22 +516,62 @@ impl DirectorBrainNet {
             h2[i] = if sum > 0.0 { sum } else { 0.01 * sum };
         }
 
-        // 3. Голова экономики: argmax только по реально доступным действиям.
+        // 3. Голова алтаря: выбирает ближайший доступный слот, если желаемый занят.
+        let mut altar_raw = [0.0f32; DIRECTOR_ALTAR_HEAD_SIZE];
+        for i in 0..DIRECTOR_ALTAR_HEAD_SIZE {
+            let mut sum = self.b_altar[i];
+            let row = &self.w_altar[i];
+            for j in 0..DIRECTOR_HIDDEN2_SIZE {
+                sum += row[j] * h2[j];
+            }
+            altar_raw[i] = 1.0 / (1.0 + (-sum).exp());
+        }
+
+        let altar_ready = ctx.altar_cooldown <= 0.0 && ctx.points >= ctx.altar_cost;
+        let sx = (altar_raw[1] * 5.0).floor().clamp(0.0, 4.0) as usize;
+        let sy = (altar_raw[2] * 5.0).floor().clamp(0.0, 4.0) as usize;
+        let requested_slot = sy * 5 + sx;
+        let requested_pos = Self::altar_slot_position(requested_slot);
+        let target_slot = if ctx.valid_altar_slots[requested_slot] {
+            Some(requested_slot)
+        } else {
+            ctx.valid_altar_slots
+                .iter()
+                .enumerate()
+                .filter(|(_, valid)| **valid)
+                .min_by(|(a, _), (b, _)| {
+                    let da = Self::altar_slot_position(*a).distance_squared(requested_pos);
+                    let db = Self::altar_slot_position(*b).distance_squared(requested_pos);
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(slot, _)| slot)
+        };
+        let should_build_altar = altar_raw[0] > 0.5 && altar_ready && target_slot.is_some();
+        let altar_target_pos = target_slot
+            .map(Self::altar_slot_position)
+            .unwrap_or(requested_pos);
+
+        // 4. Голова экономики: маска учитывает остаток после одновременной постройки.
+        let points_after_altar = if should_build_altar {
+            (ctx.points - ctx.altar_cost).max(0.0)
+        } else {
+            ctx.points
+        };
         let mut best_action = 0usize;
         let mut max_econ_logit = f32::NEG_INFINITY;
 
         for i in 0..DIRECTOR_ECONOMY_HEAD_SIZE {
             let allowed = match i {
-                0 => true, // Пас доступен всегда
+                0 => true,
                 1..=16 => {
-                    let tier = i as u8;
-                    let config = crate::content::mobs::get_squad_config(tier);
+                    let config = crate::content::mobs::get_squad_config(i as u8);
                     ctx.total_points_spent >= config.unlock_spent_threshold
-                        && ctx.points >= config.cost
+                        && points_after_altar >= config.cost
+                        && ctx.squad_cooldowns[i - 1] <= 0.0
                 }
-                17 => ctx.points >= 100.0 * (ctx.grade_fury as f32 + 1.0),
-                18 => ctx.points >= 120.0 * (ctx.grade_carapace as f32 + 1.0),
-                19 => ctx.points >= 150.0 * (ctx.grade_pestilence as f32 + 1.0),
+                17 => points_after_altar >= 100.0 * (ctx.grade_fury as f32 + 1.0),
+                18 => points_after_altar >= 120.0 * (ctx.grade_carapace as f32 + 1.0),
+                19 => points_after_altar >= 150.0 * (ctx.grade_pestilence as f32 + 1.0),
                 _ => false,
             };
             if !allowed {
@@ -468,29 +588,6 @@ impl DirectorBrainNet {
                 best_action = i;
             }
         }
-
-        // 4. Голова алтаря: триггер + позиция, дискретизированная в сетку 5x5.
-        let mut altar_raw = [0.0f32; DIRECTOR_ALTAR_HEAD_SIZE];
-        for i in 0..DIRECTOR_ALTAR_HEAD_SIZE {
-            let mut sum = self.b_altar[i];
-            let row = &self.w_altar[i];
-            for j in 0..DIRECTOR_HIDDEN2_SIZE {
-                sum += row[j] * h2[j];
-            }
-            altar_raw[i] = 1.0 / (1.0 + (-sum).exp());
-        }
-
-        let altar_ready = ctx.altar_cooldown <= 0.0 && ctx.points >= ctx.altar_cost;
-        let should_build_altar = altar_raw[0] > 0.5 && altar_ready;
-
-        const ALTAR_SLOTS: f32 = 5.0;
-        const ALTAR_MARGIN: f32 = 60.0;
-        let slot_w = (crate::core::MAP_WIDTH - ALTAR_MARGIN * 2.0) / ALTAR_SLOTS;
-        let slot_h = (crate::core::MAP_HEIGHT - ALTAR_MARGIN * 2.0) / ALTAR_SLOTS;
-        let sx = (altar_raw[1] * ALTAR_SLOTS).floor().clamp(0.0, ALTAR_SLOTS - 1.0);
-        let sy = (altar_raw[2] * ALTAR_SLOTS).floor().clamp(0.0, ALTAR_SLOTS - 1.0);
-        let altar_x = ALTAR_MARGIN + (sx + 0.5) * slot_w;
-        let altar_y = ALTAR_MARGIN + (sy + 0.5) * slot_h;
 
         // 5. Голова спавна: 8 секторов вокруг Босса.
         let mut spawn_sector = 0usize;
@@ -510,7 +607,7 @@ impl DirectorBrainNet {
         DirectorDecision {
             target_action: best_action,
             should_build_altar,
-            altar_target_pos: macroquad::prelude::Vec2::new(altar_x, altar_y),
+            altar_target_pos,
             spawn_sector,
         }
     }

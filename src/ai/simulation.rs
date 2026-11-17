@@ -2,8 +2,8 @@ use macroquad::prelude::*;
 use crate::core::rand;
 use crate::ai::models::{BossModel, DirectorModel};
 use crate::ai::neural_net::{
-    DirectorActionContext, INPUT_SIZE, OUT_DASH, OUT_DASH_X, OUT_DASH_Y, OUT_MOVE_MAG, OUT_MOVE_X,
-    OUT_MOVE_Y, OUT_REST,
+    DirectorActionContext, BOSS_DECISION_INTERVAL, INPUT_SIZE, OUT_DASH, OUT_DASH_X, OUT_DASH_Y,
+    OUT_MOVE_MAG, OUT_MOVE_X, OUT_MOVE_Y, OUT_REST,
 };
 use crate::content::mobs::{get_squad_config, spawn_squad_in_sector};
 use crate::content::structures::{
@@ -30,8 +30,6 @@ struct BossAction {
     dash_dir: Vec2,
     rest: bool,
 }
-
-const BOSS_THINK_INTERVAL: f32 = 0.2;
 
 #[derive(Clone, Debug)]
 pub struct MatchResult {
@@ -89,7 +87,7 @@ pub fn run_headless_simulation(
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
 
     let mut cached_action: Option<BossAction> = None;
-    let mut boss_think_timer = BOSS_THINK_INTERVAL;
+    let mut boss_think_timer = BOSS_DECISION_INTERVAL;
 
     while world.boss_health.is_alive() && sim_time < max_duration_seconds {
         sim_time += dt;
@@ -118,9 +116,9 @@ pub fn run_headless_simulation(
         }
         world.boss_inventory.update_damage_decay(dt);
 
-        // 3. Мышление Босса (20 Гц) и применение закэшированного действия
+        // 3. Мышление Босса (5 Гц) и применение закэшированного действия
         boss_think_timer += dt;
-        if cached_action.is_none() || boss_think_timer >= BOSS_THINK_INTERVAL {
+        if cached_action.is_none() || boss_think_timer >= BOSS_DECISION_INTERVAL {
             boss_think_timer = 0.0;
             cached_action = Some(think_boss(&world, boss_model));
         }
@@ -359,6 +357,7 @@ fn run_director_decision(
                 let can_spawn = world.directors.first().map_or(false, |d| {
                     d.total_points_spent >= config.unlock_spent_threshold
                         && d.points >= config.cost
+                        && d.squad_cooldowns[(tier - 1) as usize] <= 0.0
                 });
                 if can_spawn {
                     let paid = world
@@ -367,6 +366,7 @@ fn run_director_decision(
                         .map(|d| {
                             if d.spend_points(config.cost) {
                                 d.time_since_last_spawn = 0.0;
+                                d.squad_cooldowns[(tier - 1) as usize] = config.cooldown;
                                 true
                             } else {
                                 false
@@ -421,6 +421,7 @@ fn build_director_context(world: &World) -> DirectorActionContext {
         grade_carapace: director.map_or(0, |d| d.grade_carapace),
         grade_pestilence: director.map_or(0, |d| d.grade_pestilence),
         squad_cooldowns: director.map_or([0.0; 16], |d| d.squad_cooldowns),
+        valid_altar_slots: crate::ai::sensors::director_altar_slot_mask(world),
     }
 }
 
@@ -431,11 +432,11 @@ fn run_director_fallback(
     altars_built: &mut usize,
     mobs_spawned_by_tier: &mut [usize; 16],
 ) {
-    let (points, spent, cooldown) = world
+    let (points, spent, cooldown, squad_cooldowns) = world
         .directors
         .first()
-        .map(|d| (d.points, d.total_points_spent, d.altar_cooldown))
-        .unwrap_or((0.0, 0.0, 0.0));
+        .map(|d| (d.points, d.total_points_spent, d.altar_cooldown, d.squad_cooldowns))
+        .unwrap_or((0.0, 0.0, 0.0, [0.0; 16]));
 
     // 1. Алтарь
     if cooldown <= 0.0
@@ -474,8 +475,12 @@ fn run_director_fallback(
             break;
         }
         let config = get_squad_config((tier_idx + 1) as u8);
-        if spent >= config.unlock_spent_threshold && remaining >= config.cost && w > 0.0 {
-            eligible.push((tier_idx + 1, config.cost, config.count, w));
+        if spent >= config.unlock_spent_threshold
+            && remaining >= config.cost
+            && squad_cooldowns[tier_idx] <= 0.0
+            && w > 0.0
+        {
+            eligible.push((tier_idx + 1, config.cost, config.count, config.cooldown, w));
             total_weight += w;
         }
     }
@@ -485,7 +490,7 @@ fn run_director_fallback(
         let chosen = eligible
             .iter()
             .copied()
-            .find(|(_, _, _, w)| {
+            .find(|(_, _, _, _, w)| {
                 if roll <= *w {
                     true
                 } else {
@@ -494,13 +499,14 @@ fn run_director_fallback(
                 }
             });
 
-        if let Some((tier, cost, count, _)) = chosen {
+        if let Some((tier, cost, count, cooldown, _)) = chosen {
             let paid = world
                 .directors
                 .first_mut()
                 .map(|d| {
                     if d.spend_points(cost) {
                         d.time_since_last_spawn = 0.0;
+                        d.squad_cooldowns[tier - 1] = cooldown;
                         true
                     } else {
                         false
