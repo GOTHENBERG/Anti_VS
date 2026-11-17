@@ -3,7 +3,8 @@ use crate::ecs::components::inventory::WeaponType;
 use crate::ecs::world::World;
 use crate::render::font::GameFonts;
 use crate::render::sprites::{
-    draw_blood_altar, draw_boss, draw_environment, draw_mob_sprite, draw_projectile_sprite,
+    draw_blood_altar, draw_boss, draw_environment, draw_mob_sprite, draw_obelisk,
+    draw_projectile_sprite, draw_wall,
 };
 use crate::render::textures::GameTextures;
 
@@ -72,22 +73,34 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures, 
         draw_circle(pool.pos.x - b_angle * 0.7, pool.pos.y - b_y * 0.7, 2.0, border_color);
     }
 
-    // 3. Разрушаемые структуры (Алтари Крови)
+    // 3. Разрушаемые структуры (Алтари Крови, Стены, Обелиски)
     let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
     for structure in &world.structures {
-        if !in_view(structure.pos, 180.0) {
+        let view_pad = if structure.structure_type == crate::content::structures::STRUCTURE_OBELISK { 220.0 } else { 180.0 };
+        if !in_view(structure.pos, view_pad) {
             continue;
         }
-        // Защитные ядовитые миазмы Алтарей Крови при прокачке Чумных Спор Директора
-        if pestilence_lvl > 0 {
-            let miasma_radius = 160.0f32;
-            let pulse = (time * 2.5).sin() * 6.0;
-            let r = miasma_radius + pulse;
-            let alpha = 0.12 + (time * 2.0).sin().abs() * 0.06;
-            draw_circle(structure.pos.x, structure.pos.y, r, Color::new(0.55, 0.10, 0.75, alpha));
-            draw_circle_lines(structure.pos.x, structure.pos.y, r, 1.8, Color::new(0.75, 0.20, 0.95, alpha * 2.0));
+
+        match structure.structure_type {
+            crate::content::structures::STRUCTURE_ALTAR => {
+                if pestilence_lvl > 0 {
+                    let miasma_radius = 160.0f32;
+                    let pulse = (time * 2.5).sin() * 6.0;
+                    let r = miasma_radius + pulse;
+                    let alpha = 0.12 + (time * 2.0).sin().abs() * 0.06;
+                    draw_circle(structure.pos.x, structure.pos.y, r, Color::new(0.55, 0.10, 0.75, alpha));
+                    draw_circle_lines(structure.pos.x, structure.pos.y, r, 1.8, Color::new(0.75, 0.20, 0.95, alpha * 2.0));
+                }
+                draw_blood_altar(structure.pos, structure.health.current, structure.health.max, time, textures);
+            }
+            crate::content::structures::STRUCTURE_WALL => {
+                draw_wall(structure.pos, structure.health.current, structure.health.max, structure.lifetime, structure.max_lifetime, textures);
+            }
+            crate::content::structures::STRUCTURE_OBELISK => {
+                draw_obelisk(structure.pos, structure.health.current, structure.health.max, structure.is_active, structure.state_timer, time, textures);
+            }
+            _ => {}
         }
-        draw_blood_altar(structure.pos, structure.health.current, structure.health.max, time, textures);
     }
 
     // 4. Кристаллы душ (Soul Gems & Magnet Orbs)

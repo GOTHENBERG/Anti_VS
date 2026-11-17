@@ -75,12 +75,18 @@ pub fn select_tactical_target(world: &World, boss_pos: Vec2, max_range: f32) -> 
         }
     }
 
-    // 2. Оценка живых Алтарей Крови (стратегическая цель, если рядом нет смертельной толпы)
+    // 2. Оценка живых структур (Активный Разлом -> Алтарь Крови -> Баррикады)
     for st in &world.structures {
         if st.health.is_alive() {
             let dist = st.pos.distance(boss_pos);
             if dist <= max_range {
-                let score = 110.0 - dist * 0.16;
+                let base_score = match st.structure_type {
+                    crate::content::structures::STRUCTURE_OBELISK if st.is_active => 240.0, // Высший приоритет — сорвать Прорыв!
+                    crate::content::structures::STRUCTURE_ALTAR => 110.0,
+                    crate::content::structures::STRUCTURE_WALL => 35.0,
+                    _ => -100.0,
+                };
+                let score = base_score - dist * 0.16;
                 if score > best_score {
                     best_score = score;
                     best_target = Some(st.pos);
@@ -1390,12 +1396,12 @@ pub fn update_skills(world: &mut World, dt: f32) {
         });
     }
 
-    // 3. Импульсы и спавн скелетов Алтарей Крови
+    // 3. Импульсы, стены и спавн скелетов Алтарей Крови
     let mut altar_heal_pulses = Vec::new();
     let mut altar_spawns = Vec::new();
 
     for structure in &mut world.structures {
-        if structure.structure_type == 1 && structure.health.is_alive() {
+        if structure.structure_type == crate::content::structures::STRUCTURE_ALTAR && structure.health.is_alive() {
             structure.pulse_timer += dt;
             if structure.pulse_timer >= 3.0 {
                 structure.pulse_timer = 0.0;
@@ -1407,6 +1413,102 @@ pub fn update_skills(world: &mut World, dt: f32) {
                 structure.spawn_timer = 0.0;
                 altar_spawns.push(structure.pos);
             }
+        } else if structure.structure_type == crate::content::structures::STRUCTURE_WALL && structure.health.is_alive() {
+            structure.lifetime -= dt;
+            if structure.lifetime <= 0.0 {
+                structure.health.current = 0.0;
+            }
+        }
+    }
+
+    // 3.1 Цикл активации Угловых Инфернальных Разломов (раз в 60 секунд)
+    world.obelisk_cycle_timer -= dt;
+    if world.obelisk_cycle_timer <= 0.0 {
+        world.obelisk_cycle_timer = 60.0;
+        let obelisk_indices: Vec<usize> = world.structures
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.structure_type == crate::content::structures::STRUCTURE_OBELISK && !s.is_active)
+            .map(|(i, _)| i)
+            .collect();
+
+        if !obelisk_indices.is_empty() {
+            let choice = rand::gen_range(0, obelisk_indices.len());
+            let target_idx = obelisk_indices[choice];
+            if let Some(obelisk) = world.structures.get_mut(target_idx) {
+                obelisk.is_active = true;
+                obelisk.state_timer = 20.0;
+                obelisk.health.current = obelisk.health.max;
+                let pos = obelisk.pos;
+
+                let corner_name = if pos.x < 1000.0 && pos.y < 1000.0 {
+                    "Северо-Запад"
+                } else if pos.x > 1000.0 && pos.y < 1000.0 {
+                    "Северо-Восток"
+                } else if pos.x < 1000.0 && pos.y > 1000.0 {
+                    "Юго-Запад"
+                } else {
+                    "Юго-Восток"
+                };
+
+                world.screen_shake = 16.0;
+                world.add_floating_text(
+                    pos,
+                    format!("⚡ РАЗЛОМ [{}]! 20с до Прорыва!", corner_name),
+                    GOLD,
+                    3.0,
+                );
+            }
+        }
+    }
+
+    // 3.2 Таймер зарядки активного разлома и Прорыв
+    let mut breach_event_pos = None;
+    for st in &mut world.structures {
+        if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && st.is_active {
+            st.state_timer -= dt;
+            if st.state_timer <= 0.0 {
+                st.is_active = false;
+                breach_event_pos = Some(st.pos);
+            }
+        }
+    }
+
+    // ИНФЕРНАЛЬНЫЙ ПРОРЫВ: призыв элитного легиона по формуле (доход игрока * 15)
+    if let Some(pos) = breach_event_pos {
+        world.screen_shake = 22.0;
+        world.spawn_particles(pos, 50, PURPLE, 240.0);
+        world.spawn_particles(pos, 35, RED, 180.0);
+        world.add_floating_text(pos, "💀 ИНФЕРНАЛЬНЫЙ ПРОРЫВ! ОРДА ВЫРВАЛАСЬ!".to_string(), RED, 2.5);
+
+        let income = if let Some(d) = world.directors.first() {
+            d.income_rate + (world.structures.iter().filter(|s| s.structure_type == crate::content::structures::STRUCTURE_ALTAR && s.health.is_alive()).count() as f32 * 3.0)
+        } else {
+            12.0
+        };
+        let mut budget = income * 15.0;
+        let current_spent = world.directors.first().map_or(0.0, |d| d.total_points_spent);
+
+        while budget >= 35.0 {
+            let candidate_tier = if current_spent >= 10000.0 && budget >= 1800.0 {
+                8
+            } else if current_spent >= 4000.0 && budget >= 500.0 {
+                6
+            } else if current_spent >= 2500.0 && budget >= 300.0 {
+                5
+            } else if current_spent >= 1000.0 && budget >= 150.0 {
+                4
+            } else if current_spent >= 400.0 && budget >= 70.0 {
+                3
+            } else if budget >= 35.0 {
+                2
+            } else {
+                1
+            };
+            let cost = crate::content::mobs::get_squad_config(candidate_tier).cost;
+            let offset = Vec2::new(rand::gen_range(-90.0, 90.0), rand::gen_range(-90.0, 90.0));
+            crate::content::mobs::spawn_single_mob_at_pos(world, candidate_tier, pos + offset);
+            budget -= cost.min(budget);
         }
     }
 

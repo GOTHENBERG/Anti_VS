@@ -123,6 +123,12 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
                 }
             }
         }
+
+        for st in &mut world.structures {
+            if st.health.is_alive() && st.pos.distance_squared(dash_target) < 65.0 * 65.0 {
+                st.health.take_damage(160.0);
+            }
+        }
     } else {
         // Обычное передвижение по вектору скорости нейросети (мгновенная реакция без искусственной инерции)
         world.boss_vel = desired_vel;

@@ -76,18 +76,28 @@ impl WaypointPlanner {
     pub fn calculate_strategic_navigation(world: &World) -> StrategicNavData {
         let boss_pos = world.boss_pos;
 
-        // 1. Находим все живые алтари
-        let mut altars: Vec<Vec2> = world.structures
+        // 1. Находим цели (Активный Разлом имеет наивысший стратегический приоритет)
+        let active_obelisk = world.structures
             .iter()
-            .filter(|s| s.structure_type == 1 && s.health.is_alive())
-            .map(|s| s.pos)
-            .collect();
+            .find(|s| s.structure_type == crate::content::structures::STRUCTURE_OBELISK && s.is_active && s.health.is_alive())
+            .map(|s| s.pos);
 
-        altars.sort_by(|a, b| {
-            let d_a = a.distance_squared(boss_pos);
-            let d_b = b.distance_squared(boss_pos);
-            d_a.partial_cmp(&d_b).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        let altars: Vec<Vec2> = if let Some(ob_pos) = active_obelisk {
+            vec![ob_pos]
+        } else {
+            let mut list: Vec<Vec2> = world.structures
+                .iter()
+                .filter(|s| s.structure_type == crate::content::structures::STRUCTURE_ALTAR && s.health.is_alive())
+                .map(|s| s.pos)
+                .collect();
+
+            list.sort_by(|a, b| {
+                let d_a = a.distance_squared(boss_pos);
+                let d_b = b.distance_squared(boss_pos);
+                d_a.partial_cmp(&d_b).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            list
+        };
 
         let altar_count = altars.len();
         let closest_altar = altars.first().copied();

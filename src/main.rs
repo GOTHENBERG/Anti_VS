@@ -14,8 +14,19 @@ mod render;
 use crate::audio::AudioManager;
 
 use crate::content::mobs::{get_squad_config, spawn_squad_perimeter};
-use crate::content::structures::{can_place_blood_altar, spawn_blood_altar, try_spawn_blood_altar, BLOOD_ALTAR_COST};
+use crate::content::structures::{
+    can_place_blood_altar, can_place_wall, spawn_blood_altar, spawn_corner_obelisks,
+    try_spawn_blood_altar, try_spawn_wall, BLOOD_ALTAR_COST, WALL_COST, STRUCTURE_ALTAR,
+    STRUCTURE_WALL,
+};
 use crate::core::time::GameClock;
+
+#[derive(PartialEq, Clone, Copy, Debug)]
+enum PlacementMode {
+    None,
+    Altar,
+    Wall,
+}
 use crate::core::{MAP_HEIGHT, MAP_WIDTH};
 use crate::ecs::systems::{
     boss_ai::update_boss_ai,
@@ -105,7 +116,7 @@ async fn main() {
 
     let mut last_mouse_pos = Vec2::from(mouse_position());
     let mut is_dragging_map = false;
-    let mut is_placing_altar = false;
+    let mut placement_mode = PlacementMode::None;
     let mut active_dossier_tier: Option<u8> = if auto_dossier { Some(1) } else { None };
     let mut opened_dossier_from_codex = false;
     let mut active_item_inspection: Option<crate::render::item_dossier::ItemInspectionTarget> = if auto_recipe {
@@ -115,8 +126,9 @@ async fn main() {
     };
     let mut opened_item_from_codex = false;
 
-    // Начальный разрушаемый алтарь игрока
+    // Начальный разрушаемый алтарь игрока и 4 древних угловых обелиска
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
+    spawn_corner_obelisks(&mut world);
 
     // Запуск динамичного джазового / симфонического плейлиста (со случайного трека)
     if !auto_screenshot && !auto_codex && !auto_dossier && !auto_recipe && !auto_settings {
@@ -276,8 +288,9 @@ async fn main() {
             cam_pos = world.boss_pos;
             follow_boss = true;
             spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
+            spawn_corner_obelisks(&mut world);
             is_paused = false;
-            is_placing_altar = false;
+            placement_mode = PlacementMode::None;
             show_codex = false;
             active_dossier_tier = None;
             active_item_inspection = None;
@@ -330,51 +343,53 @@ async fn main() {
         set_camera(&world_cam);
         render_world(&world, &fonts, &textures, cam_pos, cam_zoom);
 
-        // Призрак Алтаря при интерактивном режиме установки
-        if is_placing_altar {
+        // Призрак Структуры при интерактивном режиме установки
+        if placement_mode != PlacementMode::None {
             let (mx, my) = mouse_position();
             let world_cursor = world_cam.screen_to_world(Vec2::new(mx, my));
-            let margin = 45.0;
+            let margin = 35.0;
             let clamped = Vec2::new(
                 world_cursor.x.clamp(margin, MAP_WIDTH - margin),
                 world_cursor.y.clamp(margin, MAP_HEIGHT - margin),
             );
-            let can_place = can_place_blood_altar(&world, clamped);
-            let border_color = if can_place {
-                Color::new(0.2, 1.0, 0.4, 0.9)
-            } else {
-                Color::new(1.0, 0.2, 0.2, 0.9)
-            };
-            let fill_color = if can_place {
-                Color::new(0.2, 0.9, 0.4, 0.25)
-            } else {
-                Color::new(0.9, 0.2, 0.2, 0.25)
-            };
 
-            // Радиус дистанции между алтарями (ALTAR_MIN_SPACING = 120.0)
-            draw_circle_lines(clamped.x, clamped.y, 120.0, 1.5, Color::new(border_color.r, border_color.g, border_color.b, 0.35));
-            // Радиус самого алтаря
-            draw_circle(clamped.x, clamped.y, 30.0, fill_color);
-            draw_circle_lines(clamped.x, clamped.y, 30.0, 2.5, border_color);
+            match placement_mode {
+                PlacementMode::Altar => {
+                    let can_place = can_place_blood_altar(&world, clamped);
+                    let border_color = if can_place { Color::new(0.2, 1.0, 0.4, 0.9) } else { Color::new(1.0, 0.2, 0.2, 0.9) };
+                    let fill_color = if can_place { Color::new(0.2, 0.9, 0.4, 0.25) } else { Color::new(0.9, 0.2, 0.2, 0.25) };
 
-            if let Some(tex) = textures.altar.as_ref() {
-                let w = 48.0;
-                let h = 70.0;
-                let tint = if can_place {
-                    Color::new(0.8, 1.0, 0.8, 0.75)
-                } else {
-                    Color::new(1.0, 0.5, 0.5, 0.75)
-                };
-                draw_texture_ex(
-                    tex,
-                    clamped.x - w * 0.5,
-                    clamped.y - h * 0.5,
-                    tint,
-                    DrawTextureParams {
-                        dest_size: Some(Vec2::new(w, h)),
-                        ..Default::default()
-                    },
-                );
+                    draw_circle_lines(clamped.x, clamped.y, 120.0, 1.5, Color::new(border_color.r, border_color.g, border_color.b, 0.35));
+                    draw_circle(clamped.x, clamped.y, 30.0, fill_color);
+                    draw_circle_lines(clamped.x, clamped.y, 30.0, 2.5, border_color);
+
+                    if let Some(tex) = textures.altar.as_ref() {
+                        let w = 48.0;
+                        let h = 70.0;
+                        let tint = if can_place { Color::new(0.8, 1.0, 0.8, 0.75) } else { Color::new(1.0, 0.5, 0.5, 0.75) };
+                        draw_texture_ex(tex, clamped.x - w * 0.5, clamped.y - h * 0.5, tint, DrawTextureParams {
+                            dest_size: Some(Vec2::new(w, h)),
+                            ..Default::default()
+                        });
+                    }
+                }
+                PlacementMode::Wall => {
+                    let can_place = can_place_wall(&world, clamped);
+                    let border_color = if can_place { Color::new(0.4, 0.8, 1.0, 0.9) } else { Color::new(1.0, 0.2, 0.2, 0.9) };
+                    let fill_color = if can_place { Color::new(0.2, 0.6, 0.9, 0.30) } else { Color::new(0.9, 0.2, 0.2, 0.30) };
+
+                    draw_rectangle(clamped.x - 25.0, clamped.y - 25.0, 50.0, 50.0, fill_color);
+                    draw_rectangle_lines(clamped.x - 25.0, clamped.y - 25.0, 50.0, 50.0, 2.2, border_color);
+
+                    if let Some(tex) = textures.wall.as_ref() {
+                        let tint = if can_place { Color::new(0.8, 0.9, 1.0, 0.75) } else { Color::new(1.0, 0.5, 0.5, 0.75) };
+                        draw_texture_ex(tex, clamped.x - 25.0, clamped.y - 25.0, tint, DrawTextureParams {
+                            dest_size: Some(Vec2::new(50.0, 50.0)),
+                            ..Default::default()
+                        });
+                    }
+                }
+                PlacementMode::None => {}
             }
         }
 
@@ -382,14 +397,19 @@ async fn main() {
         set_default_camera();
         let ui_interaction = render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures, audio.is_muted, audio.get_current_track_title());
 
-        if is_placing_altar {
-            let banner_w = 460.0;
+        if placement_mode != PlacementMode::None {
+            let banner_w = 490.0;
             let banner_h = 32.0;
             let banner_x = (screen_w - banner_w) * 0.5;
             let banner_y = 12.0;
             draw_rectangle(banner_x, banner_y, banner_w, banner_h, Color::new(0.08, 0.08, 0.16, 0.95));
             draw_rectangle_lines(banner_x, banner_y, banner_w, banner_h, 2.0, GOLD);
-            fonts.draw_heading("УСТАНОВКА: [ЛКМ] - Поставить  |  [ПКМ / Esc] - Отмена", banner_x + 16.0, banner_y + 21.0, 12.0, GOLD);
+            let text = match placement_mode {
+                PlacementMode::Altar => "УСТАНОВКА АЛТАРЯ: [ЛКМ] - Поставить  |  [ПКМ / Esc] - Отмена",
+                PlacementMode::Wall => "УСТАНОВКА БАРРИКАДЫ: [ЛКМ] - Поставить  |  [ПКМ / Esc] - Отмена",
+                PlacementMode::None => "",
+            };
+            fonts.draw_heading(text, banner_x + 16.0, banner_y + 21.0, 11.5, GOLD);
         }
 
         // Обработка интеракций из UI
@@ -455,36 +475,62 @@ async fn main() {
         }
 
         if ui_interaction.start_altar_placement {
-            is_placing_altar = true;
+            placement_mode = PlacementMode::Altar;
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
+        }
+        if ui_interaction.start_wall_placement || is_key_pressed(KeyCode::B) {
+            placement_mode = PlacementMode::Wall;
             audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
 
-        // Логика перемещения карты или подтверждения установки Алтаря
-        if is_placing_altar {
+        // Логика перемещения карты или подтверждения установки Структуры
+        if placement_mode != PlacementMode::None {
             if is_key_pressed(KeyCode::Escape) || is_mouse_button_pressed(MouseButton::Right) {
-                is_placing_altar = false;
+                placement_mode = PlacementMode::None;
                 audio.handle_event(crate::audio::AudioEvent::UiClick);
             } else if is_mouse_button_pressed(MouseButton::Left) && !ui_interaction.is_mouse_over_ui {
                 let (mx, my) = mouse_position();
                 let world_click = world_cam.screen_to_world(Vec2::new(mx, my));
-                let margin = 45.0;
+                let margin = 35.0;
                 let clamped_click = Vec2::new(
                     world_click.x.clamp(margin, MAP_WIDTH - margin),
                     world_click.y.clamp(margin, MAP_HEIGHT - margin),
                 );
-                if can_place_blood_altar(&world, clamped_click) {
-                    if let Some(director) = world.directors.first() {
-                        if director.points >= BLOOD_ALTAR_COST && director.altar_cooldown <= 0.0 {
-                            net_driver.send_command(Command::PlaceStructure {
-                                director_id: director.id,
-                                structure_type: 1,
-                                pos: clamped_click.into(),
-                            });
-                            is_placing_altar = false;
+
+                match placement_mode {
+                    PlacementMode::Altar => {
+                        if can_place_blood_altar(&world, clamped_click) {
+                            if let Some(director) = world.directors.first() {
+                                if director.points >= BLOOD_ALTAR_COST && director.altar_cooldown <= 0.0 {
+                                    net_driver.send_command(Command::PlaceStructure {
+                                        director_id: director.id,
+                                        structure_type: STRUCTURE_ALTAR,
+                                        pos: clamped_click.into(),
+                                    });
+                                    placement_mode = PlacementMode::None;
+                                }
+                            }
+                        } else {
+                            world.add_floating_text(clamped_click, "Нельзя построить здесь!".to_string(), RED, 1.2);
                         }
                     }
-                } else {
-                    world.add_floating_text(clamped_click, "Нельзя построить здесь!".to_string(), RED, 1.2);
+                    PlacementMode::Wall => {
+                        if can_place_wall(&world, clamped_click) {
+                            if let Some(director) = world.directors.first() {
+                                if director.points >= WALL_COST && director.wall_cooldown <= 0.0 {
+                                    net_driver.send_command(Command::PlaceStructure {
+                                        director_id: director.id,
+                                        structure_type: STRUCTURE_WALL,
+                                        pos: clamped_click.into(),
+                                    });
+                                    placement_mode = PlacementMode::None;
+                                }
+                            }
+                        } else {
+                            world.add_floating_text(clamped_click, "Нельзя построить здесь!".to_string(), RED, 1.2);
+                        }
+                    }
+                    PlacementMode::None => {}
                 }
             }
         } else {
@@ -560,8 +606,9 @@ async fn main() {
                     cam_pos = world.boss_pos;
                     follow_boss = true;
                     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
+                    spawn_corner_obelisks(&mut world);
                     is_paused = false;
-                    is_placing_altar = false;
+                    placement_mode = PlacementMode::None;
                     show_codex = false;
                     active_dossier_tier = None;
                     active_item_inspection = None;
@@ -666,16 +713,22 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, _world_ca
     if let Some(director) = world.directors.first() {
         let is_shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
 
-        // Переключение страницы мобов Директора по клавише [Tab] (Страница 1: 1-8, Страница 2: 9-16)
+        // Переключение страницы мобов Директора: клавиши [1], [2] и [Tab]
         if is_key_pressed(KeyCode::Tab) {
             let next_page = if director.mob_page == 0 { 1 } else { 0 };
             driver.send_command(Command::SetMobPage { director_id: director.id, page: next_page });
         }
+        if is_key_pressed(KeyCode::Key1) {
+            driver.send_command(Command::SetMobPage { director_id: director.id, page: 0 });
+        }
+        if is_key_pressed(KeyCode::Key2) {
+            driver.send_command(Command::SetMobPage { director_id: director.id, page: 1 });
+        }
 
-        // 1. Горячие клавиши 1, 2, 3, 4, 5, 6, 7, 8 для спавна отрядов (с поддержкой Shift для спавна на все деньги)
+        // 1. Горячие клавиши Q, W, E, R, A, S, D, F для спавна отрядов (Shift = спавн на все деньги)
         let keys = [
-            KeyCode::Key1, KeyCode::Key2, KeyCode::Key3, KeyCode::Key4,
-            KeyCode::Key5, KeyCode::Key6, KeyCode::Key7, KeyCode::Key8,
+            KeyCode::Q, KeyCode::W, KeyCode::E, KeyCode::R,
+            KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::F,
         ];
         for (i, key) in keys.iter().enumerate() {
             if is_key_pressed(*key) {
@@ -688,22 +741,22 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, _world_ca
             }
         }
 
-        // 1.1 Горячие клавиши F, G, H для улучшений мобов Директора (с поддержкой Shift для прокачки на все деньги)
-        if is_key_pressed(KeyCode::F) {
+        // 1.1 Горячие клавиши Z, X, C для улучшений мобов Директора (Shift = прокачка на все деньги)
+        if is_key_pressed(KeyCode::Z) {
             if is_shift {
                 driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 0 });
             } else {
                 driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 0 });
             }
         }
-        if is_key_pressed(KeyCode::G) {
+        if is_key_pressed(KeyCode::X) {
             if is_shift {
                 driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 1 });
             } else {
                 driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 1 });
             }
         }
-        if is_key_pressed(KeyCode::H) {
+        if is_key_pressed(KeyCode::C) {
             if is_shift {
                 driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 2 });
             } else {
@@ -858,26 +911,54 @@ fn execute_command(world: &mut World, cmd: Command) {
                 world.push_audio(crate::audio::AudioEvent::UpgradeGrade);
             }
         }
-        Command::PlaceStructure { director_id, pos, .. } => {
-            let margin = 45.0;
-            let clamped_pos = Vec2::new(
-                pos.x.clamp(margin, MAP_WIDTH - margin),
-                pos.y.clamp(margin, MAP_HEIGHT - margin),
-            );
-            let mut can_build = false;
-            if can_place_blood_altar(world, clamped_pos) {
-                if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
-                    if director.altar_cooldown <= 0.0
-                        && director.spend_points(BLOOD_ALTAR_COST)
-                    {
-                        director.altar_cooldown = director.altar_max_cooldown;
-                        can_build = true;
+        Command::PlaceStructure {
+            director_id,
+            structure_type,
+            pos,
+        } => {
+            match structure_type {
+                STRUCTURE_WALL => {
+                    let margin = 35.0;
+                    let clamped_pos = Vec2::new(
+                        pos.x.clamp(margin, MAP_WIDTH - margin),
+                        pos.y.clamp(margin, MAP_HEIGHT - margin),
+                    );
+                    let mut can_build = false;
+                    if can_place_wall(world, clamped_pos) {
+                        if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
+                            if director.wall_cooldown <= 0.0 && director.spend_points(WALL_COST) {
+                                director.wall_cooldown = director.wall_max_cooldown;
+                                can_build = true;
+                            }
+                        }
+                    }
+                    if can_build {
+                        try_spawn_wall(world, clamped_pos);
+                        world.push_audio(crate::audio::AudioEvent::AltarBuild);
                     }
                 }
-            }
-            if can_build {
-                try_spawn_blood_altar(world, clamped_pos);
-                world.push_audio(crate::audio::AudioEvent::AltarBuild);
+                _ => {
+                    let margin = 45.0;
+                    let clamped_pos = Vec2::new(
+                        pos.x.clamp(margin, MAP_WIDTH - margin),
+                        pos.y.clamp(margin, MAP_HEIGHT - margin),
+                    );
+                    let mut can_build = false;
+                    if can_place_blood_altar(world, clamped_pos) {
+                        if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
+                            if director.altar_cooldown <= 0.0
+                                && director.spend_points(BLOOD_ALTAR_COST)
+                            {
+                                director.altar_cooldown = director.altar_max_cooldown;
+                                can_build = true;
+                            }
+                        }
+                    }
+                    if can_build {
+                        try_spawn_blood_altar(world, clamped_pos);
+                        world.push_audio(crate::audio::AudioEvent::AltarBuild);
+                    }
+                }
             }
         }
         Command::SetMobPage { director_id, page } => {

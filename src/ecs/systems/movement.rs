@@ -242,7 +242,7 @@ pub fn update_movement(world: &mut World, dt: f32) {
         let miasma_dps = 10.0 + (pestilence_lvl as f32) * 2.5;
         let poison_res = world.boss_resistances.poison_res.clamp(-0.5, 0.85);
         for st in &world.structures {
-            if world.boss_pos.distance_squared(st.pos) < miasma_radius * miasma_radius {
+            if st.structure_type == crate::content::structures::STRUCTURE_ALTAR && world.boss_pos.distance_squared(st.pos) < miasma_radius * miasma_radius {
                 let dmg = miasma_dps * (1.0 - poison_res) * dt;
                 world.boss_health.take_damage(dmg);
                 world.boss_inventory.record_damage_taken(dmg, DamageType::Poison, DamageSourceKind::Hazard);
@@ -252,6 +252,20 @@ pub fn update_movement(world: &mut World, dt: f32) {
                     world.boss_still_time = 0.0;
                 }
                 break;
+            }
+        }
+    }
+
+    // 4.3 Физическая коллизия Босса со Стенами-Баррикадами
+    for st in &world.structures {
+        if st.structure_type == crate::content::structures::STRUCTURE_WALL && st.health.is_alive() {
+            let diff = world.boss_pos - st.pos;
+            let dist_sq = diff.length_squared();
+            let min_dist = 18.0 + st.radius; // 18 + 25 = 43.0 px
+            if dist_sq < min_dist * min_dist && dist_sq > 0.001 {
+                let dist = dist_sq.sqrt();
+                let normal = diff / dist;
+                world.boss_pos = st.pos + normal * min_dist;
             }
         }
     }

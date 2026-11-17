@@ -487,31 +487,74 @@ pub fn update_combat(world: &mut World, dt: f32) {
         }
     });
 
-    // 4.1 Разрушение Алтарей Крови
-    let mut destroyed_altars = Vec::new();
-    world.structures.retain(|st| {
+    // 4.1 Разрушение структур (Алтари Крови, Стены-Баррикады, Обелиски)
+    let mut destroyed_events = Vec::new();
+    world.structures.retain_mut(|st| {
         if !st.health.is_alive() {
-            destroyed_altars.push((st.id, st.pos));
-            false
+            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK {
+                if st.is_active {
+                    // Босс успел уничтожить Разлом до истечения 20 секунд!
+                    st.is_active = false;
+                    st.health.current = st.health.max;
+                    st.state_timer = 0.0;
+                    destroyed_events.push((st.id, st.pos, crate::content::structures::STRUCTURE_OBELISK));
+                }
+                // Обелиск не удаляется из мира, остаётся в дремлющем виде
+                true
+            } else {
+                destroyed_events.push((st.id, st.pos, st.structure_type));
+                false
+            }
         } else {
             true
         }
     });
 
-    for (st_id, st_pos) in destroyed_altars {
-        world.screen_shake = 14.0;
-        world.spawn_particles(st_pos, 50, PURPLE, 190.0);
-        world.spawn_particles(st_pos, 35, RED, 150.0);
-        world.spawn_particles(st_pos, 25, GOLD, 130.0);
-        world.add_floating_text(st_pos, "💥 АЛТАРЬ КРОВИ РАЗРУШЕН!".to_string(), GOLD, 1.6);
-
-        // Награда боссу за уничтожение алтаря: много опыта + гарантированный Магнит
-        dropped_gems.push(SoulGemEntity {
-            id: st_id,
-            pos: st_pos,
-            xp_value: 150.0,
-            is_magnet: true,
-        });
+    for (st_id, st_pos, st_type) in destroyed_events {
+        match st_type {
+            crate::content::structures::STRUCTURE_ALTAR => {
+                world.screen_shake = 14.0;
+                world.spawn_particles(st_pos, 50, PURPLE, 190.0);
+                world.spawn_particles(st_pos, 35, RED, 150.0);
+                world.spawn_particles(st_pos, 25, GOLD, 130.0);
+                world.add_floating_text(st_pos, "💥 АЛТАРЬ КРОВИ РАЗРУШЕН!".to_string(), GOLD, 1.6);
+                dropped_gems.push(SoulGemEntity {
+                    id: st_id,
+                    pos: st_pos,
+                    xp_value: 150.0,
+                    is_magnet: true,
+                });
+            }
+            crate::content::structures::STRUCTURE_WALL => {
+                world.screen_shake = 6.0;
+                world.spawn_particles(st_pos, 16, DARKGRAY, 90.0);
+                world.spawn_particles(st_pos, 8, ORANGE, 70.0);
+                world.add_floating_text(st_pos, "💥 БАРЬЕР СЛОМАН!".to_string(), LIGHTGRAY, 1.1);
+                dropped_gems.push(SoulGemEntity {
+                    id: st_id,
+                    pos: st_pos,
+                    xp_value: 15.0,
+                    is_magnet: false,
+                });
+            }
+            crate::content::structures::STRUCTURE_OBELISK => {
+                world.screen_shake = 25.0;
+                world.spawn_particles(st_pos, 80, GOLD, 260.0);
+                world.spawn_particles(st_pos, 60, PURPLE, 220.0);
+                world.spawn_particles(st_pos, 40, SKYBLUE, 180.0);
+                world.add_floating_text(st_pos, "🌟 ИНФЕРНАЛЬНЫЙ РАЗЛОМ ЗАКРЫТ! (+350 XP)".to_string(), GOLD, 2.5);
+                dropped_gems.push(SoulGemEntity {
+                    id: st_id,
+                    pos: st_pos,
+                    xp_value: 350.0,
+                    is_magnet: true,
+                });
+                // Восстановление 15% HP боссу
+                let heal_bonus = world.boss_health.max * 0.15;
+                world.boss_health.heal(heal_bonus);
+            }
+            _ => {}
+        }
     }
 
     // Обработка взрывов трупов от Hellfire

@@ -561,6 +561,113 @@ pub fn draw_blood_altar(pos: Vec2, current_hp: f32, max_hp: f32, time: f32, text
     }
 }
 
+pub fn draw_wall(pos: Vec2, current_hp: f32, max_hp: f32, lifetime: f32, max_lifetime: f32, textures: &GameTextures) {
+    let size = 50.0;
+    let half = size * 0.5;
+
+    // Тень под баррикадой
+    draw_ellipse(pos.x, pos.y + half - 2.0, half + 4.0, 8.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.45));
+
+    if let Some(wall_tex) = textures.wall.as_ref() {
+        draw_texture_ex(
+            wall_tex,
+            pos.x - half,
+            pos.y - half,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(Vec2::new(size, size)),
+                ..Default::default()
+            },
+        );
+    } else {
+        draw_rectangle(pos.x - half, pos.y - half, size, size, Color::new(0.2, 0.2, 0.25, 0.95));
+        draw_rectangle_lines(pos.x - half, pos.y - half, size, size, 2.0, GRAY);
+    }
+
+    // Полоска здоровья (HP)
+    let hp_pct = (current_hp / max_hp).clamp(0.0, 1.0);
+    let bar_w = 40.0;
+    let bar_h = 4.0;
+    let bar_y = pos.y - half - 10.0;
+    draw_rectangle(pos.x - bar_w * 0.5, bar_y, bar_w, bar_h, DARKGRAY);
+    draw_rectangle(pos.x - bar_w * 0.5, bar_y, bar_w * hp_pct, bar_h, ORANGE);
+    draw_rectangle_lines(pos.x - bar_w * 0.5, bar_y, bar_w, bar_h, 1.0, WHITE);
+
+    // Тонкая полоска времени жизни (60с)
+    if max_lifetime > 0.0 {
+        let life_pct = (lifetime / max_lifetime).clamp(0.0, 1.0);
+        draw_rectangle(pos.x - bar_w * 0.5, bar_y + bar_h + 1.0, bar_w * life_pct, 2.0, SKYBLUE);
+    }
+}
+
+pub fn draw_obelisk(
+    pos: Vec2,
+    current_hp: f32,
+    max_hp: f32,
+    is_active: bool,
+    state_timer: f32,
+    time: f32,
+    textures: &GameTextures,
+) {
+    let size = 300.0;
+    let half = size * 0.5;
+
+    if is_active {
+        // Активный разлом: вращающийся пульсирующий круг Бездны под обелиском
+        let pulse = (time * 3.5).sin() * 12.0;
+        let aura_r = 140.0 + pulse;
+        draw_circle(pos.x, pos.y, aura_r, Color::new(0.6, 0.05, 0.7, 0.12));
+        draw_circle_lines(pos.x, pos.y, aura_r, 2.5, Color::new(0.9, 0.2, 0.9, 0.5));
+
+        // Вспышка молний и портал
+        if let Some(tex) = textures.obelisk_active.as_ref() {
+            draw_texture_ex(
+                tex,
+                pos.x - half,
+                pos.y - half,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(Vec2::new(size, size)),
+                    ..Default::default()
+                },
+            );
+        }
+
+        // Полоска здоровья (HP) Разлома
+        let bar_w = 120.0;
+        let bar_h = 8.0;
+        let bar_y = pos.y - half + 15.0;
+        let hp_pct = (current_hp / max_hp).clamp(0.0, 1.0);
+        draw_rectangle(pos.x - bar_w * 0.5, bar_y, bar_w, bar_h, Color::new(0.1, 0.1, 0.15, 0.9));
+        draw_rectangle(pos.x - bar_w * 0.5, bar_y, bar_w * hp_pct, bar_h, Color::new(0.9, 0.15, 0.25, 0.95));
+        draw_rectangle_lines(pos.x - bar_w * 0.5, bar_y, bar_w, bar_h, 1.8, GOLD);
+
+        // Таймер обратного отсчета до Прорыва
+        let timer_str = format!("⚡ ПРОРЫВ: {:.1}с", state_timer.max(0.0));
+        let timer_w = 110.0;
+        draw_rectangle(pos.x - timer_w * 0.5, bar_y - 18.0, timer_w, 15.0, Color::new(0.08, 0.08, 0.14, 0.9));
+        draw_rectangle_lines(pos.x - timer_w * 0.5, bar_y - 18.0, timer_w, 15.0, 1.2, GOLD);
+        draw_text(&timer_str, pos.x - timer_w * 0.5 + 6.0, bar_y - 6.0, 12.0, YELLOW);
+    } else {
+        // Дремлющий обелиск
+        if let Some(tex) = textures.obelisk_dormant.as_ref() {
+            draw_texture_ex(
+                tex,
+                pos.x - half,
+                pos.y - half,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(Vec2::new(size, size)),
+                    ..Default::default()
+                },
+            );
+        } else {
+            draw_circle(pos.x, pos.y, 60.0, Color::new(0.2, 0.15, 0.25, 1.0));
+            draw_circle_lines(pos.x, pos.y, 60.0, 3.0, PURPLE);
+        }
+    }
+}
+
 /// Отрисовка снаряда с высокодетализированными эффектами для атак босса и мобов
 pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textures: &GameTextures) {
     let pos = proj.pos;

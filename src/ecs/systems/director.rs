@@ -17,12 +17,17 @@ pub fn update_director(world: &mut World, dt: f32) {
             director.altar_cooldown = (director.altar_cooldown - dt).max(0.0);
         }
 
+        // Уменьшение кулдауна Стены-Баррикады
+        if director.wall_cooldown > 0.0 {
+            director.wall_cooldown = (director.wall_cooldown - dt).max(0.0);
+        }
+
         // Тиковый доход (ровно каждые 2.0 секунды)
         director.income_timer += dt;
         if director.income_timer >= 2.0 {
             director.income_timer -= 2.0;
             // Базовый доход плюс бонус от каждого живого Алтаря Крови (+3.0 душ)
-            let altar_income = world.structures.len() as f32 * 3.0;
+            let altar_income = world.structures.iter().filter(|s| s.structure_type == 1 && s.health.is_alive()).count() as f32 * 3.0;
             director.points += director.income_rate + altar_income;
         }
     }

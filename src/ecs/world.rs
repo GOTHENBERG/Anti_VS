@@ -58,6 +58,10 @@ pub struct StructureEntity {
     pub structure_type: u8,
     pub pulse_timer: f32,
     pub spawn_timer: f32,
+    pub lifetime: f32,
+    pub max_lifetime: f32,
+    pub is_active: bool,
+    pub state_timer: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -100,6 +104,8 @@ pub struct DirectorState {
     pub squad_cooldowns: [f32; 16],
     pub altar_cooldown: f32,
     pub altar_max_cooldown: f32,
+    pub wall_cooldown: f32,
+    pub wall_max_cooldown: f32,
     /// Время с момента последнего призыва отряда. Даёт Директору сенсор темпа.
     pub time_since_last_spawn: f32,
     pub total_mobs_spawned: usize,
@@ -120,6 +126,8 @@ impl DirectorState {
             squad_cooldowns: [0.0; 16],
             altar_cooldown: 0.0,
             altar_max_cooldown: 14.0, // 14 секунд кулдаун на постройку Алтаря (высокий темп тактики)
+            wall_cooldown: 0.0,
+            wall_max_cooldown: 2.0, // 2 секунды кулдаун на постройку Стены-Баррикады
             time_since_last_spawn: 10.0,
             total_mobs_spawned: 0,
             mob_page: 0,
@@ -191,6 +199,7 @@ pub struct World {
     pub next_entity_id: usize,
     pub total_damage_dealt_to_boss: f32,
     pub screen_shake: f32,
+    pub obelisk_cycle_timer: f32,
     pub boss_model: Option<crate::ai::models::BossModel>,
     pub audio_events: Vec<crate::audio::AudioEvent>,
     pub is_headless: bool, // Режим обучения без графики: отключает вложенный параллелизм
@@ -248,6 +257,7 @@ impl World {
             next_entity_id: 1,
             total_damage_dealt_to_boss: 0.0,
             screen_shake: 0.0,
+            obelisk_cycle_timer: 60.0,
             // Модель загружается один раз в main.rs / симуляции, а не на каждом World::new().
             boss_model: None,
             audio_events: Vec::new(),

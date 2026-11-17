@@ -28,6 +28,9 @@ pub struct GameTextures {
 
     // Structures & Items
     pub altar: Option<Texture2D>,
+    pub wall: Option<Texture2D>,
+    pub obelisk_dormant: Option<Texture2D>,
+    pub obelisk_active: Option<Texture2D>,
     pub soul_crystal: Option<Texture2D>,
     pub soul_ethereal: Option<Texture2D>,
     pub soul_ethereal_sm: Option<Texture2D>,
@@ -190,6 +193,9 @@ impl GameTextures {
         }
 
         let altar = load_filtered("assets/sprites/structure_altar.png", p_filter).await;
+        let wall = load_filtered("assets/sprites/structure_wall.png", p_filter).await;
+        let obelisk_dormant = load_filtered("assets/sprites/structure_obelisk.png", ui_filter).await;
+        let obelisk_active = load_filtered("assets/sprites/structure_obelisk_active.png", ui_filter).await;
         let soul_crystal = load_filtered("assets/sprites/crystal_soul.png", p_filter).await;
         let soul_ethereal = load_filtered("assets/sprites/soul_ethereal.png", ui_filter).await;
         let soul_ethereal_sm = load_filtered("assets/sprites/soul_ethereal_sm.png", ui_filter).await;
@@ -314,6 +320,9 @@ impl GameTextures {
             knight_idle,
             knight_walk,
             altar,
+            wall,
+            obelisk_dormant,
+            obelisk_active,
             soul_crystal,
             soul_ethereal,
             soul_ethereal_sm,
