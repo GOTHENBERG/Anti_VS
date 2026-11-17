@@ -79,6 +79,18 @@ fn format_build_summary(
     (w_str, p_str)
 }
 
+fn append_to_history_log(text: &str) {
+    let _ = std::fs::create_dir_all("models");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("models/training_history.log")
+    {
+        use std::io::Write;
+        let _ = write!(file, "{}", text);
+    }
+}
+
 pub fn run_co_evolutionary_training(generations: usize, population_size: usize, reset: bool) {
     let gpu_info = detect_gpu_device();
     println!("============================================================");
@@ -113,6 +125,14 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
     } else {
         println!("[СТАРТ] Начало нового цикла обучения: инициализирована нейросеть ({} синапсов, 150 входов).", seed_boss.total_synapses);
     }
+
+    let start_msg = format!(
+        "\n================================================================================\n\
+         >>> СЕССИЯ ОБУЧЕНИЯ (Старт с поколения #{}, запланировано раундов: {}, популяция: {})\n\
+         ================================================================================\n",
+        base_gen, generations, population_size
+    );
+    append_to_history_log(&start_msg);
 
     // 1. Инициализация Зала Славы (Hall of Fame) историческими чемпионами
     let mut hof_directors: Vec<DirectorModel> = vec![seed_director.clone()];
@@ -426,29 +446,39 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         let (boss_w_str, boss_p_str) = format_build_summary(&best_boss_eval.weapons, &best_boss_eval.passives);
         let (dir_boss_w_str, dir_boss_p_str) = format_build_summary(&best_dir_eval.boss_weapons, &best_dir_eval.boss_passives);
 
-        println!("================================================================================");
-        println!(
+        let mut round_log = String::with_capacity(2048);
+        macro_rules! log_line {
+            ($($arg:tt)*) => {{
+                let s = format!($($arg)*);
+                println!("{}", s);
+                round_log.push_str(&s);
+                round_log.push('\n');
+            }};
+        }
+
+        log_line!("================================================================================");
+        log_line!(
             ">>> РАУНД {:02}/{:02} (Поколение #{:02}) [Зал Славы: {} моделей]",
             gen_idx, generations, current_gen_num, hof_bosses.len()
         );
-        println!("--------------------------------------------------------------------------------");
-        println!("  [ВРЕМЯ ЖИЗНИ БОССА В РАУНДЕ]:");
-        println!(
+        log_line!("--------------------------------------------------------------------------------");
+        log_line!("  [ВРЕМЯ ЖИЗНИ БОССА В РАУНДЕ]:");
+        log_line!(
             "    >> В матчах лучшего Босса:     {:>4.1} мин ({:>5.1} сек)  [цель: 17.0 мин]",
             best_boss_eval.avg_survival / 60.0,
             best_boss_eval.avg_survival
         );
-        println!(
+        log_line!(
             "    >> Против лучшего Директора:   {:>4.1} мин ({:>5.1} сек)  [цель: 0.0 мин]",
             best_dir_eval.avg_kill_speed / 60.0,
             best_dir_eval.avg_kill_speed
         );
-        println!("--------------------------------------------------------------------------------");
-        println!(
+        log_line!("--------------------------------------------------------------------------------");
+        log_line!(
             "  БОСС (Фитнес: {:.0}, Уровень: {}):",
             best_boss_eval.fitness, best_boss_eval.avg_level
         );
-        println!(
+        log_line!(
             "    * Время жизни босса: {:>4.1} мин ({:>5.1} сек)",
             best_boss_eval.avg_survival / 60.0,
             best_boss_eval.avg_survival
@@ -459,20 +489,20 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         } else {
             0.0
         };
-        println!(
+        log_line!(
             "    * Пройдено дистанции: {:.0} px | Движение: {:.1} мин | Медитация: {:.1} мин | Ср. скорость: {:.1} px/сек",
             best_boss_eval.avg_distance_walked,
             boss_move_time / 60.0,
             best_boss_eval.avg_meditation_time / 60.0,
             boss_speed
         );
-        println!(
+        log_line!(
             "    * Очки фитнеса: Выживание: +{:.0} | Медитация: {:.1} мин (+{:.0})",
             boss_time_reward,
             best_boss_eval.avg_meditation_time / 60.0,
             boss_meditation_reward
         );
-        println!(
+        log_line!(
             "    * Получено урона: {:.0} HP [Ближний: {:.0}, Дальний: {:.0}, Окружение: {:.0}] | Разрушено алтарей: {}",
             best_boss_eval.avg_damage_taken,
             best_boss_eval.avg_melee_damage,
@@ -480,17 +510,17 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_boss_eval.avg_hazard_damage,
             best_boss_eval.avg_altars_destroyed
         );
-        println!(
+        log_line!(
             "    * Скиллы и оружия ({}): [{}]",
             best_boss_eval.weapons.len(),
             boss_w_str
         );
-        println!(
+        log_line!(
             "    * Предметы и пассивки ({}): [{}]",
             best_boss_eval.passives.len(),
             boss_p_str
         );
-        println!(
+        log_line!(
             "    ↳ Противник (Директор): Построил алтарей: {} | Призвал мобов: {} шт | Грейды орды: [Ярость: {}, Панцирь: {}, Мор: {}]",
             best_boss_eval.avg_altars_built,
             boss_mobs_spawned,
@@ -498,27 +528,27 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_boss_eval.director_grades.1,
             best_boss_eval.director_grades.2
         );
-        println!(
+        log_line!(
             "  ДИРЕКТОР (Фитнес: {:.0}):",
             best_dir_eval.fitness
         );
-        println!(
+        log_line!(
             "    * Время жизни босса: {:>4.1} мин ({:>5.1} сек)",
             best_dir_eval.avg_kill_speed / 60.0,
             best_dir_eval.avg_kill_speed
         );
-        println!(
+        log_line!(
             "    * Очки фитнеса: Бонус за ранний конец: +{:.0} | Штраф за затяжку: -{:.0} | Урон нанесен: {:.0} HP (+{:.0})",
             dir_speed_reward, dir_time_whip,
             best_dir_eval.avg_damage_dealt, dir_dmg_reward
         );
-        println!(
+        log_line!(
             "    * Построено алтарей: {} | Призвано мобов: {} шт | Грейды орды: [Ярость: {}, Панцирь: {}, Мор: {}]",
             best_dir_eval.avg_altars_built,
             total_mobs_spawned,
             best_dir_eval.grades.0, best_dir_eval.grades.1, best_dir_eval.grades.2
         );
-        println!(
+        log_line!(
             "      - Орда (T1-8): [Скелеты: {}, Гончие: {}, Культисты: {}, Големы: {}, Камикадзе: {}, Демоны: {}, Огонь: {}, Жнецы: {}]",
             best_dir_eval.mobs_spawned[0],
             best_dir_eval.mobs_spawned[1],
@@ -531,7 +561,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         );
         let legion_total: usize = best_dir_eval.mobs_spawned[8..16].iter().sum();
         if legion_total > 0 {
-            println!(
+            log_line!(
                 "      - Легион (T9-16): [Фаланга: {}, Церберы: {}, Архикультисты: {}, Колоссы: {}, Мучители: {}, Ловчие: {}, Архонты: {}, Аватар: {}]",
                 best_dir_eval.mobs_spawned[8],
                 best_dir_eval.mobs_spawned[9],
@@ -544,7 +574,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             );
         }
         let dir_boss_move_time = (best_dir_eval.avg_kill_speed - best_dir_eval.avg_boss_meditation).max(0.0);
-        println!(
+        log_line!(
             "    ↳ Противник (Босс): Уровень: {} | Дистанция: {:.0} px (Движение: {:.1} мин, Медитация: {:.1} мин) | Разрушил алтарей: {}",
             best_dir_eval.avg_boss_level,
             best_dir_eval.avg_boss_distance_walked,
@@ -552,17 +582,19 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_dir_eval.avg_boss_meditation / 60.0,
             best_dir_eval.avg_altars_destroyed
         );
-        println!(
+        log_line!(
             "    ↳ Скиллы и оружия босса ({}): [{}]",
             best_dir_eval.boss_weapons.len(),
             dir_boss_w_str
         );
-        println!(
+        log_line!(
             "    ↳ Предметы и пассивки босса ({}): [{}]",
             best_dir_eval.boss_passives.len(),
             dir_boss_p_str
         );
-        println!("================================================================================");
+        log_line!("================================================================================");
+
+        append_to_history_log(&round_log);
 
         // 4. Селекция, кроссовер и мутации для следующего поколения
         let mut next_boss_pop = vec![boss_pop[0].clone(), boss_pop[1].clone()];
@@ -704,5 +736,6 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, i
 
     if is_final {
         println!("[ГОТОВО] Обучение завершено. Модели сохранены и готовы к игре.\n");
+        append_to_history_log("[ГОТОВО] Обучение завершено. Модели сохранены на диск.\n\n");
     }
 }
