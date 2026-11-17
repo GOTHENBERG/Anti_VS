@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use rayon::prelude::*;
-use crate::ecs::components::combat::{DamagePacket, DamageType};
+use crate::ecs::components::combat::{DamagePacket, DamageType, Faction};
 use crate::ecs::components::inventory::DamageSourceKind;
 use crate::ecs::world::World;
 
@@ -120,8 +120,59 @@ pub fn update_movement(world: &mut World, dt: f32) {
         world.spatial_grid.insert(idx, mob.pos);
     }
 
-    // 3. Обновление снарядов
+    // 3. Обновление снарядов (включая активное самонаведение в полете)
     for proj in &mut world.projectiles {
+        if proj.homing_strength > 0.0 {
+            let search_radius = 450.0f32;
+            let mut closest_target_pos = None;
+            let mut min_dist_sq = search_radius * search_radius;
+
+            if proj.faction == Faction::Boss {
+                // Ищем ближайшего живого моба через Spatial Grid
+                let nearby = world.spatial_grid.query_nearby(proj.pos, search_radius);
+                for idx in nearby {
+                    if let Some(mob) = world.mobs.get(idx) {
+                        if mob.health.is_alive() {
+                            let dist_sq = mob.pos.distance_squared(proj.pos);
+                            if dist_sq < min_dist_sq {
+                                min_dist_sq = dist_sq;
+                                closest_target_pos = Some(mob.pos);
+                            }
+                        }
+                    }
+                }
+                // Если мобов в радиусе нет — проверяем живые алтари
+                if closest_target_pos.is_none() {
+                    for st in &world.structures {
+                        if st.health.is_alive() {
+                            let dist_sq = st.pos.distance_squared(proj.pos);
+                            if dist_sq < min_dist_sq {
+                                min_dist_sq = dist_sq;
+                                closest_target_pos = Some(st.pos);
+                            }
+                        }
+                    }
+                }
+            } else if proj.faction == Faction::Director {
+                closest_target_pos = Some(world.boss_pos);
+            }
+
+            if let Some(target_pos) = closest_target_pos {
+                let to_target = target_pos - proj.pos;
+                let dist_sq = to_target.length_squared();
+                if dist_sq > 4.0 {
+                    let target_dir = to_target.normalize();
+                    let current_speed = proj.vel.length();
+                    if current_speed > 1.0 {
+                        let current_dir = proj.vel / current_speed;
+                        let turn_factor = (proj.homing_strength * dt).min(1.0);
+                        let new_dir = current_dir.lerp(target_dir, turn_factor).normalize_or_zero();
+                        proj.vel = new_dir * current_speed;
+                    }
+                }
+            }
+        }
+
         proj.pos += proj.vel * dt;
         proj.lifetime -= dt;
     }

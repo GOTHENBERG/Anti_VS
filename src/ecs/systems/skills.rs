@@ -11,58 +11,54 @@ pub fn select_tactical_target(world: &World, boss_pos: Vec2, max_range: f32) -> 
     let mut best_target = None;
     let mut best_score = -1000.0f32;
 
-    // 1. Оценка Алтарей Крови (Высокий стратегический приоритет для уничтожения)
-    for st in &world.structures {
-        let dist = st.pos.distance(boss_pos);
-        if dist <= max_range {
-            let score = 160.0 - dist * 0.12;
-            if score > best_score {
-                best_score = score;
-                best_target = Some(st.pos);
-            }
-        }
-    }
-
-    // 2. Оценка мобов через Spatial Grid
+    // 1. Оценка живых мобов через Spatial Grid (высший приоритет — непосредственная угроза жизни босса)
     let nearby_indices = world.spatial_grid.query_nearby(boss_pos, max_range);
-
-    // Подсчет позиций культистов для выявления скоплений стрелков
-    let cultist_positions: Vec<Vec2> = nearby_indices.iter()
-        .filter_map(|&idx| world.mobs.get(idx))
-        .filter(|m| m.tier == 3)
-        .map(|m| m.pos)
-        .collect();
 
     for &idx in &nearby_indices {
         if let Some(mob) = world.mobs.get(idx) {
+            if !mob.health.is_alive() {
+                continue;
+            }
             let dist = mob.pos.distance(boss_pos);
             if dist > max_range {
                 continue;
             }
 
-            let mut score = match mob.tier {
-                // Тир 3 (Культисты-стрелки): опаснейшие дальники! Приоритетнейшая цель для снайпинга!
-                3 => {
-                    let mut s = 140.0;
-                    let nearby_cultists = cultist_positions.iter()
-                        .filter(|&&cp| cp.distance_squared(mob.pos) < 130.0 * 130.0)
-                        .count();
-                    s += (nearby_cultists as f32) * 22.0;
-                    s
-                }
-                // Тир 5 (Камикадзе): взрывоопасны при приближении
-                5 => {
-                    if dist < 150.0 { 135.0 } else { 70.0 }
-                }
-                // Тир 2 (Гончие): скоростные фланкеры
-                2 => 65.0,
-                // Тир 4 (Големы): танки
-                4 => 40.0,
-                // Тир 1 (Скелеты): пушечное мясо
-                _ => {
-                    if dist < 55.0 { 85.0 } else { 15.0 }
-                }
+            // Базовый вес угрозы по тиру
+            let base_threat = match mob.tier {
+                // Стрелки-культисты и снайперы
+                3 | 11 => 135.0,
+                // Камикадзе (смертельно опасны вблизи)
+                5 => if dist < 160.0 { 160.0 } else { 75.0 },
+                // Боссы и полубоссы (Жнецы, Аватары Бездны)
+                8 | 16 => 180.0,
+                // Элитная кавалерия / Церберы
+                10 => 120.0,
+                // Тяжелые фаланги и колоссы
+                9 | 12 => 90.0,
+                // Мучители и сталкеры
+                13 | 14 => 110.0,
+                // Гончие (быстрые)
+                2 => 80.0,
+                // Големы
+                4 => 60.0,
+                // Скелеты и прочая пехота
+                _ => 30.0,
             };
+
+            let mut score = base_threat;
+
+            // Элитные мобы опаснее
+            if mob.is_elite {
+                score += 80.0;
+            }
+
+            // Непосредственная угроза боссу в упор (< 110 px) требует экстренной зачистки!
+            if dist < 70.0 {
+                score += 150.0;
+            } else if dist < 120.0 {
+                score += 80.0;
+            }
 
             // Добивание раненых
             if mob.health.current < mob.health.max * 0.35 {
@@ -70,11 +66,25 @@ pub fn select_tactical_target(world: &World, boss_pos: Vec2, max_range: f32) -> 
             }
 
             // Штраф за дальность
-            score -= dist * 0.14;
+            score -= dist * 0.20;
 
             if score > best_score {
                 best_score = score;
                 best_target = Some(mob.pos);
+            }
+        }
+    }
+
+    // 2. Оценка живых Алтарей Крови (стратегическая цель, если рядом нет смертельной толпы)
+    for st in &world.structures {
+        if st.health.is_alive() {
+            let dist = st.pos.distance(boss_pos);
+            if dist <= max_range {
+                let score = 110.0 - dist * 0.16;
+                if score > best_score {
+                    best_score = score;
+                    best_target = Some(st.pos);
+                }
             }
         }
     }
@@ -86,59 +96,77 @@ pub fn select_tactical_target(world: &World, boss_pos: Vec2, max_range: f32) -> 
 /// Для AoE-оружий (Метеоры, Сингулярность, Разлом Бездны, Ядовитые споры) целится в центр тяжести
 /// наибольшего скопления мобов, максимизируя суммарный сплеш-урон.
 pub fn select_cluster_density_target(world: &World, boss_pos: Vec2, max_range: f32, aoe_radius: f32) -> Option<Vec2> {
-    // 1. Если рядом есть Алтарь Крови в зоне досягаемости — он приоритетнейшая цель для AoE разрушения!
-    for st in &world.structures {
-        if st.structure_type == 1 && st.health.is_alive() {
-            let dist = st.pos.distance(boss_pos);
-            if dist <= max_range {
-                return Some(st.pos);
-            }
-        }
-    }
-
     let nearby_indices = world.spatial_grid.query_nearby(boss_pos, max_range);
-    if nearby_indices.is_empty() {
-        return None;
-    }
-
     let aoe_radius_sq = aoe_radius * aoe_radius;
     let mut best_score = 0.0f32;
     let mut best_cluster_center = None;
 
-    // Сэмплируем кандидатов (до 24 ближайших мобов как потенциальные центры кластеров)
-    let candidate_count = nearby_indices.len().min(24);
+    // 1. Алтарь Крови оценивается как кандидат кластера
+    for st in &world.structures {
+        if st.structure_type == 1 && st.health.is_alive() {
+            let dist = st.pos.distance(boss_pos);
+            if dist <= max_range {
+                let cluster_around_altar = world.spatial_grid.query_nearby(st.pos, aoe_radius);
+                let mut altar_cluster_threat = 8.0f32;
+                let mut weighted_pos = st.pos * 8.0;
+
+                for &m_idx in &cluster_around_altar {
+                    if let Some(m) = world.mobs.get(m_idx) {
+                        if m.health.is_alive() && m.pos.distance_squared(st.pos) <= aoe_radius_sq {
+                            altar_cluster_threat += 1.5;
+                            weighted_pos += m.pos * 1.5;
+                        }
+                    }
+                }
+                let center = weighted_pos / altar_cluster_threat;
+                if altar_cluster_threat > best_score {
+                    best_score = altar_cluster_threat;
+                    best_cluster_center = Some(center);
+                }
+            }
+        }
+    }
+
+    // 2. Сэмплируем кандидатов среди живых мобов
+    let candidate_count = nearby_indices.len().min(28);
     for i in 0..candidate_count {
         let idx = nearby_indices[i];
         if let Some(candidate_mob) = world.mobs.get(idx) {
+            if !candidate_mob.health.is_alive() {
+                continue;
+            }
             let center_candidate = candidate_mob.pos;
             if center_candidate.distance_squared(boss_pos) > max_range * max_range {
                 continue;
             }
 
-            // Оцениваем массу кластера вокруг кандидата
             let cluster_mobs = world.spatial_grid.query_nearby(center_candidate, aoe_radius);
             let mut total_threat = 0.0f32;
             let mut weighted_pos = Vec2::ZERO;
 
             for &m_idx in &cluster_mobs {
                 if let Some(m) = world.mobs.get(m_idx) {
-                    if m.pos.distance_squared(center_candidate) <= aoe_radius_sq {
+                    if m.health.is_alive() && m.pos.distance_squared(center_candidate) <= aoe_radius_sq {
                         let threat = match m.tier {
-                            3 | 11 => 3.5, // Стрелки-культисты
-                            5 => 4.0,      // Камикадзе
-                            8 | 16 => 5.0, // Жнецы и Аватары
-                            4 | 12 => 2.5, // Големы и Колоссы
-                            _ => 1.0,      // Пехота
-                        };
-                        total_threat += threat;
-                        weighted_pos += m.pos * threat;
+                            3 | 11 => 3.5,
+                            5 => 4.0,
+                            8 | 16 => 6.0,
+                            4 | 12 => 3.0,
+                            _ => 1.0,
+                        } * if m.is_elite { 2.5 } else { 1.0 };
+
+                        let dist_to_boss = m.pos.distance(boss_pos);
+                        let proximity_mult = if dist_to_boss < 110.0 { 2.0 } else if dist_to_boss < 180.0 { 1.4 } else { 1.0 };
+
+                        let final_threat = threat * proximity_mult;
+                        total_threat += final_threat;
+                        weighted_pos += m.pos * final_threat;
                     }
                 }
             }
 
             if total_threat > best_score && total_threat > 0.001 {
                 best_score = total_threat;
-                // Физический центр тяжести (Center of Mass) кластера
                 best_cluster_center = Some(weighted_pos / total_threat);
             }
         }
@@ -250,6 +278,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 12.0,
                             pierce: 2,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::WindBlade),
                         });
                     }
@@ -343,6 +372,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 8.0,
                             pierce: 1 + (weapon.level / 3) as u8,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::MagicWand),
                         });
                     }
@@ -371,6 +401,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 14.0,
                             pierce: 5,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::HolyHammer),
                         });
                     }
@@ -405,6 +436,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 9.0,
                             pierce: 2,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::IceShards),
                         });
                     }
@@ -495,6 +527,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 14.0,
                             pierce: 4,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::ExecutionerAxe),
                         });
                     }
@@ -517,6 +550,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 18.0,
                             pierce: 8,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::WhirlwindCleaver),
                         });
                     }
@@ -548,6 +582,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 10.0,
                             pierce: 3,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::CelestialBow),
                         });
                     }
@@ -579,6 +614,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 13.0,
                             pierce: 6,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::StarfallBarrage),
                         });
                     }
@@ -602,6 +638,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 12.0,
                             pierce: 3,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::ThunderOrb),
                         });
                     }
@@ -660,6 +697,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 8.0,
                             pierce: 1,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::BloodDaggers),
                         });
                     }
@@ -682,6 +720,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 10.0,
                             pierce: 4,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::BloodHarvest),
                         });
                     }
@@ -706,6 +745,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         radius: 18.0,
                         pierce: 10,
                         faction: Faction::Boss,
+                        homing_strength: 0.0,
                         source_weapon: Some(WeaponType::SingularityOrb),
                     });
                 }
@@ -727,6 +767,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 28.0,
                             pierce: 20,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::EventHorizon),
                         });
                     }
@@ -757,6 +798,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 12.0,
                             pierce: 6,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::ChainFrost),
                         });
                     }
@@ -779,6 +821,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 16.0,
                             pierce: 12,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::AbsoluteZero),
                         });
                     }
@@ -802,6 +845,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         radius: 20.0,
                         pierce: 15,
                         faction: Faction::Boss,
+                        homing_strength: 0.0,
                         source_weapon: Some(WeaponType::BrimstoneRay),
                     });
                 }
@@ -823,6 +867,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 24.0,
                             pierce: 25,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::InfernalCataclysm),
                         });
                     }
@@ -830,10 +875,17 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
                 // 1.27 Рой Микроракет: самонаводящиеся ракеты
                 WeaponType::MissileSwarm => {
+                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                        (target_pos - boss_pos).normalize_or_zero()
+                    } else {
+                        Vec2::X
+                    };
                     let count = 4 + weapon.bonus_projectiles as usize;
-                    for _ in 0..count {
-                        let angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
-                        let dir = Vec2::new(angle.cos(), angle.sin());
+                    for i in 0..count {
+                        let spread = ((i as f32) - (count as f32 - 1.0) * 0.5) * 0.35 + rand::gen_range(-0.1, 0.1);
+                        let sin = spread.sin();
+                        let cos = spread.cos();
+                        let dir = Vec2::new(base_dir.x * cos - base_dir.y * sin, base_dir.x * sin + base_dir.y * cos);
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
@@ -841,10 +893,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
                             armor_penetration: armor_pen + 0.25,
-                            lifetime: 2.0,
+                            lifetime: 2.2,
                             radius: 11.0,
                             pierce: 2,
                             faction: Faction::Boss,
+                            homing_strength: 7.5,
                             source_weapon: Some(WeaponType::MissileSwarm),
                         });
                     }
@@ -852,10 +905,17 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
                 // 1.28 Осада Судного Дня (ЭВОЛЮЦИЯ): ураганный залп кассетных ракет
                 WeaponType::DoomsdayBarrage => {
+                    let base_dir = if let Some(target_pos) = tactical_target_pos {
+                        (target_pos - boss_pos).normalize_or_zero()
+                    } else {
+                        Vec2::X
+                    };
                     let count = 8 + weapon.bonus_projectiles as usize;
                     for i in 0..count {
-                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32) + rand::gen_range(-0.15, 0.15);
-                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        let spread = ((i as f32) - (count as f32 - 1.0) * 0.5) * 0.28 + rand::gen_range(-0.12, 0.12);
+                        let sin = spread.sin();
+                        let cos = spread.cos();
+                        let dir = Vec2::new(base_dir.x * cos - base_dir.y * sin, base_dir.x * sin + base_dir.y * cos);
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
@@ -863,10 +923,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
                             armor_penetration: armor_pen + 0.50,
-                            lifetime: 2.2,
+                            lifetime: 2.5,
                             radius: 15.0,
                             pierce: 4,
                             faction: Faction::Boss,
+                            homing_strength: 9.5,
                             source_weapon: Some(WeaponType::DoomsdayBarrage),
                         });
                     }
@@ -896,6 +957,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 12.0,
                             pierce: 4,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::ChainLightning),
                         });
                     }
@@ -918,6 +980,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 16.0,
                             pierce: 8,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::StormGodWrath),
                         });
                     }
@@ -986,6 +1049,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 14.0,
                             pierce: 5,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::SoulPhantoms),
                         });
                     }
@@ -1008,6 +1072,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 18.0,
                             pierce: 12,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::BansheeWail),
                         });
                     }
@@ -1031,6 +1096,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 16.0,
                             pierce: 10,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::AegisOrbiters),
                         });
                     }
@@ -1053,6 +1119,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 22.0,
                             pierce: 25,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::InvincibleBastion),
                         });
                     }
@@ -1073,6 +1140,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         radius: 24.0,
                         pierce: 1,
                         faction: Faction::Boss,
+                        homing_strength: 0.0,
                         source_weapon: Some(WeaponType::ChaosMeteor),
                     });
                 }
@@ -1095,6 +1163,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 28.0,
                             pierce: 1,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::ArmageddonStorm),
                         });
                     }
@@ -1119,6 +1188,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         radius: 20.0,
                         pierce: 15,
                         faction: Faction::Boss,
+                        homing_strength: 0.0,
                         source_weapon: Some(WeaponType::VoidRift),
                     });
                 }
@@ -1140,6 +1210,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 26.0,
                             pierce: 25,
                             faction: Faction::Boss,
+                            homing_strength: 0.0,
                             source_weapon: Some(WeaponType::SingularityCollapse),
                         });
                     }
@@ -1230,9 +1301,27 @@ pub fn update_skills(world: &mut World, dt: f32) {
         }
     }
 
-    // Присваиваем ID и применяем эффекты реликвий
+    // Присваиваем ID и применяем эффекты реликвий и автонаведения
+    let has_blessed_heart = world.boss_inventory.has_passive(crate::ecs::components::inventory::PassiveType::BlessedHeart);
+
     for proj in &mut new_projectiles {
         proj.id = world.alloc_id();
+
+        // 1. Врождённое самонаведение специфических типов оружия
+        match proj.source_weapon {
+            Some(WeaponType::MissileSwarm) => proj.homing_strength = 7.5,
+            Some(WeaponType::DoomsdayBarrage) => proj.homing_strength = 9.5,
+            Some(WeaponType::SoulPhantoms) => proj.homing_strength = 6.0,
+            Some(WeaponType::BansheeWail) => proj.homing_strength = 8.0,
+            Some(WeaponType::MagicWand) => proj.homing_strength = 4.5,
+            _ => {}
+        }
+
+        // 2. Реликвия "Благословенное Сердце": наделяет АБСОЛЮТНО ВСЕ снаряды босса мощным самонаведением!
+        if has_blessed_heart && proj.faction == Faction::Boss {
+            proj.homing_strength = proj.homing_strength.max(6.5);
+        }
+
         if has_colossal_eye {
             proj.radius *= 1.5;
             proj.damage *= 2.0;
@@ -1296,6 +1385,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
             radius: rad,
             pierce: 1,
             faction: Faction::Director,
+            homing_strength: 0.0,
             source_weapon: source_w,
         });
     }

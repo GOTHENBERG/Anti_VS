@@ -490,15 +490,18 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_boss_eval.avg_survival / 60.0,
             best_boss_eval.avg_survival
         );
+        let boss_move_time = (best_boss_eval.avg_survival - best_boss_eval.avg_meditation_time).max(0.0);
         let boss_speed = if best_boss_eval.avg_survival > 0.0 {
             best_boss_eval.avg_distance_walked / best_boss_eval.avg_survival
         } else {
             0.0
         };
         log_line!(
-            "    * Пройдено пешком (без дэша): {:.0} px [Рывков: {}] | Ср. скорость: {:.1} px/сек",
+            "    * Пройдено пешком (без дэша): {:.0} px [Рывков: {}] | Движение: {:.1} мин | Медитация: {:.1} мин | Ср. скорость: {:.1} px/сек",
             best_boss_eval.avg_distance_walked,
             best_boss_eval.avg_dashes,
+            boss_move_time / 60.0,
+            best_boss_eval.avg_meditation_time / 60.0,
             boss_speed
         );
         log_line!(

@@ -36,6 +36,7 @@ pub struct ProjectileEntity {
     pub pierce: u8,
     pub faction: Faction,
     pub source_weapon: Option<WeaponType>,
+    pub homing_strength: f32,
 }
 
 #[derive(Clone, Debug)]
