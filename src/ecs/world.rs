@@ -154,6 +154,9 @@ pub struct World {
     // Босс (Автономный соло-герой)
     pub boss_pos: Vec2,
     pub boss_vel: Vec2,
+    pub boss_facing: Vec2,
+    pub boss_name: String,
+    pub boss_skin: u8,
     pub boss_health: Health,
     pub boss_resistances: Resistances,
     pub boss_inventory: BossInventory,
@@ -198,6 +201,8 @@ pub struct World {
 
     pub next_entity_id: usize,
     pub total_damage_dealt_to_boss: f32,
+    pub boss_altars_destroyed_total: usize,
+    pub boss_obelisks_deactivated_total: usize,
     pub screen_shake: f32,
     pub obelisk_cycle_timer: f32,
     pub boss_model: Option<crate::ai::models::BossModel>,
@@ -216,6 +221,9 @@ impl World {
         Self {
             boss_pos: Vec2::new(crate::core::MAP_WIDTH * 0.5, crate::core::MAP_HEIGHT * 0.5),
             boss_vel: Vec2::ZERO,
+            boss_facing: Vec2::X,
+            boss_name: "Игрок".to_string(),
+            boss_skin: 0,
             boss_health: Health::new(1200.0),
             boss_resistances: Resistances {
                 flat_armor: 6.0,
@@ -256,6 +264,8 @@ impl World {
             damage_queue: Vec::new(),
             next_entity_id: 1,
             total_damage_dealt_to_boss: 0.0,
+            boss_altars_destroyed_total: 0,
+            boss_obelisks_deactivated_total: 0,
             screen_shake: 0.0,
             obelisk_cycle_timer: 60.0,
             // Модель загружается один раз в main.rs / симуляции, а не на каждом World::new().

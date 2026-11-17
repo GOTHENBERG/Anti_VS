@@ -3,6 +3,7 @@ pub mod cursor;
 pub mod dossier;
 pub mod font;
 pub mod item_dossier;
+pub mod main_menu;
 pub mod renderer;
 pub mod settings;
 pub mod sprites;

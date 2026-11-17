@@ -4,7 +4,7 @@ use crate::ecs::components::combat::Faction;
 use crate::ecs::components::inventory::{WeaponType, PassiveType};
 use crate::ecs::world::World;
 use crate::core::{MAP_WIDTH, MAP_HEIGHT};
-use crate::ai::neural_net::INPUT_SIZE;
+use crate::ai::neural_net::{BOSS_DASH_BASE_COOLDOWN_SECONDS, INPUT_SIZE};
 
 const BOSS_GRID: usize = 5;
 const BOSS_CELL: f32 = 100.0;
@@ -25,7 +25,7 @@ fn boss_cell_of(dx: f32, dy: f32) -> Option<(usize, usize)> {
 }
 
 /// ============================================================================
-/// СЕНСОРЫ БОССА — 154 входа
+/// СЕНСОРЫ БОССА — 166 входов
 /// ============================================================================
 /// [0..100]   4 канала × сетка 5×5 (ячейка 100 px, охват 500×500 px):
 ///            канал 0 — мобы, канал 1 — снаряды Директора,
@@ -40,6 +40,7 @@ fn boss_cell_of(dx: f32, dy: f32) -> Option<(usize, usize)> {
 /// [135..150] Цели: ближайший алтарь (вектор, HP, ETA), магнит, кристалл душ,
 ///            флаг атаки алтаря, время матча, недавний урон, дистанция до элиты.
 /// [150..154] Урон от окружения, длительность/сила яда, дистанция промаха снаряда.
+/// [154..166] Позиция (x,y) и активность каждого из четырёх обелисков.
 ///
 /// Ключевое отличие от старой версии: типы угроз больше не смешаны в один
 /// скаляр, у снарядов есть time-to-impact, а собственные ресурсы Босса
@@ -223,7 +224,7 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     obs[116] = (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0);
     obs[117] = (world.boss_resistances.flat_armor / 60.0).clamp(0.0, 1.0);
     obs[118] = if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 };
-    obs[119] = (world.boss_dash_cooldown / 7.0).clamp(0.0, 1.0);
+    obs[119] = (world.boss_dash_cooldown / BOSS_DASH_BASE_COOLDOWN_SECONDS).clamp(0.0, 1.0);
     obs[120] = (world.boss_inventory.level as f32 / 50.0).clamp(0.0, 1.0);
     let xp_next = world.boss_inventory.xp_to_next_level.max(1.0);
     obs[121] = (world.boss_inventory.current_xp / xp_next).clamp(0.0, 1.0);
@@ -358,6 +359,31 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     } else {
         1.0
     };
+
+    let mut obelisks: Vec<_> = world
+        .structures
+        .iter()
+        .filter(|structure| {
+            structure.structure_type == crate::content::structures::STRUCTURE_OBELISK
+        })
+        .collect();
+    obelisks.sort_by(|a, b| {
+        a.pos
+            .y
+            .partial_cmp(&b.pos.y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.pos.x.partial_cmp(&b.pos.x).unwrap_or(std::cmp::Ordering::Equal))
+    });
+    for (index, obelisk) in obelisks.into_iter().take(4).enumerate() {
+        let base = 154 + index * 3;
+        obs[base] = (obelisk.pos.x / MAP_WIDTH).clamp(0.0, 1.0);
+        obs[base + 1] = (obelisk.pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
+        obs[base + 2] = if obelisk.is_active && obelisk.health.is_alive() {
+            1.0
+        } else {
+            0.0
+        };
+    }
 
     obs
 }

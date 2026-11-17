@@ -8,7 +8,7 @@ use crate::render::sprites::{
 };
 use crate::render::textures::GameTextures;
 
-pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures, cam_pos: Vec2, cam_zoom: f32) {
+pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, cam_pos: Vec2, cam_zoom: f32) {
     let time = get_time() as f32;
 
     // Расчет границ видимой области экрана (Viewport Frustum Culling)
@@ -79,6 +79,60 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures, 
         let view_pad = if structure.structure_type == crate::content::structures::STRUCTURE_OBELISK { 220.0 } else { 180.0 };
         if !in_view(structure.pos, view_pad) {
             continue;
+        }
+
+        match structure.structure_type {
+            crate::content::structures::STRUCTURE_ALTAR => {
+                draw_circle_lines(
+                    structure.pos.x,
+                    structure.pos.y,
+                    structure.radius,
+                    1.8,
+                    Color::new(1.0, 0.78, 0.35, 0.72),
+                );
+                draw_circle_lines(
+                    structure.pos.x,
+                    structure.pos.y,
+                    crate::content::structures::ALTAR_MIN_SPACING,
+                    1.0,
+                    Color::new(1.0, 0.78, 0.35, 0.18),
+                );
+            }
+            crate::content::structures::STRUCTURE_WALL => {
+                let half = crate::content::structures::WALL_RADIUS;
+                draw_rectangle_lines(
+                    structure.pos.x - half,
+                    structure.pos.y - half,
+                    half * 2.0,
+                    half * 2.0,
+                    1.5,
+                    Color::new(0.6, 0.8, 1.0, 0.8),
+                );
+            }
+            crate::content::structures::STRUCTURE_OBELISK => {
+                let half = crate::content::structures::OBELISK_RADIUS * 2.0;
+                let border = if structure.is_active {
+                    Color::new(1.0, 0.2, 0.9, 0.95)
+                } else {
+                    Color::new(0.72, 0.58, 0.32, 0.55)
+                };
+                draw_rectangle_lines(
+                    structure.pos.x - half,
+                    structure.pos.y - half,
+                    half * 2.0,
+                    half * 2.0,
+                    1.5,
+                    border,
+                );
+                draw_circle_lines(
+                    structure.pos.x,
+                    structure.pos.y,
+                    crate::content::structures::OBELISK_RADIUS,
+                    1.4,
+                    Color::new(border.r, border.g, border.b, 0.72),
+                );
+            }
+            _ => {}
         }
 
         match structure.structure_type {
@@ -352,9 +406,19 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures, 
     draw_boss(
         world.boss_pos,
         world.boss_vel,
+        world.boss_facing,
         world.boss_invulnerable_timer > 0.0,
+        world.boss_skin,
         time,
         textures,
+    );
+    let name_width = fonts.measure_heading(&world.boss_name, 13.0).width;
+    fonts.draw_heading(
+        &world.boss_name,
+        world.boss_pos.x - name_width * 0.5,
+        world.boss_pos.y - 49.0,
+        13.0,
+        Color::new(0.95, 0.88, 0.68, 0.96),
     );
 
     // 9. Отрисовка частиц

@@ -2,8 +2,8 @@ use macroquad::prelude::*;
 use crate::core::rand;
 use crate::ai::models::{BossModel, DirectorModel};
 use crate::ai::neural_net::{
-    DirectorActionContext, BOSS_DECISION_INTERVAL, INPUT_SIZE, OUT_DASH, OUT_DASH_X, OUT_DASH_Y,
-    OUT_MOVE_MAG, OUT_MOVE_X, OUT_MOVE_Y, OUT_REST,
+    DirectorActionContext, BOSS_DASH_BASE_COOLDOWN_SECONDS, BOSS_TRAINING_DECISION_INTERVAL,
+    INPUT_SIZE, OUT_DASH, OUT_DASH_X, OUT_DASH_Y, OUT_MOVE_MAG, OUT_MOVE_X, OUT_MOVE_Y, OUT_REST,
 };
 use crate::content::mobs::{get_squad_config, spawn_squad_in_sector};
 use crate::content::structures::{
@@ -20,8 +20,8 @@ use crate::ecs::systems::{
 };
 use crate::ecs::world::World;
 
-/// Решение Босса, закэшированное между «мыслями» (5 Гц: раз в 0.2 сек).
-/// Это ускоряет обучение примерно в 4 раза относительно 20 Гц и не меняет физику мира.
+/// Решение Босса, закэшированное между «мыслями»; по умолчанию обучение решает на каждом 20-Гц тике.
+/// Частоту можно понизить параметром --think-ms, не меняя частоту физики.
 #[derive(Clone, Copy, Debug)]
 struct BossAction {
     move_dir: Vec2,
@@ -40,6 +40,7 @@ pub struct MatchResult {
     pub boss_max_health: f32,
     pub altars_built: usize,
     pub altars_destroyed: usize,
+    pub obelisks_deactivated: usize,
     pub total_altar_uptime_seconds: f32,
     pub director_points_spent: f32,
     pub director_points_unspent: f32,
@@ -66,6 +67,7 @@ pub fn run_headless_simulation(
     director_model: &DirectorModel,
     seed: u64,
     max_duration_seconds: f32,
+    boss_decision_interval: f32,
 ) -> MatchResult {
     rand::seed(seed);
 
@@ -74,6 +76,7 @@ pub fn run_headless_simulation(
     world.boss_model = Some(boss_model.clone());
 
     let dt = 0.05f32; // 20 тиков на каждую виртуальную секунду
+    let boss_decision_interval = boss_decision_interval.max(dt);
     let mut sim_time = 0.0f32;
     let mut director_decision_timer = 0.4; // решение в первом же тике
     let mut altars_built = 1;
@@ -87,7 +90,7 @@ pub fn run_headless_simulation(
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
 
     let mut cached_action: Option<BossAction> = None;
-    let mut boss_think_timer = BOSS_DECISION_INTERVAL;
+    let mut boss_think_timer = boss_decision_interval;
 
     while world.boss_health.is_alive() && sim_time < max_duration_seconds {
         sim_time += dt;
@@ -116,9 +119,9 @@ pub fn run_headless_simulation(
         }
         world.boss_inventory.update_damage_decay(dt);
 
-        // 3. Мышление Босса (5 Гц) и применение закэшированного действия
+        // 3. Мышление Босса и применение закэшированного действия
         boss_think_timer += dt;
-        if cached_action.is_none() || boss_think_timer >= BOSS_DECISION_INTERVAL {
+        if cached_action.is_none() || boss_think_timer >= boss_decision_interval {
             boss_think_timer = 0.0;
             cached_action = Some(think_boss(&world, boss_model));
         }
@@ -143,9 +146,11 @@ pub fn run_headless_simulation(
         update_movement(&mut world, dt);
         update_combat(&mut world, dt);
 
-        // Суммируем каждую секунду жизни каждого живого алтаря
+        // Учитываем только алтари: стены и обелиски не должны раздувать награду за uptime.
         for st in &world.structures {
-            if st.health.is_alive() {
+            if st.structure_type == crate::content::structures::STRUCTURE_ALTAR
+                && st.health.is_alive()
+            {
                 total_altar_uptime_seconds += dt;
             }
         }
@@ -167,8 +172,6 @@ pub fn run_headless_simulation(
         .unwrap_or(((0, 0, 0), 0.0, 0.0));
     let final_weapons = world.boss_inventory.weapons.iter().map(|w| (w.kind, w.level)).collect();
     let final_passives = world.boss_inventory.passives.iter().map(|p| (p.kind, p.level)).collect();
-    let alive_altars = world.structures.iter().filter(|s| s.health.is_alive()).count();
-
     MatchResult {
         survival_time: sim_time,
         boss_level: final_level,
@@ -176,7 +179,8 @@ pub fn run_headless_simulation(
         damage_dealt_to_boss: dmg_to_boss,
         boss_max_health: world.boss_health.max,
         altars_built,
-        altars_destroyed: altars_built.saturating_sub(alive_altars),
+        altars_destroyed: world.boss_altars_destroyed_total,
+        obelisks_deactivated: world.boss_obelisks_deactivated_total,
         total_altar_uptime_seconds,
         director_points_spent: points_spent,
         director_points_unspent: points_unspent,
@@ -202,8 +206,9 @@ fn think_boss(world: &World, model: &BossModel) -> BossAction {
         let intent = Vec2::new(out[OUT_MOVE_X], out[OUT_MOVE_Y]);
         let len_sq = intent.length_squared();
         let move_dir = if len_sq > 0.0025 { intent / len_sq.sqrt() } else { Vec2::ZERO };
-        let move_mag = out[OUT_MOVE_MAG].clamp(0.0, 1.0);
-        let rest = out[OUT_REST] > 0.5;
+        let is_moving = out[OUT_MOVE_MAG] >= 0.5 && out[OUT_REST] <= 0.5;
+        let move_mag = if is_moving { 1.0 } else { 0.0 };
+        let rest = !is_moving;
 
         let dash_raw = Vec2::new(out[OUT_DASH_X], out[OUT_DASH_Y]);
         let dash_dir = if dash_raw.length_squared() > 0.04 {
@@ -266,7 +271,8 @@ fn apply_boss_action(world: &mut World, action: BossAction, dt: f32) -> (f32, bo
 
         world.boss_pos = dash_target;
         world.boss_invulnerable_timer = 0.25;
-        world.boss_dash_cooldown = 7.0;
+        world.boss_dash_cooldown = BOSS_DASH_BASE_COOLDOWN_SECONDS
+            * world.boss_inventory.get_cooldown_multiplier();
 
         // Рывок уничтожает вражеские снаряды на пути
         for proj in &mut world.projectiles {
@@ -388,11 +394,16 @@ fn run_director_decision(
                 }
             }
             18 => {
+                let mut upgraded = false;
                 if let Some(director) = world.directors.first_mut() {
                     let cost = 120.0 * (director.grade_carapace as f32 + 1.0);
                     if director.spend_points(cost) {
                         director.grade_carapace += 1;
+                        upgraded = true;
                     }
+                }
+                if upgraded {
+                    crate::content::structures::upgrade_structure_carapace(world, 1);
                 }
             }
             19 => {
@@ -408,6 +419,19 @@ fn run_director_decision(
     } else {
         run_director_fallback(world, model, altars_built, mobs_spawned_by_tier);
     }
+}
+
+/// Runs one AI Director action for a live match using the same policy and action masks as training.
+pub fn update_director_policy(world: &mut World, sim_time: f32, model: &DirectorModel) {
+    let mut altars_built = 0usize;
+    let mut mobs_spawned_by_tier = [0usize; 16];
+    run_director_decision(
+        world,
+        sim_time,
+        model,
+        &mut altars_built,
+        &mut mobs_spawned_by_tier,
+    );
 }
 
 fn build_director_context(world: &World) -> DirectorActionContext {
@@ -522,6 +546,7 @@ fn run_director_fallback(
     }
 
     // 3. Грейды: выравниваем отстающие
+    let carapace_before = world.directors.first().map_or(0, |d| d.grade_carapace);
     if let Some(director) = world.directors.first_mut() {
         let fury_cost = 100.0 * (director.grade_fury as f32 + 1.0);
         let carapace_cost = 120.0 * (director.grade_carapace as f32 + 1.0);
@@ -543,6 +568,11 @@ fn run_director_fallback(
             director.grade_fury += 1;
         }
     }
+    let carapace_after = world.directors.first().map_or(0, |d| d.grade_carapace);
+    crate::content::structures::upgrade_structure_carapace(
+        world,
+        carapace_after.saturating_sub(carapace_before),
+    );
 }
 
 #[cfg(test)]
@@ -554,8 +584,20 @@ mod tests {
         let boss = BossModel::default();
         let director = DirectorModel::default();
 
-        let a = run_headless_simulation(&boss, &director, 42, 30.0);
-        let b = run_headless_simulation(&boss, &director, 42, 30.0);
+        let a = run_headless_simulation(
+            &boss,
+            &director,
+            42,
+            30.0,
+            BOSS_TRAINING_DECISION_INTERVAL,
+        );
+        let b = run_headless_simulation(
+            &boss,
+            &director,
+            42,
+            30.0,
+            BOSS_TRAINING_DECISION_INTERVAL,
+        );
 
         assert_eq!(a.survival_time.to_bits(), b.survival_time.to_bits());
         assert_eq!(

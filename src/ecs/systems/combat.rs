@@ -112,6 +112,9 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
     // 1.3 Контактный урон аур по разрушаемым Алтарям Крови
     for st in &mut world.structures {
+        if !crate::content::structures::boss_can_damage_structure(st) {
+            continue;
+        }
         let dist_sq = st.pos.distance_squared(boss_pos);
         if has_blade_storm && dist_sq < (85.0 + st.radius).powi(2) {
             let packet = DamagePacket {
@@ -238,7 +241,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 let actual_dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
                 mob.health.take_damage(actual_dmg);
             }
-        } else if let Some(st) = world.structures.iter_mut().find(|s| s.id == packet.target_id) {
+        } else if let Some(st) = world
+            .structures
+            .iter_mut()
+            .find(|s| s.id == packet.target_id && crate::content::structures::boss_can_damage_structure(s))
+        {
             let actual_dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(actual_dmg);
             structure_texts.push((st.pos, format!("-{:.0}", actual_dmg)));
@@ -337,7 +344,10 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 if proj.pierce == 0 {
                     break;
                 }
-                if st.health.is_alive() && st.pos.distance_squared(proj.pos) < (st.radius + proj.radius).powi(2) {
+                if st.health.is_alive()
+                    && crate::content::structures::boss_can_damage_structure(st)
+                    && st.pos.distance_squared(proj.pos) < (st.radius + proj.radius).powi(2)
+                {
                     let packet = DamagePacket {
                         source_id: Some(0),
                         target_id: st.id,
@@ -513,6 +523,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
     for (st_id, st_pos, st_type) in destroyed_events {
         match st_type {
             crate::content::structures::STRUCTURE_ALTAR => {
+                world.boss_altars_destroyed_total += 1;
                 world.screen_shake = 14.0;
                 world.spawn_particles(st_pos, 50, PURPLE, 190.0);
                 world.spawn_particles(st_pos, 35, RED, 150.0);
@@ -538,6 +549,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 });
             }
             crate::content::structures::STRUCTURE_OBELISK => {
+                world.boss_obelisks_deactivated_total += 1;
                 world.screen_shake = 25.0;
                 world.spawn_particles(st_pos, 80, GOLD, 260.0);
                 world.spawn_particles(st_pos, 60, PURPLE, 220.0);

@@ -74,10 +74,9 @@ pub struct DamagePacket {
 }
 
 impl Resistances {
-    /// Расчет урона в строгом соответствии с формулами:
-    /// Эффективный резист = Базовый резист * (1.0 - Пробитие брони).
-    /// Урон после резиста = Базовый урон * (1.0 - Эффективный резист).
-    /// Итоговый физический урон = Максимум(1.0, Урон после резиста - Эффективная плоская броня).
+    /// Applies resistance, then diminishing-return armor for physical damage.
+    /// Armor uses 100 / (100 + armor), preventing flat subtraction from making
+    /// every low-damage tick deal the old 1 HP minimum.
     pub fn calculate_damage(&self, packet: &DamagePacket, is_undead: bool) -> f32 {
         if packet.damage_type == DamageType::True {
             return packet.amount;
@@ -98,17 +97,23 @@ impl Resistances {
             DamageType::True => 0.0,
         };
 
-        // Эффективный резист = Базовый резист * (1.0 - Пробитие брони атакующим)
-        let effective_res = (base_res * (1.0 - packet.armor_penetration)).clamp(0.0, 0.95);
+        let penetration = packet.armor_penetration.clamp(0.0, 1.0);
+        // Penetration bypasses positive defenses, while vulnerability is not erased by penetration.
+        let effective_res = if base_res > 0.0 {
+            base_res * (1.0 - penetration)
+        } else {
+            base_res
+        }
+        .clamp(-0.75, 0.95);
         let dmg_after_res = incoming_amount * (1.0 - effective_res);
 
-        // Для физ. урона вычитается эффективная плоская броня
         if packet.damage_type == DamageType::Physical {
-            let effective_armor = (self.flat_armor * (1.0 - packet.armor_penetration)).max(0.0);
-            (dmg_after_res - effective_armor).max(1.0)
+            let effective_armor = (self.flat_armor * (1.0 - penetration)).max(0.0);
+            let armor_multiplier = 100.0 / (100.0 + effective_armor);
+            (dmg_after_res * armor_multiplier).max(0.0)
         } else {
-            // Огонь, яд, холод и святой игнорируют плоскую броню
-            dmg_after_res.max(0.5)
+            // Elemental damage ignores flat armor but uses its resistance/vulnerability.
+            dmg_after_res.max(0.0)
         }
     }
 }

@@ -78,7 +78,7 @@ pub fn render_ui(
     }
     draw_rectangle(pause_btn_x, pause_btn_y, pause_btn_w, pause_btn_h, if pause_hover { Color::new(0.32, 0.22, 0.12, 1.0) } else { Color::new(0.12, 0.11, 0.10, 0.95) });
     draw_rectangle_lines(pause_btn_x, pause_btn_y, pause_btn_w, pause_btn_h, 1.5, if pause_hover { GOLD } else { GRAY });
-    let p_label = "⏸ Пауза [Space]";
+    let p_label = "⏸ Пауза [Esc]";
     let pw = fonts.measure_heading(p_label, 12.0).width;
     fonts.draw_heading(p_label, pause_btn_x + (pause_btn_w - pw) / 2.0, pause_btn_y + 18.0, 12.0, if pause_hover { GOLD } else { WHITE });
 
@@ -891,7 +891,7 @@ pub fn render_ui(
             let ai_str = if let Some(ref model) = world.boss_model {
                 let syn = model.total_synapses;
                 let desc = if syn > 0 {
-                    format!("🧠 ИИ: Глубокая нейросеть ({} параметров, 154 сенсора, Пок. {})", syn, model.generation)
+                    format!("🧠 ИИ: Глубокая нейросеть ({} параметров, 166 сенсоров, Пок. {})", syn, model.generation)
                 } else {
                     format!("🧠 ИИ: Обученная модель (Поколение {}, Фитнес {:.0})", model.generation, model.fitness)
                 };
@@ -986,6 +986,67 @@ pub fn render_ui(
     }
 
     interaction
+}
+
+pub fn render_boss_ui(
+    world: &World,
+    clock: &GameClock,
+    fonts: &GameFonts,
+    is_muted: bool,
+    current_track: &str,
+) -> UiInteraction {
+    let w = screen_width();
+    let (mx, my) = mouse_position();
+    let mut interaction = UiInteraction::default();
+    let panel = Rect::new(18.0, 16.0, 280.0, 78.0);
+    draw_rectangle(panel.x, panel.y, panel.w, panel.h, Color::new(0.04, 0.045, 0.075, 0.94));
+    draw_rectangle_lines(panel.x, panel.y, panel.w, panel.h, 1.4, Color::new(0.45, 0.5, 0.62, 0.88));
+    fonts.draw_heading(&world.boss_name, panel.x + 12.0, panel.y + 20.0, 12.0, GOLD);
+    let health_frac = (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0);
+    draw_rectangle(panel.x + 12.0, panel.y + 30.0, 252.0, 10.0, Color::new(0.20, 0.07, 0.09, 1.0));
+    draw_rectangle(panel.x + 12.0, panel.y + 30.0, 252.0 * health_frac, 10.0, Color::new(0.78, 0.18, 0.22, 1.0));
+    fonts.draw_text(
+        &format!("HP {:.0}/{:.0}   Ур. {}", world.boss_health.current, world.boss_health.max, world.boss_inventory.level),
+        panel.x + 12.0,
+        panel.y + 56.0,
+        11.0,
+        WHITE,
+    );
+    let dash_text = if world.boss_dash_cooldown <= 0.0 { "ГОТОВ".to_string() } else { format!("{:.1}с", world.boss_dash_cooldown) };
+    fonts.draw_text(
+        &format!("Рывок: {}   Время: {}", dash_text, clock.formatted_elapsed()),
+        panel.x + 12.0,
+        panel.y + 72.0,
+        10.5,
+        Color::new(0.72, 0.75, 0.84, 1.0),
+    );
+
+    let pause = Rect::new(w - 190.0, 16.0, 172.0, 30.0);
+    let sound = Rect::new(w - 190.0, 52.0, 172.0, 26.0);
+    let pause_hover = contains_rect(pause, mx, my);
+    let sound_hover = contains_rect(sound, mx, my);
+    draw_rectangle(pause.x, pause.y, pause.w, pause.h, if pause_hover { Color::new(0.30, 0.19, 0.10, 1.0) } else { Color::new(0.10, 0.11, 0.16, 0.96) });
+    draw_rectangle_lines(pause.x, pause.y, pause.w, pause.h, 1.0, if pause_hover { GOLD } else { GRAY });
+    fonts.draw_heading("⏸ Пауза [Esc]", pause.x + 20.0, pause.y + 20.0, 11.0, WHITE);
+    draw_rectangle(sound.x, sound.y, sound.w, sound.h, if sound_hover { Color::new(0.18, 0.20, 0.29, 1.0) } else { Color::new(0.08, 0.09, 0.14, 0.96) });
+    draw_rectangle_lines(sound.x, sound.y, sound.w, sound.h, 1.0, if sound_hover { SKYBLUE } else { DARKGRAY });
+    let sound_label = if is_muted { "Звук: ВЫКЛ [M]" } else { "Звук: ВКЛ [M]" };
+    fonts.draw_heading(sound_label, sound.x + 12.0, sound.y + 18.0, 10.0, if is_muted { RED } else { GREEN });
+    if is_mouse_button_pressed(MouseButton::Left) && pause_hover {
+        interaction.clicked_pause = true;
+    }
+    if is_mouse_button_pressed(MouseButton::Left) && sound_hover {
+        interaction.clicked_sound_toggle = true;
+    }
+    interaction.is_mouse_over_ui = pause_hover || sound_hover || contains_rect(panel, mx, my);
+    if !current_track.is_empty() {
+        fonts.draw_text(current_track, 18.0, screen_height() - 16.0, 10.0, Color::new(0.68, 0.70, 0.78, 0.82));
+    }
+    interaction
+}
+
+fn contains_rect(rect: Rect, x: f32, y: f32) -> bool {
+    x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
 }
 
 /// Отрисовка тактической миникарты в левом нижнем углу с рамкой обзора, не выходящей за границы

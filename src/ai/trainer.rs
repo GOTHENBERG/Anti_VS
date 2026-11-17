@@ -79,6 +79,7 @@ fn shuffle<T>(items: &mut [T]) {
 /// - 150 за среднюю долю времени жизни построенных алтарей;
 /// - 50 за конверсию душ в действия (spent / (spent + unspent + 100));
 /// - -100 за уровень Босса (чтобы Директор не «кормил» его опытом).
+/// - отрицательный бонус Директору за уничтоженные алтари и деактивированные обелиски.
 fn director_utility(res: &MatchResult) -> f32 {
     let cap = res.match_cap.max(1.0);
     let survival_frac = (res.survival_time / cap).clamp(0.0, 1.0);
@@ -96,8 +97,12 @@ fn director_utility(res: &MatchResult) -> f32 {
     let economy_reward =
         (res.director_points_spent / economy_denom).clamp(0.0, 1.0) * 50.0;
     let level_penalty = (res.boss_level as f32 / 50.0).clamp(0.0, 1.0) * 100.0;
+    let boss_structure_reward = res.altars_destroyed.min(12) as f32 * 6.0
+        + res.obelisks_deactivated.min(4) as f32 * 20.0;
 
-    (time_reward + kill_bonus + damage_reward + altar_reward + economy_reward - level_penalty)
+    (time_reward + kill_bonus + damage_reward + altar_reward + economy_reward
+        - level_penalty
+        - boss_structure_reward)
         .clamp(-1400.0, 1400.0)
 }
 
@@ -112,6 +117,7 @@ struct BossEval {
     avg_ranged_damage: f32,
     avg_hazard_damage: f32,
     avg_altars_destroyed: usize,
+    avg_obelisks_deactivated: usize,
     avg_altars_built: usize,
     avg_meditation_time: f32,
     avg_distance_walked: f32,
@@ -130,6 +136,7 @@ struct DirectorEval {
     avg_damage_dealt: f32,
     avg_altars_built: usize,
     avg_altars_destroyed: usize,
+    avg_obelisks_deactivated: usize,
     avg_altar_uptime_rate: f32,
     avg_altar_uptime_total: f32,
     avg_boss_level: u32,
@@ -153,6 +160,7 @@ struct BossAcc {
     ranged_sum: f32,
     hazard_sum: f32,
     altars_destroyed: usize,
+    obelisks_deactivated: usize,
     altars_built: usize,
     meditation_sum: f32,
     distance_sum: f32,
@@ -175,6 +183,7 @@ impl BossAcc {
         self.ranged_sum += res.boss_damage_stats.ranged_total;
         self.hazard_sum += res.boss_damage_stats.hazard_total;
         self.altars_destroyed += res.altars_destroyed;
+        self.obelisks_deactivated += res.obelisks_deactivated;
         self.altars_built += res.altars_built;
         self.meditation_sum += res.total_meditation_time;
         self.distance_sum += res.distance_walked;
@@ -209,6 +218,7 @@ impl BossAcc {
             avg_ranged_damage: self.ranged_sum / m,
             avg_hazard_damage: self.hazard_sum / m,
             avg_altars_destroyed: (self.altars_destroyed as f32 / m).round() as usize,
+            avg_obelisks_deactivated: (self.obelisks_deactivated as f32 / m).round() as usize,
             avg_altars_built: (self.altars_built as f32 / m).round() as usize,
             avg_meditation_time: self.meditation_sum / m,
             avg_distance_walked: self.distance_sum / m,
@@ -229,6 +239,7 @@ struct DirectorAcc {
     damage_sum: f32,
     altars_built: usize,
     altars_destroyed: usize,
+    obelisks_deactivated: usize,
     uptime_sum: f32,
     boss_level_sum: u64,
     boss_meditation_sum: f32,
@@ -250,6 +261,7 @@ impl DirectorAcc {
         self.damage_sum += res.damage_dealt_to_boss;
         self.altars_built += res.altars_built;
         self.altars_destroyed += res.altars_destroyed;
+        self.obelisks_deactivated += res.obelisks_deactivated;
         self.uptime_sum += res.total_altar_uptime_seconds;
         self.boss_level_sum += res.boss_level as u64;
         self.boss_meditation_sum += res.total_meditation_time;
@@ -284,6 +296,7 @@ impl DirectorAcc {
             avg_damage_dealt: self.damage_sum / m,
             avg_altars_built: (self.altars_built as f32 / m).round() as usize,
             avg_altars_destroyed: (self.altars_destroyed as f32 / m).round() as usize,
+            avg_obelisks_deactivated: (self.obelisks_deactivated as f32 / m).round() as usize,
             avg_altar_uptime_rate: avg_uptime / (avg_kill / 60.0).max(0.1),
             avg_altar_uptime_total: avg_uptime,
             avg_boss_level: (self.boss_level_sum as f32 / m).round() as u32,
@@ -355,6 +368,7 @@ pub fn run_co_evolutionary_training(
     population_size: usize,
     reset: bool,
     round_duration: Option<f32>,
+    boss_decision_interval: f32,
 ) {
     let generations = generations.max(1);
     // Два элита занимают всю популяцию; при размере 2 следующие поколения
@@ -370,6 +384,7 @@ pub fn run_co_evolutionary_training(
     println!("  Движок: {} потоков Rayon (ноль-суммарные матчи с фиксированными seed)", rayon::current_num_threads());
     println!("  Поколений: {} | Размер популяции каждого агента: {}", generations, population_size);
     println!("  Длительность матчей: {}", duration_info);
+    println!("  Частота решений Босса: {:.0} мс", boss_decision_interval * 1000.0);
     println!("  Формат: v{} (старый фитнес инвалидируется при загрузке)", MODEL_FORMAT_VERSION);
     println!("  Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
     if reset {
@@ -582,7 +597,13 @@ pub fn run_co_evolutionary_training(
                     AgentRef::Population(i) => &director_pop[i],
                     AgentRef::HallOfFame(i) => &hof_directors[i],
                 };
-                run_headless_simulation(boss, director, p.seed, match_cap)
+                run_headless_simulation(
+                    boss,
+                    director,
+                    p.seed,
+                    match_cap,
+                    boss_decision_interval,
+                )
             })
             .collect();
 
@@ -753,8 +774,9 @@ pub fn run_co_evolutionary_training(
             best_boss_eval.avg_hazard_damage
         );
         log_line!(
-            "    * Разрушено алтарей: {} | Скиллы ({}): [{}]",
+            "    * Разрушено алтарей: {} | Деактивировано обелисков: {} | Скиллы ({}): [{}]",
             best_boss_eval.avg_altars_destroyed,
+            best_boss_eval.avg_obelisks_deactivated,
             best_boss_eval.weapons.len(),
             boss_w_str
         );
@@ -804,12 +826,13 @@ pub fn run_co_evolutionary_training(
             );
         }
         log_line!(
-            "    ↳ Противник (Босс): Уровень {} | Пешком {:.0} px [Рывков {}] | Медитация {:.1} мин | Разрушил алтарей {}",
+            "    ↳ Противник (Босс): Уровень {} | Пешком {:.0} px [Рывков {}] | Медитация {:.1} мин | Разрушил алтарей {} / обелисков {}",
             best_dir_eval.avg_boss_level,
             best_dir_eval.avg_boss_distance_walked,
             best_dir_eval.avg_boss_dashes,
             best_dir_eval.avg_boss_meditation / 60.0,
-            best_dir_eval.avg_altars_destroyed
+            best_dir_eval.avg_altars_destroyed,
+            best_dir_eval.avg_obelisks_deactivated
         );
         log_line!(
             "    ↳ Скиллы Босса ({}): [{}]",

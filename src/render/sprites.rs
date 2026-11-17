@@ -161,8 +161,10 @@ fn draw_pillar(pos: Vec2) {
 }
 
 /// Отрисовка Босса (Соло-героя: благородный Паладин в латах с плащом, мечом и анимацией)
-pub fn draw_boss(pos: Vec2, vel: Vec2, invulnerable: bool, time: f32, textures: &GameTextures) {
-    let facing_dir = if vel.length_squared() > 1.0 {
+pub fn draw_boss(pos: Vec2, vel: Vec2, facing: Vec2, invulnerable: bool, skin: u8, time: f32, textures: &GameTextures) {
+    let facing_dir = if facing.length_squared() > 0.1 {
+        facing.normalize()
+    } else if vel.length_squared() > 1.0 {
         vel.normalize()
     } else {
         Vec2::new(1.0, 0.0)
@@ -182,7 +184,14 @@ pub fn draw_boss(pos: Vec2, vel: Vec2, invulnerable: bool, time: f32, textures: 
     let cape_anchor = pos - facing_dir * 10.0;
     let cape_tip_1 = cape_anchor - facing_dir * 22.0 + normal_dir * (12.0 + cape_flutter);
     let cape_tip_2 = cape_anchor - facing_dir * 26.0 - normal_dir * (12.0 - cape_flutter);
-    draw_triangle(cape_anchor, cape_tip_1, cape_tip_2, Color::new(0.75, 0.12, 0.15, 1.0));
+    let cape_color = match skin % 5 {
+        1 => Color::new(0.12, 0.35, 0.78, 1.0),
+        2 => Color::new(0.12, 0.52, 0.28, 1.0),
+        3 => Color::new(0.34, 0.16, 0.58, 1.0),
+        4 => Color::new(0.68, 0.42, 0.10, 1.0),
+        _ => Color::new(0.75, 0.12, 0.15, 1.0),
+    };
+    draw_triangle(cape_anchor, cape_tip_1, cape_tip_2, cape_color);
 
     // 3. Анимированный спрайт Рыцаря (если доступен)
     let frames = if is_moving { &textures.knight_walk } else { &textures.knight_idle };
@@ -191,10 +200,11 @@ pub fn draw_boss(pos: Vec2, vel: Vec2, invulnerable: bool, time: f32, textures: 
         let frame_idx = ((time * frame_rate) as usize) % frames.len();
         let tex = &frames[frame_idx];
 
+        let skin_tint = crate::render::main_menu::skin_tint(skin);
         let tint = if invulnerable {
             Color::new(1.0, 1.0, 0.4, 0.95)
         } else {
-            WHITE
+            skin_tint
         };
 
         let knight_w = 34.0;

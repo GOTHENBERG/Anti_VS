@@ -75,13 +75,13 @@ pub fn select_tactical_target(world: &World, boss_pos: Vec2, max_range: f32) -> 
         }
     }
 
-    // 2. Оценка живых структур (Активный Разлом -> Алтарь Крови -> Баррикады)
+    // 2. Структуры не получают отдельного приоритета; активный обелиск имеет тот же вес, что алтарь.
     for st in &world.structures {
         if st.health.is_alive() {
             let dist = st.pos.distance(boss_pos);
             if dist <= max_range {
                 let base_score = match st.structure_type {
-                    crate::content::structures::STRUCTURE_OBELISK if st.is_active => 240.0, // Высший приоритет — сорвать Прорыв!
+                    crate::content::structures::STRUCTURE_OBELISK if st.is_active => 110.0,
                     crate::content::structures::STRUCTURE_ALTAR => 110.0,
                     crate::content::structures::STRUCTURE_WALL => 35.0,
                     _ => -100.0,

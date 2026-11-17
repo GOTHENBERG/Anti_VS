@@ -2,17 +2,19 @@ use crate::core::rand;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
-// БОСС: 154 сенсора -> 64 -> 48 -> 7 действий
+// БОСС: 166 сенсоров -> 64 -> 48 -> 7 действий
 // ============================================================================
-pub const INPUT_SIZE: usize = 154;
+pub const INPUT_SIZE: usize = 166;
 pub const HIDDEN1_SIZE: usize = 64;
 pub const HIDDEN2_SIZE: usize = 48;
 pub const OUTPUT_SIZE: usize = 7;
 pub const BOSS_DECISION_INTERVAL: f32 = 0.2;
+pub const BOSS_TRAINING_DECISION_INTERVAL: f32 = 0.05;
+pub const BOSS_DASH_BASE_COOLDOWN_SECONDS: f32 = 5.0;
 
 // Семантика выходов Босса:
 // [0..2]  направление движения (tanh)
-// [2]     интенсивность движения 0..1 (sigmoid) — непрерывная скорость
+// [2]     ходьба/стоп (sigmoid > 0.5) — только максимальная скорость или ноль
 // [3]     триггер рывка (sigmoid > 0.5)
 // [4..6]  направление рывка (tanh), при нулевом векторе используется направление движения
 // [6]     намерение замереть / медитировать (sigmoid > 0.5)
@@ -25,7 +27,7 @@ pub const OUT_DASH_Y: usize = 5;
 pub const OUT_REST: usize = 6;
 
 /// Полносвязная глубокая нейронная сеть (Deep MLP)
-/// Архитектура: 154 сенсорных входа -> 64 (Leaky ReLU) -> 48 (Leaky ReLU) -> 7 выходов.
+/// Архитектура: 166 сенсорных входов -> 64 (Leaky ReLU) -> 48 (Leaky ReLU) -> 7 выходов.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NeuralNet {
     pub input_size: usize,
@@ -33,7 +35,7 @@ pub struct NeuralNet {
     pub hidden2_size: usize,
     pub output_size: usize,
 
-    // Слой 1: 154 -> 64
+    // Слой 1: 166 -> 64
     pub w1: Vec<Vec<f32>>,
     pub b1: Vec<f32>,
 
@@ -482,10 +484,10 @@ impl DirectorBrainNet {
         let slot_h = (crate::core::MAP_HEIGHT - ALTAR_MARGIN * 2.0) / ALTAR_SLOTS;
         let sx = (slot % 5) as f32;
         let sy = (slot / 5) as f32;
-        macroquad::prelude::Vec2::new(
+        crate::content::structures::snap_to_build_grid(macroquad::prelude::Vec2::new(
             ALTAR_MARGIN + (sx + 0.5) * slot_w,
             ALTAR_MARGIN + (sy + 0.5) * slot_h,
-        )
+        ))
     }
 
     /// Прямой проход с маской цены, разблокировки и общего бюджета алтаря.

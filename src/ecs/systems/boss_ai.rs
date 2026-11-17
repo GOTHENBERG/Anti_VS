@@ -2,8 +2,8 @@ use macroquad::prelude::*;
 use crate::core::rand;
 use crate::core::math::{calculate_attract_force, calculate_repel_force};
 use crate::ai::neural_net::{
-    BOSS_DECISION_INTERVAL, OUT_DASH, OUT_DASH_X, OUT_DASH_Y, OUT_MOVE_MAG, OUT_MOVE_X,
-    OUT_MOVE_Y, OUT_REST,
+    BOSS_DASH_BASE_COOLDOWN_SECONDS, BOSS_DECISION_INTERVAL, OUT_DASH, OUT_DASH_X, OUT_DASH_Y,
+    OUT_MOVE_MAG, OUT_MOVE_X, OUT_MOVE_Y, OUT_REST,
 };
 use crate::ecs::components::inventory::{
     BossInventory, PassiveType, PerkChoice, WeaponType, MAX_PASSIVE_LEVEL, MAX_PASSIVE_SLOTS,
@@ -12,18 +12,7 @@ use crate::ecs::components::inventory::{
 use crate::ecs::world::World;
 
 pub fn update_boss_ai(world: &mut World, dt: f32) {
-    if world.boss_dash_cooldown > 0.0 {
-        world.boss_dash_cooldown = (world.boss_dash_cooldown - dt).max(0.0);
-    }
-    if world.boss_invulnerable_timer > 0.0 {
-        world.boss_invulnerable_timer = (world.boss_invulnerable_timer - dt).max(0.0);
-    }
-    if world.boss_inventory.perk_announcement_timer > 0.0 {
-        world.boss_inventory.perk_announcement_timer = (world.boss_inventory.perk_announcement_timer - dt).max(0.0);
-    }
-
-    // Затухание недавнего урона и обновление внутренней телеметрии
-    world.boss_inventory.update_damage_decay(dt);
+    update_boss_timers(world, dt);
 
     let boss_pos = world.boss_pos;
     let map_w = crate::core::MAP_WIDTH;
@@ -31,7 +20,6 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
 
     let (desired_vel, should_dash, dash_dir) = if let Some(ref model) = world.boss_model {
         if let Some(ref net) = model.neural_net {
-            // Inference cadence matches the 5 Hz headless training simulation.
             world.boss_policy_think_timer += dt;
             if !world.boss_policy_has_cached_action
                 || world.boss_policy_think_timer >= BOSS_DECISION_INTERVAL
@@ -40,8 +28,9 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
                 let obs = crate::ai::sensors::extract_boss_observations(world);
                 let nn_out = net.forward(&obs);
                 let move_intent = Vec2::new(nn_out[OUT_MOVE_X], nn_out[OUT_MOVE_Y]);
-                let move_mag = nn_out[OUT_MOVE_MAG].clamp(0.0, 1.0);
-                let rest = nn_out[OUT_REST] > 0.5;
+                let is_moving = nn_out[OUT_MOVE_MAG] >= 0.5 && nn_out[OUT_REST] <= 0.5;
+                let move_mag = if is_moving { 1.0 } else { 0.0 };
+                let rest = !is_moving;
                 let move_dir = if move_intent.length_squared() > 0.0025 {
                     move_intent.normalize()
                 } else {
@@ -89,55 +78,123 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     };
 
     if should_dash {
-        // Мгновенный рывок на 180 пикселей с неуязвимостью на 0.25 сек!
-        let old_pos = world.boss_pos;
-        let dash_target = (boss_pos + dash_dir * 180.0)
-            .clamp(Vec2::new(60.0, 60.0), Vec2::new(map_w - 60.0, map_h - 60.0));
-        world.boss_pos = dash_target;
-        world.boss_invulnerable_timer = 0.25;
-        world.boss_dash_cooldown = 7.0;
-        world.push_audio(crate::audio::AudioEvent::BossDash);
-
-        // Визуальный эффект рывка
-        world.spawn_particles(old_pos, 20, GOLD, 120.0);
-        world.spawn_particles(dash_target, 20, YELLOW, 140.0);
-        world.add_floating_text(dash_target, "РЫВОК (DASH)!".to_string(), YELLOW, 1.3);
-
-        // При рывке уничтожаются вражеские снаряды на пути и наносится рассекающий урон
-        for proj in &mut world.projectiles {
-            if proj.faction == crate::ecs::components::combat::Faction::Director
-                && proj.pos.distance_squared(dash_target) < 130.0 * 130.0
-            {
-                proj.lifetime = 0.0;
-            }
+        perform_boss_dash(world, dash_dir);
+    } else {
+        // Мгновенное переключение между полной скоростью и остановкой, без инерции.
+        world.boss_vel = if desired_vel.length_squared() > 1.0 {
+            desired_vel.normalize() * world.boss_inventory.get_movement_speed(160.0)
+        } else {
+            Vec2::ZERO
+        };
+        world.boss_pos += world.boss_vel * dt;
+        if world.boss_vel.length_squared() > 1.0 {
+            world.boss_facing = world.boss_vel.normalize();
         }
+    }
 
-        let in_dash_slice = world.spatial_grid.query_nearby(dash_target, 90.0);
-        for idx in in_dash_slice {
-            if let Some(mob) = world.mobs.get_mut(idx) {
-                if mob.pos.distance_squared(dash_target) < 90.0 * 90.0 {
-                    mob.health.take_damage(80.0);
-                    if !mob.knockback_immune {
-                        mob.knockback_vel += dash_dir * 240.0;
-                    }
+    clamp_boss_to_arena(world);
+}
+
+pub fn update_player_boss(
+    world: &mut World,
+    dt: f32,
+    move_dir: Vec2,
+    aim_dir: Vec2,
+    dash_pressed: bool,
+) {
+    update_boss_timers(world, dt);
+    if !world.boss_health.is_alive() {
+        world.boss_vel = Vec2::ZERO;
+        return;
+    }
+    if aim_dir.length_squared() > 0.01 {
+        world.boss_facing = aim_dir.normalize();
+    }
+    if dash_pressed && world.boss_dash_cooldown <= 0.0 {
+        let direction = if aim_dir.length_squared() > 0.01 {
+            aim_dir.normalize()
+        } else if move_dir.length_squared() > 0.01 {
+            move_dir.normalize()
+        } else {
+            world.boss_facing
+        };
+        perform_boss_dash(world, direction);
+    } else {
+        let speed = world.boss_inventory.get_movement_speed(160.0);
+        world.boss_vel = if move_dir.length_squared() > 0.01 {
+            move_dir.normalize() * speed
+        } else {
+            Vec2::ZERO
+        };
+        world.boss_pos += world.boss_vel * dt;
+    }
+    clamp_boss_to_arena(world);
+}
+
+fn update_boss_timers(world: &mut World, dt: f32) {
+    if world.boss_dash_cooldown > 0.0 {
+        world.boss_dash_cooldown = (world.boss_dash_cooldown - dt).max(0.0);
+    }
+    if world.boss_invulnerable_timer > 0.0 {
+        world.boss_invulnerable_timer = (world.boss_invulnerable_timer - dt).max(0.0);
+    }
+    if world.boss_inventory.perk_announcement_timer > 0.0 {
+        world.boss_inventory.perk_announcement_timer = (world.boss_inventory.perk_announcement_timer - dt).max(0.0);
+    }
+
+    // Затухание недавнего урона и обновление внутренней телеметрии
+    world.boss_inventory.update_damage_decay(dt);
+}
+
+fn perform_boss_dash(world: &mut World, dash_dir: Vec2) {
+    let map_w = crate::core::MAP_WIDTH;
+    let map_h = crate::core::MAP_HEIGHT;
+    let dir = if dash_dir.length_squared() > 0.01 { dash_dir.normalize() } else { world.boss_facing };
+    let old_pos = world.boss_pos;
+    let dash_target = (old_pos + dir * 180.0)
+        .clamp(Vec2::new(60.0, 60.0), Vec2::new(map_w - 60.0, map_h - 60.0));
+    world.boss_pos = dash_target;
+    world.boss_vel = Vec2::ZERO;
+    world.boss_facing = dir;
+    world.boss_invulnerable_timer = 0.25;
+    world.boss_dash_cooldown = BOSS_DASH_BASE_COOLDOWN_SECONDS
+        * world.boss_inventory.get_cooldown_multiplier();
+    world.push_audio(crate::audio::AudioEvent::BossDash);
+    world.spawn_particles(old_pos, 20, GOLD, 120.0);
+    world.spawn_particles(dash_target, 20, YELLOW, 140.0);
+    world.add_floating_text(dash_target, "РЫВОК (DASH)!".to_string(), YELLOW, 1.3);
+
+    for proj in &mut world.projectiles {
+        if proj.faction == crate::ecs::components::combat::Faction::Director
+            && proj.pos.distance_squared(dash_target) < 130.0 * 130.0
+        {
+            proj.lifetime = 0.0;
+        }
+    }
+    let in_dash_slice = world.spatial_grid.query_nearby(dash_target, 90.0);
+    for idx in in_dash_slice {
+        if let Some(mob) = world.mobs.get_mut(idx) {
+            if mob.pos.distance_squared(dash_target) < 90.0 * 90.0 {
+                mob.health.take_damage(80.0);
+                if !mob.knockback_immune {
+                    mob.knockback_vel += dir * 240.0;
                 }
             }
         }
-
-        for st in &mut world.structures {
-            if st.health.is_alive() && st.pos.distance_squared(dash_target) < 65.0 * 65.0 {
-                st.health.take_damage(160.0);
-            }
-        }
-    } else {
-        // Обычное передвижение по вектору скорости нейросети (мгновенная реакция без искусственной инерции)
-        world.boss_vel = desired_vel;
-        world.boss_pos += world.boss_vel * dt;
     }
+    for st in &mut world.structures {
+        if st.health.is_alive()
+            && crate::content::structures::boss_can_damage_structure(st)
+            && st.pos.distance_squared(dash_target) < 65.0 * 65.0
+        {
+            st.health.take_damage(160.0);
+        }
+    }
+}
 
-    // Координаты ограничены картой
-    world.boss_pos.x = world.boss_pos.x.clamp(35.0, map_w - 35.0);
-    world.boss_pos.y = world.boss_pos.y.clamp(35.0, map_h - 35.0);
+fn clamp_boss_to_arena(world: &mut World) {
+    world.boss_pos.x = world.boss_pos.x.clamp(35.0, crate::core::MAP_WIDTH - 35.0);
+    world.boss_pos.y = world.boss_pos.y.clamp(35.0, crate::core::MAP_HEIGHT - 35.0);
 }
 
 /// Вспомогательный расчет эвристического движения (только для моделей без обученной нейросети)
@@ -225,7 +282,7 @@ fn compute_heuristic_movement(
 
     let max_speed = world.boss_inventory.get_movement_speed(160.0);
     let desired_vel = if total_force.length_squared() > 4.0 {
-        total_force.clamp_length_max(max_speed)
+        total_force.normalize_or_zero() * max_speed
     } else {
         Vec2::ZERO
     };

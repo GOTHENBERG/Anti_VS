@@ -16,7 +16,7 @@ use crate::audio::AudioManager;
 use crate::content::mobs::{get_squad_config, spawn_squad_perimeter};
 use crate::content::structures::{
     can_place_blood_altar, can_place_wall, spawn_blood_altar, spawn_corner_obelisks,
-    try_spawn_blood_altar, try_spawn_wall, BLOOD_ALTAR_COST, WALL_COST, STRUCTURE_ALTAR,
+    snap_to_build_grid, try_spawn_blood_altar, try_spawn_wall, BLOOD_ALTAR_COST, WALL_COST, STRUCTURE_ALTAR,
     STRUCTURE_WALL,
 };
 use crate::core::time::GameClock;
@@ -59,12 +59,19 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     // Режим автономного со-эволюционного обучения ботов (Self-Play Training)
-    // Поддерживает аргументы: cargo run --release -- --train [поколений] [размер популяции] [300 / 1020] [--cap 300|1020] [--clean / --reset]
+    // Поддерживает аргументы: cargo run --release -- --train [поколений] [размер популяции] [300 / 1020] [--think-ms 50|100|200] [--clean / --reset]
     let args: Vec<String> = std::env::args().collect();
     if let Some(pos) = args.iter().position(|a| a == "--train") {
         let generations = args.get(pos + 1).and_then(|s| s.parse().ok()).unwrap_or(8);
         let population = args.get(pos + 2).and_then(|s| s.parse().ok()).unwrap_or(8);
         let reset = args.iter().any(|a| a == "--clean" || a == "--reset");
+        let training_think_interval = args
+            .iter()
+            .position(|a| a == "--think-ms")
+            .and_then(|idx| args.get(idx + 1))
+            .and_then(|value| value.parse::<f32>().ok())
+            .map(|ms| (ms / 1000.0).clamp(0.05, 0.20))
+            .unwrap_or(crate::ai::neural_net::BOSS_TRAINING_DECISION_INTERVAL);
 
         // Выбор длительности раунда матчей (300 сек, 1020 сек или произвольный)
         let round_duration = if let Some(cap_pos) = args.iter().position(|a| a == "--cap" || a == "--duration") {
@@ -78,14 +85,35 @@ async fn main() {
             args.get(pos + 3).and_then(|s| s.parse::<f32>().ok())
         };
 
-        crate::ai::trainer::run_co_evolutionary_training(generations, population, reset, round_duration);
+        crate::ai::trainer::run_co_evolutionary_training(
+            generations,
+            population,
+            reset,
+            round_duration,
+            training_think_interval,
+        );
         return;
     }
 
     let boss_model = crate::ai::load_trained_boss_model();
+    let director_model = crate::ai::load_trained_director_model()
+        .unwrap_or_else(crate::ai::models::DirectorModel::default);
+    let mut menu = crate::render::main_menu::MainMenu::load();
+    let args: Vec<String> = std::env::args().collect();
+    let mut game_role = if args.iter().any(|a| a == "--boss-player") {
+        crate::render::main_menu::GameRole::Boss
+    } else {
+        crate::render::main_menu::GameRole::Director
+    };
+    let show_main_menu_at_start = !args.iter().any(|a| {
+        a == "--screenshot" || a == "--codex" || a == "--dossier" || a == "--recipe"
+            || a == "--dossier-item" || a == "--settings" || a == "--pause" || a == "--boss-player"
+    });
+    let mut show_main_menu = show_main_menu_at_start;
     let mut world = World::new();
     // Модель загружается один раз за сессию, а не на каждом создании мира.
     world.boss_model = boss_model.clone();
+    apply_player_profile(&mut world, &menu.settings, game_role);
     let mut clock = GameClock::new();
     let mut net_driver = LocalDriver::new();
     let fonts = GameFonts::load();
@@ -97,10 +125,11 @@ async fn main() {
     let auto_recipe = std::env::args().any(|a| a == "--recipe" || a == "--dossier-item");
     let auto_settings = std::env::args().any(|a| a == "--settings" || a == "--pause");
     let mut is_paused = auto_settings;
+    let mut director_ai_timer = 0.0f32;
     let mut boss_death_sound_played = false;
 
     // Скрываем стандартный системный курсор мыши (заменяем демонической дланью Повелителя)
-    show_mouse(false);
+    show_mouse(show_main_menu || game_role == crate::render::main_menu::GameRole::Boss);
 
     // Камера свободной навигации по большой карте
     let mut cam_pos = world.boss_pos;
@@ -140,6 +169,26 @@ async fn main() {
         frame_count += 1;
         let current_mpos = Vec2::from(mouse_position());
         let mouse_delta = current_mpos - last_mouse_pos;
+
+        if show_main_menu {
+            if let Some(role) = menu.draw(&fonts) {
+                game_role = role;
+                show_main_menu = false;
+                world = World::new();
+                world.boss_model = boss_model.clone();
+                apply_player_profile(&mut world, &menu.settings, game_role);
+                clock = GameClock::new();
+                cam_pos = world.boss_pos;
+                follow_boss = true;
+                spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
+                spawn_corner_obelisks(&mut world);
+                audio.shuffle_start();
+                show_mouse(game_role == crate::render::main_menu::GameRole::Boss);
+            }
+            last_mouse_pos = current_mpos;
+            next_frame().await;
+            continue;
+        }
 
         if auto_screenshot && frame_count == 10 {
             world.boss_inventory.weapons.push(crate::ecs::components::inventory::WeaponSlot {
@@ -203,12 +252,6 @@ async fn main() {
         // Переключение звука по M
         if is_key_pressed(KeyCode::M) {
             audio.toggle_mute();
-        }
-
-        // Пауза по Space или P
-        if is_key_pressed(KeyCode::P) || is_key_pressed(KeyCode::Space) {
-            is_paused = !is_paused;
-            audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
 
         // Инфернальный кодекс по I
@@ -284,6 +327,7 @@ async fn main() {
         if is_key_pressed(KeyCode::R) {
             world = World::new();
             world.boss_model = boss_model.clone();
+            apply_player_profile(&mut world, &menu.settings, game_role);
             clock = GameClock::new();
             cam_pos = world.boss_pos;
             follow_boss = true;
@@ -301,7 +345,14 @@ async fn main() {
         }
 
         // 1. Управление камерой на большой карте: WASD + колесо мыши + центрирование по C
-        handle_camera_input(&mut cam_pos, &mut cam_zoom, &mut follow_boss, world.boss_pos, dt);
+        handle_camera_input(
+            &mut cam_pos,
+            &mut cam_zoom,
+            &mut follow_boss,
+            world.boss_pos,
+            dt,
+            game_role == crate::render::main_menu::GameRole::Boss,
+        );
 
         let screen_w = screen_width();
         let screen_h = screen_height();
@@ -314,9 +365,20 @@ async fn main() {
         let is_running = !is_game_over && !is_paused && !show_codex && active_dossier_tier.is_none();
 
         // 2. Сбор ввода игрока-директора -> генерация Команд
+        let mut player_move_dir = Vec2::ZERO;
+        let mut player_aim_dir = Vec2::ZERO;
+        let mut player_dash_pressed = false;
         if is_running {
             clock.tick(dt);
-            handle_player_input(&world, &mut net_driver, &world_cam);
+            match game_role {
+                crate::render::main_menu::GameRole::Director => {
+                    handle_player_input(&world, &mut net_driver, &world_cam);
+                }
+                crate::render::main_menu::GameRole::Boss => {
+                    (player_move_dir, player_aim_dir, player_dash_pressed) =
+                        collect_boss_player_input(&menu.settings, &world, &world_cam);
+                }
+            }
         }
 
         // 3. Исполнение сетевых/локальных команд (Command Pattern)
@@ -328,7 +390,27 @@ async fn main() {
         // 4. Обновление систем мира
         if is_running {
             update_director(&mut world, dt);
-            update_boss_ai(&mut world, dt);
+            match game_role {
+                crate::render::main_menu::GameRole::Director => update_boss_ai(&mut world, dt),
+                crate::render::main_menu::GameRole::Boss => {
+                    director_ai_timer += dt;
+                    if director_ai_timer >= 0.4 {
+                        director_ai_timer -= 0.4;
+                        crate::ai::simulation::update_director_policy(
+                            &mut world,
+                            clock.elapsed_secs,
+                            &director_model,
+                        );
+                    }
+                    crate::ecs::systems::boss_ai::update_player_boss(
+                        &mut world,
+                        dt,
+                        player_move_dir,
+                        player_aim_dir,
+                        player_dash_pressed,
+                    );
+                }
+            }
             update_meditation(&mut world, dt);
             update_skills(&mut world, dt);
             update_movement(&mut world, dt);
@@ -345,13 +427,10 @@ async fn main() {
 
         // Призрак Структуры при интерактивном режиме установки
         if placement_mode != PlacementMode::None {
+            draw_build_grid_overlay(cam_pos, cam_zoom, screen_w, screen_h);
             let (mx, my) = mouse_position();
             let world_cursor = world_cam.screen_to_world(Vec2::new(mx, my));
-            let margin = 35.0;
-            let clamped = Vec2::new(
-                world_cursor.x.clamp(margin, MAP_WIDTH - margin),
-                world_cursor.y.clamp(margin, MAP_HEIGHT - margin),
-            );
+            let clamped = snap_to_build_grid(world_cursor);
 
             match placement_mode {
                 PlacementMode::Altar => {
@@ -395,7 +474,14 @@ async fn main() {
 
         // 6. Отрисовка интерфейса на экране (screen-space)
         set_default_camera();
-        let ui_interaction = render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures, audio.is_muted, audio.get_current_track_title());
+        let ui_interaction = match game_role {
+            crate::render::main_menu::GameRole::Director => {
+                render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures, audio.is_muted, audio.get_current_track_title())
+            }
+            crate::render::main_menu::GameRole::Boss => {
+                crate::render::ui::render_boss_ui(&world, &clock, &fonts, audio.is_muted, audio.get_current_track_title())
+            }
+        };
 
         if placement_mode != PlacementMode::None {
             let banner_w = 490.0;
@@ -491,11 +577,7 @@ async fn main() {
             } else if is_mouse_button_pressed(MouseButton::Left) && !ui_interaction.is_mouse_over_ui {
                 let (mx, my) = mouse_position();
                 let world_click = world_cam.screen_to_world(Vec2::new(mx, my));
-                let margin = 35.0;
-                let clamped_click = Vec2::new(
-                    world_click.x.clamp(margin, MAP_WIDTH - margin),
-                    world_click.y.clamp(margin, MAP_HEIGHT - margin),
-                );
+                let clamped_click = snap_to_build_grid(world_click);
 
                 match placement_mode {
                     PlacementMode::Altar => {
@@ -602,6 +684,7 @@ async fn main() {
                 crate::render::settings::SettingsAction::Restart => {
                     world = World::new();
                     world.boss_model = boss_model.clone();
+                    apply_player_profile(&mut world, &menu.settings, game_role);
                     clock = GameClock::new();
                     cam_pos = world.boss_pos;
                     follow_boss = true;
@@ -665,19 +748,20 @@ fn handle_camera_input(
     follow_boss: &mut bool,
     boss_pos: Vec2,
     dt: f32,
+    arrows_only: bool,
 ) {
     let mut move_dir = Vec2::ZERO;
 
-    if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
+    if is_key_down(KeyCode::Up) || (!arrows_only && is_key_down(KeyCode::W)) {
         move_dir.y -= 1.0;
     }
-    if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
+    if is_key_down(KeyCode::Down) || (!arrows_only && is_key_down(KeyCode::S)) {
         move_dir.y += 1.0;
     }
-    if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
+    if is_key_down(KeyCode::Left) || (!arrows_only && is_key_down(KeyCode::A)) {
         move_dir.x -= 1.0;
     }
-    if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) {
+    if is_key_down(KeyCode::Right) || (!arrows_only && is_key_down(KeyCode::D)) {
         move_dir.x += 1.0;
     }
 
@@ -707,6 +791,70 @@ fn handle_camera_input(
     // Ограничение камеры размерами карты
     cam_pos.x = cam_pos.x.clamp(200.0, MAP_WIDTH - 200.0);
     cam_pos.y = cam_pos.y.clamp(200.0, MAP_HEIGHT - 200.0);
+}
+
+fn draw_build_grid_overlay(cam_pos: Vec2, cam_zoom: f32, screen_w: f32, screen_h: f32) {
+    const CELL: f32 = crate::content::structures::BUILD_GRID_SIZE;
+    let half_w = screen_w / (2.0 * cam_zoom.max(0.15));
+    let half_h = screen_h / (2.0 * cam_zoom.max(0.15));
+    let min_x = (cam_pos.x - half_w).max(0.0);
+    let max_x = (cam_pos.x + half_w).min(MAP_WIDTH);
+    let min_y = (cam_pos.y - half_h).max(0.0);
+    let max_y = (cam_pos.y + half_h).min(MAP_HEIGHT);
+    let grid_color = Color::new(0.45, 0.72, 0.92, 0.18);
+
+    let mut x = (min_x / CELL).floor() * CELL;
+    while x <= max_x {
+        draw_line(x, min_y, x, max_y, 0.7, grid_color);
+        x += CELL;
+    }
+    let mut y = (min_y / CELL).floor() * CELL;
+    while y <= max_y {
+        draw_line(min_x, y, max_x, y, 0.7, grid_color);
+        y += CELL;
+    }
+}
+
+fn collect_boss_player_input(
+    settings: &crate::render::main_menu::PlayerSettings,
+    world: &World,
+    world_cam: &Camera2D,
+) -> (Vec2, Vec2, bool) {
+    use crate::render::main_menu::PlayerControl;
+
+    let mut move_dir = Vec2::ZERO;
+    if is_key_down(settings.key_for(PlayerControl::Up)) {
+        move_dir.y -= 1.0;
+    }
+    if is_key_down(settings.key_for(PlayerControl::Down)) {
+        move_dir.y += 1.0;
+    }
+    if is_key_down(settings.key_for(PlayerControl::Left)) {
+        move_dir.x -= 1.0;
+    }
+    if is_key_down(settings.key_for(PlayerControl::Right)) {
+        move_dir.x += 1.0;
+    }
+    if move_dir.length_squared() > 1.0 {
+        move_dir = move_dir.normalize();
+    }
+    let (mx, my) = mouse_position();
+    let mouse_world = world_cam.screen_to_world(Vec2::new(mx, my));
+    let aim_dir = (mouse_world - world.boss_pos).normalize_or_zero();
+    let dash_pressed = is_key_pressed(settings.key_for(PlayerControl::Dash));
+    (move_dir, aim_dir, dash_pressed)
+}
+
+fn apply_player_profile(
+    world: &mut World,
+    settings: &crate::render::main_menu::PlayerSettings,
+    role: crate::render::main_menu::GameRole,
+) {
+    world.boss_name = match role {
+        crate::render::main_menu::GameRole::Director => "Соло-Босс".to_string(),
+        crate::render::main_menu::GameRole::Boss => settings.nickname.chars().take(32).collect(),
+    };
+    world.boss_skin = settings.skin % 5;
 }
 
 fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, _world_cam: &Camera2D) {
@@ -825,6 +973,7 @@ fn execute_command(world: &mut World, cmd: Command) {
         }
         Command::UpgradeDirectorGrade { director_id, grade_type } => {
             let mut notification = None;
+            let mut carapace_upgraded = false;
             if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
                 match grade_type {
                     0 => {
@@ -838,6 +987,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                         let cost = 120.0 * (director.grade_carapace as f32 + 1.0);
                         if director.spend_points(cost) {
                             director.grade_carapace += 1;
+                            carapace_upgraded = true;
                             notification = Some((format!("🛡️ ПАНЦИРЬ (Ур. {})", director.grade_carapace), SKYBLUE));
                         }
                     }
@@ -851,6 +1001,9 @@ fn execute_command(world: &mut World, cmd: Command) {
                     _ => {}
                 }
             }
+            if carapace_upgraded {
+                crate::content::structures::upgrade_structure_carapace(world, 1);
+            }
             if let Some((text, col)) = notification {
                 world.add_floating_text(world.boss_pos, text, col, 1.4);
                 world.push_audio(crate::audio::AudioEvent::UpgradeGrade);
@@ -858,6 +1011,7 @@ fn execute_command(world: &mut World, cmd: Command) {
         }
         Command::UpgradeDirectorGradeMax { director_id, grade_type } => {
             let mut notification = None;
+            let mut carapace_upgrades = 0u32;
             if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
                 let mut upgraded = 0;
                 match grade_type {
@@ -885,6 +1039,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                                 break;
                             }
                         }
+                        carapace_upgrades = upgraded;
                         if upgraded > 0 {
                             notification = Some((format!("🛡️ ПАНЦИРЬ (+{} ур. -> Ур. {})", upgraded, director.grade_carapace), SKYBLUE));
                         }
@@ -906,6 +1061,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                     _ => {}
                 }
             }
+            crate::content::structures::upgrade_structure_carapace(world, carapace_upgrades);
             if let Some((text, col)) = notification {
                 world.add_floating_text(world.boss_pos, text, col, 1.5);
                 world.push_audio(crate::audio::AudioEvent::UpgradeGrade);
@@ -918,11 +1074,7 @@ fn execute_command(world: &mut World, cmd: Command) {
         } => {
             match structure_type {
                 STRUCTURE_WALL => {
-                    let margin = 35.0;
-                    let clamped_pos = Vec2::new(
-                        pos.x.clamp(margin, MAP_WIDTH - margin),
-                        pos.y.clamp(margin, MAP_HEIGHT - margin),
-                    );
+                    let clamped_pos = snap_to_build_grid(pos);
                     let mut can_build = false;
                     if can_place_wall(world, clamped_pos) {
                         if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
@@ -938,11 +1090,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                     }
                 }
                 _ => {
-                    let margin = 45.0;
-                    let clamped_pos = Vec2::new(
-                        pos.x.clamp(margin, MAP_WIDTH - margin),
-                        pos.y.clamp(margin, MAP_HEIGHT - margin),
-                    );
+                    let clamped_pos = snap_to_build_grid(pos);
                     let mut can_build = false;
                     if can_place_blood_altar(world, clamped_pos) {
                         if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
