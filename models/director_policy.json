@@ -1,8 +1,8 @@
 {
   "version": "v1.0-coev",
-  "generation": 953,
-  "fitness": 2309.0789,
-  "avg_boss_kill_time": 674.7088,
+  "generation": 954,
+  "fitness": 5946.2363,
+  "avg_boss_kill_time": 257.7656,
   "squad_spawn_weights": [
     0.21631946,
     1.0423048,

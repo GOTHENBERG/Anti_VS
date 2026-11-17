@@ -33,19 +33,17 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
             let obs = crate::ai::sensors::extract_boss_observations(world);
             let nn_out = net.forward(&obs);
             let move_intent = Vec2::new(nn_out[0], nn_out[1]);
-            let clamped_intent = if move_intent.length_squared() > 1.0 {
-                move_intent.normalize()
-            } else {
-                move_intent
-            };
             let max_speed = world.boss_inventory.get_movement_speed(160.0);
-            let vel = clamped_intent * max_speed;
-            let dash = (nn_out[6] > 0.60) && world.boss_dash_cooldown <= 0.0;
-            let d_dir = if move_intent.length_squared() > 0.01 {
-                move_intent.normalize()
+
+            // Бинарная кинематика (Bang-Bang): строго 100% максимальной скорости либо полный стоп (0%)!
+            let (vel, d_dir) = if move_intent.length_squared() > 0.04 {
+                let dir = move_intent.normalize();
+                (dir * max_speed, dir)
             } else {
-                Vec2::X
+                (Vec2::ZERO, Vec2::X)
             };
+
+            let dash = (nn_out[6] > 0.60) && world.boss_dash_cooldown <= 0.0;
             (vel, dash, d_dir)
         } else {
             compute_heuristic_movement(world, boss_pos, map_w, map_h, model)
@@ -92,8 +90,8 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
             }
         }
     } else {
-        // Обычное передвижение по вектору скорости нейросети
-        world.boss_vel = world.boss_vel.lerp(desired_vel, (dt * 10.0).min(1.0));
+        // Обычное передвижение по вектору скорости нейросети (мгновенная реакция без искусственной инерции)
+        world.boss_vel = desired_vel;
         world.boss_pos += world.boss_vel * dt;
     }
 
