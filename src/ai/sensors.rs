@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 use crate::ecs::world::World;
 use crate::ecs::components::combat::Faction;
+use crate::ecs::components::inventory::{WeaponType, PassiveType};
 use crate::core::{MAP_WIDTH, MAP_HEIGHT};
 use crate::ai::neural_net::INPUT_SIZE;
 use crate::ai::pathing::WaypointPlanner;
@@ -201,6 +202,185 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     }
     obs[148] = (closest_gem_diff.x / 450.0).clamp(-1.0, 1.0);
     obs[149] = (closest_gem_diff.y / 450.0).clamp(-1.0, 1.0);
+
+    obs
+}
+
+pub const DIRECTOR_INPUT_SIZE: usize = 114;
+
+/// Преобразует тип оружия Босса в фиксированный индекс [0..39]
+pub fn weapon_type_to_index(w: WeaponType) -> usize {
+    match w {
+        WeaponType::WindBlade => 0,
+        WeaponType::FireAura => 1,
+        WeaponType::MagicWand => 2,
+        WeaponType::HolyHammer => 3,
+        WeaponType::IceShards => 4,
+        WeaponType::PoisonOrbs => 5,
+        WeaponType::ExecutionerAxe => 6,
+        WeaponType::CelestialBow => 7,
+        WeaponType::ThunderOrb => 8,
+        WeaponType::BloodDaggers => 9,
+        WeaponType::SingularityOrb => 10,
+        WeaponType::ChainFrost => 11,
+        WeaponType::BrimstoneRay => 12,
+        WeaponType::MissileSwarm => 13,
+        WeaponType::ChainLightning => 14,
+        WeaponType::DivineBell => 15,
+        WeaponType::SoulPhantoms => 16,
+        WeaponType::AegisOrbiters => 17,
+        WeaponType::ChaosMeteor => 18,
+        WeaponType::VoidRift => 19,
+        WeaponType::BladeStorm => 20,
+        WeaponType::Hellfire => 21,
+        WeaponType::DeathRay => 22,
+        WeaponType::DivineShield => 23,
+        WeaponType::BlizzardStorm => 24,
+        WeaponType::ToxicPestilence => 25,
+        WeaponType::WhirlwindCleaver => 26,
+        WeaponType::StarfallBarrage => 27,
+        WeaponType::ThunderstormWrath => 28,
+        WeaponType::BloodHarvest => 29,
+        WeaponType::EventHorizon => 30,
+        WeaponType::AbsoluteZero => 31,
+        WeaponType::InfernalCataclysm => 32,
+        WeaponType::DoomsdayBarrage => 33,
+        WeaponType::StormGodWrath => 34,
+        WeaponType::CathedralAura => 35,
+        WeaponType::BansheeWail => 36,
+        WeaponType::InvincibleBastion => 37,
+        WeaponType::ArmageddonStorm => 38,
+        WeaponType::SingularityCollapse => 39,
+    }
+}
+
+/// Преобразует тип пассивки/реликвии Босса в фиксированный индекс [0..27]
+pub fn passive_type_to_index(p: PassiveType) -> usize {
+    match p {
+        PassiveType::SpeedGloves => 0,
+        PassiveType::GiantHeart => 1,
+        PassiveType::CooldownTome => 2,
+        PassiveType::LightArmor => 3,
+        PassiveType::FrostRing => 4,
+        PassiveType::CorrosiveFlask => 5,
+        PassiveType::BloodStone => 6,
+        PassiveType::EagleScope => 7,
+        PassiveType::ChronoHourglass => 8,
+        PassiveType::MagnetSphere => 9,
+        PassiveType::TeslaCoil => 10,
+        PassiveType::CloverOfFate => 11,
+        PassiveType::PrismaticFocus => 12,
+        PassiveType::TitanAegis => 13,
+        PassiveType::ImmortalAegis => 14,
+        PassiveType::ArchmageShard => 15,
+        PassiveType::DivineRapier => 16,
+        PassiveType::OctarineCore => 17,
+        PassiveType::SolarRelic => 18,
+        PassiveType::StaticCore => 19,
+        PassiveType::ColossalEye => 20,
+        PassiveType::BlessedHeart => 21,
+        PassiveType::Pyromaniac => 22,
+        PassiveType::SoulHarvester => 23,
+        PassiveType::DivinityAura => 24,
+        PassiveType::UkuleleResonance => 25,
+        PassiveType::FateWeaver => 26,
+        PassiveType::SiegeMortar => 27,
+    }
+}
+
+/// Извлекает 114-мерный вектор сенсорного восприятия Директора (Director Perception Vector):
+/// 1. [0..9]   Карта и кинематика Босса (позиция X/Y, дистанции до 4 стен арены, вектор скорости, скорость)
+/// 2. [9..16]  Жизненный статус и действия Босса (% HP, макс HP, уровень, рывок/неуязвимость, откат рывка, медитация, отравление)
+/// 3. [16..37] Алтари Крови (общее число, топ-4 ближайших алтаря: флаг наличия, вектор dx/dy, дистанция, % HP)
+/// 4. [37..46] Экономика и армия Директора (очки душ, темп дохода, кд алтаря, уровни Ярости, Панциря, Чумных спор, мобы на арене, потрачено душ, время матча)
+/// 5. [46..86] Арсенал Босса (40 видов оружия и эволюций: нормализованный уровень 0.0..1.0)
+/// 6. [86..114] Пассивки и реликвии Босса (28 видов предметов: нормализованный уровень 0.0..1.0)
+pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRECTOR_INPUT_SIZE] {
+    let mut obs = [0.0f32; DIRECTOR_INPUT_SIZE];
+    let boss_pos = world.boss_pos;
+
+    // 1. [0..9] Карта и кинематика Босса
+    obs[0] = (boss_pos.x / MAP_WIDTH).clamp(0.0, 1.0);
+    obs[1] = (boss_pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
+    obs[2] = (boss_pos.x / MAP_WIDTH).clamp(0.0, 1.0); // дистанция до левой стены
+    obs[3] = ((MAP_WIDTH - boss_pos.x) / MAP_WIDTH).clamp(0.0, 1.0); // до правой стены
+    obs[4] = (boss_pos.y / MAP_HEIGHT).clamp(0.0, 1.0); // до верхней стены
+    obs[5] = ((MAP_HEIGHT - boss_pos.y) / MAP_HEIGHT).clamp(0.0, 1.0); // до нижней стены
+    obs[6] = (world.boss_vel.x / 300.0).clamp(-1.5, 1.5);
+    obs[7] = (world.boss_vel.y / 300.0).clamp(-1.5, 1.5);
+    obs[8] = (world.boss_vel.length() / 300.0).clamp(0.0, 2.0);
+
+    // 2. [9..16] Жизненный статус и действия Босса
+    obs[9] = (world.boss_health.current / world.boss_health.max).clamp(0.0, 1.0);
+    obs[10] = (world.boss_health.max / 2000.0).clamp(0.1, 2.5);
+    obs[11] = (world.boss_inventory.level as f32 / 50.0).clamp(0.0, 2.0);
+    obs[12] = if world.boss_invulnerable_timer > 0.0 { 1.0 } else { 0.0 }; // Активный рывок (неуязвим прямо сейчас)
+    obs[13] = (world.boss_dash_cooldown / 7.0).clamp(0.0, 1.0); // Готовность рывка (0.0 = готов)
+    obs[14] = if world.boss_still_time >= 1.2 { 1.0 } else { (world.boss_still_time / 1.2).clamp(0.0, 1.0) }; // Медитация
+    obs[15] = if world.boss_poison_timer > 0.0 { (world.boss_poison_timer / 2.5).clamp(0.0, 1.0) } else { 0.0 }; // Отравление
+
+    // 3. [16..37] Алтари Крови
+    obs[16] = (world.structures.len() as f32 / 10.0).clamp(0.0, 1.0);
+
+    // Сортировка живых алтарей по расстоянию до босса
+    let mut altars_sorted: Vec<&crate::ecs::world::StructureEntity> = world
+        .structures
+        .iter()
+        .filter(|s| s.health.is_alive())
+        .collect();
+    altars_sorted.sort_by(|a, b| {
+        let da = a.pos.distance_squared(boss_pos);
+        let db = b.pos.distance_squared(boss_pos);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let map_diag = (MAP_WIDTH * MAP_WIDTH + MAP_HEIGHT * MAP_HEIGHT).sqrt();
+    for i in 0..4 {
+        let base = 17 + i * 5;
+        if let Some(st) = altars_sorted.get(i) {
+            obs[base] = 1.0; // Алтарь существует
+            let diff = st.pos - boss_pos;
+            obs[base + 1] = (diff.x / MAP_WIDTH).clamp(-1.0, 1.0);
+            obs[base + 2] = (diff.y / MAP_HEIGHT).clamp(-1.0, 1.0);
+            obs[base + 3] = (diff.length() / map_diag).clamp(0.0, 1.0);
+            obs[base + 4] = (st.health.current / st.health.max).clamp(0.0, 1.0);
+        } else {
+            obs[base] = 0.0;
+            obs[base + 1] = 0.0;
+            obs[base + 2] = 0.0;
+            obs[base + 3] = 1.0;
+            obs[base + 4] = 0.0;
+        }
+    }
+
+    // 4. [37..46] Экономика и армия Директора
+    if let Some(dir) = world.directors.first() {
+        obs[37] = (dir.points / 1000.0).clamp(0.0, 10.0);
+        obs[38] = (dir.income_rate / 50.0).clamp(0.0, 5.0);
+        obs[39] = (dir.altar_cooldown / 60.0).clamp(0.0, 1.0);
+        obs[40] = (dir.grade_fury as f32 / 20.0).clamp(0.0, 5.0);
+        obs[41] = (dir.grade_carapace as f32 / 20.0).clamp(0.0, 5.0);
+        obs[42] = (dir.grade_pestilence as f32 / 20.0).clamp(0.0, 5.0);
+        obs[43] = (dir.total_points_spent / 50000.0).clamp(0.0, 10.0);
+    }
+    obs[44] = (world.mobs.len() as f32 / 500.0).clamp(0.0, 2.0);
+    obs[45] = (sim_time / 1020.0).clamp(0.0, 1.5);
+
+    // 5. [46..86] Оружия и скиллы Босса (40 слотов)
+    for w in &world.boss_inventory.weapons {
+        let idx = weapon_type_to_index(w.kind);
+        if idx < 40 {
+            obs[46 + idx] = (w.level as f32 / 5.0).clamp(0.2, 1.6);
+        }
+    }
+
+    // 6. [86..114] Пассивки и реликвии Босса (28 слотов)
+    for p in &world.boss_inventory.passives {
+        let idx = passive_type_to_index(p.kind);
+        if idx < 28 {
+            obs[86 + idx] = (p.level as f32 / 5.0).clamp(0.2, 1.6);
+        }
+    }
 
     obs
 }

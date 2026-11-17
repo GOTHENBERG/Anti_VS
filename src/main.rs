@@ -552,16 +552,16 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam
             {
                 let (mx, my) = mouse_position();
                 let world_click = world_cam.screen_to_world(Vec2::new(mx, my));
-                let margin = 140.0;
-                if world_click.x >= margin && world_click.x <= MAP_WIDTH - margin
-                    && world_click.y >= margin && world_click.y <= MAP_HEIGHT - margin
-                {
-                    driver.send_command(Command::PlaceStructure {
-                        director_id: director.id,
-                        structure_type: 1,
-                        pos: world_click.into(),
-                    });
-                }
+                let margin = 35.0;
+                let clamped_click = Vec2::new(
+                    world_click.x.clamp(margin, MAP_WIDTH - margin),
+                    world_click.y.clamp(margin, MAP_HEIGHT - margin),
+                );
+                driver.send_command(Command::PlaceStructure {
+                    director_id: director.id,
+                    structure_type: 1,
+                    pos: clamped_click.into(),
+                });
             }
         }
     }
@@ -712,7 +712,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                     && director.spend_points(BLOOD_ALTAR_COST)
                 {
                     director.altar_cooldown = director.altar_max_cooldown;
-                    let margin = 140.0;
+                    let margin = 35.0;
                     let clamped_pos = Vec2::new(
                         pos.x.clamp(margin, MAP_WIDTH - margin),
                         pos.y.clamp(margin, MAP_HEIGHT - margin),

@@ -59,6 +59,7 @@ pub fn run_headless_simulation(
         // 1. Принятие тактических решений Директором-ботом (каждые 0.4 сек)
         if director_decision_timer >= 0.4 {
             director_decision_timer = 0.0;
+            let _dir_obs = crate::ai::sensors::extract_director_observations(&world, sim_time);
 
             let mut should_spawn_altar = false;
             let mut altar_pos = Vec2::ZERO;
@@ -77,7 +78,7 @@ pub fn run_headless_simulation(
                         let altar_angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
                         let altar_dist = rand::gen_range(350.0, 750.0);
                         altar_pos = (world.boss_pos + Vec2::new(altar_angle.cos() * altar_dist, altar_angle.sin() * altar_dist))
-                            .clamp(Vec2::new(60.0, 60.0), Vec2::new(MAP_WIDTH - 60.0, MAP_HEIGHT - 60.0));
+                            .clamp(Vec2::new(35.0, 35.0), Vec2::new(MAP_WIDTH - 35.0, MAP_HEIGHT - 35.0));
                     }
                 }
 

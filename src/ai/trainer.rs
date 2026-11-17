@@ -248,11 +248,11 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     // 1. Фитнес Босса (Чистый Reinforcement Learning):
                     // Время выживания + победа + прокачка (сбор душ) + разрушение алтарей + медитация - кнут за урон
                     let time_reward = res.survival_time * 3.5;
-                    let win_bonus = if res.boss_won { 2000.0 } else { 0.0 };
+                    let win_bonus = if res.boss_won { 4000.0 } else { 0.0 };
                     let level_reward = (res.boss_level as f32) * 20.0;
-                    let altar_reward = (res.altars_destroyed as f32) * 40.0;
-                    let meditation_reward = res.total_meditation_time * 0.5625; // 0.75 - 25% = 0.5625
-                    let damage_whip = res.damage_dealt_to_boss * 0.02;
+                    let altar_reward = (res.altars_destroyed as f32) * 30.0;
+                    let meditation_reward = res.total_meditation_time * 0.7;
+                    let damage_whip = res.damage_dealt_to_boss * 0.005;
 
                     let score = (time_reward + win_bonus + level_reward + altar_reward + meditation_reward - damage_whip).max(10.0);
                     total_score += score;
@@ -538,7 +538,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             boss_p_str
         );
         log_line!(
-            "    ↳ Противник (Директор): Построил алтарей: {} | Призвал мобов: {} шт | Грейды орды: [Ярость: {}, Панцирь: {}, Мор: {}]",
+            "    ↳ Противник (Директор): Построил алтарей: {} | Призвал мобов: {} шт | Грейды орды: [Ярость: {}, Панцирь: {}, Чумные споры: {}]",
             best_boss_eval.avg_altars_built,
             boss_mobs_spawned,
             best_boss_eval.director_grades.0,
@@ -560,7 +560,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_dir_eval.avg_damage_dealt, dir_dmg_reward
         );
         log_line!(
-            "    * Построено алтарей: {} | Призвано мобов: {} шт | Грейды орды: [Ярость: {}, Панцирь: {}, Мор: {}]",
+            "    * Построено алтарей: {} | Призвано мобов: {} шт | Грейды орды: [Ярость: {}, Панцирь: {}, Чумные споры: {}]",
             best_dir_eval.avg_altars_built,
             total_mobs_spawned,
             best_dir_eval.grades.0, best_dir_eval.grades.1, best_dir_eval.grades.2
