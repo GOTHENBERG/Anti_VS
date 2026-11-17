@@ -33,6 +33,9 @@ struct BossEval {
     avg_altars_built: usize,
     avg_meditation_time: f32,
     mobs_spawned: [usize; 16],
+    director_grades: (u32, u32, u32),
+    weapons: Vec<(crate::ecs::components::inventory::WeaponType, u8)>,
+    passives: Vec<(crate::ecs::components::inventory::PassiveType, u8)>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,8 +45,36 @@ struct DirectorEval {
     avg_kill_speed: f32,
     avg_damage_dealt: f32,
     avg_altars_built: usize,
+    avg_altars_destroyed: usize,
+    avg_boss_level: u32,
+    avg_boss_meditation: f32,
     mobs_spawned: [usize; 16],
     grades: (u32, u32, u32),
+    boss_weapons: Vec<(crate::ecs::components::inventory::WeaponType, u8)>,
+    boss_passives: Vec<(crate::ecs::components::inventory::PassiveType, u8)>,
+}
+
+fn format_build_summary(
+    weapons: &[(crate::ecs::components::inventory::WeaponType, u8)],
+    passives: &[(crate::ecs::components::inventory::PassiveType, u8)],
+) -> (String, String) {
+    let w_str = if weapons.is_empty() {
+        "нет".to_string()
+    } else {
+        weapons.iter()
+            .map(|(w, lvl)| format!("{} (ур.{})", crate::content::weapons::get_weapon_def(*w).name, lvl))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let p_str = if passives.is_empty() {
+        "нет".to_string()
+    } else {
+        passives.iter()
+            .map(|(p, lvl)| format!("{} (ур.{})", crate::content::passives::get_passive_def(*p).name, lvl))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    (w_str, p_str)
 }
 
 pub fn run_co_evolutionary_training(generations: usize, population_size: usize, reset: bool) {
@@ -150,6 +181,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                 let mut total_altars_destroyed = 0;
                 let mut total_altars_built = 0;
                 let mut total_mobs = [0usize; 16];
+                let mut last_director_grades = (0, 0, 0);
+                let mut last_weapons = Vec::new();
+                let mut last_passives = Vec::new();
                 let matches_count = 3;
 
                 for match_i in 0..matches_count {
@@ -177,22 +211,22 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                         total_mobs[t] += res.mobs_spawned_by_tier[t];
                     }
 
+                    if match_i == 0 || res.survival_time >= total_survival / (match_i + 1) as f32 {
+                        last_director_grades = res.director_grades;
+                        last_weapons = res.final_weapons;
+                        last_passives = res.final_passives;
+                    }
+
                     // 1. Фитнес Босса:
-                    // ГЛАВНЫЙ ПРЯНИК — время выживания (до 2550 очков) + бонус за победу (1000 очков)
-                    let time_reward = res.survival_time * 2.5;
-                    let win_bonus = if res.boss_won { 1000.0 } else { 0.0 };
+                    // ГЛАВНЫЙ ПРЯНИК — чистое время выживания + бонус за полную победу
+                    let time_reward = res.survival_time * 3.5;
+                    let win_bonus = if res.boss_won { 2000.0 } else { 0.0 };
 
-                    // ВТОРОСТЕПЕННЫЕ ПРЯНИКИ — уровень героя и разрушение алтарей
-                    let level_reward = res.boss_level as f32 * 12.0;
-                    let altar_reward = res.altars_destroyed as f32 * 35.0;
+                    // МЯГКИЙ ПРЯНИК ЗА МЕДИТАЦИЮ — уменьшен в 4 раза (0.75 вместо 3.0),
+                    // чтобы босс не рисковал жизнью ради очков, но сохранял навык покоя
+                    let meditation_reward = res.total_meditation_time * 0.75;
 
-                    // ПРЯНИК ЗА МЕДИТАЦИЮ — награда за время осознанного покоя и регенерации (даже при Full HP)
-                    let meditation_reward = res.total_meditation_time * 3.0;
-
-                    // ВТОРОСТЕПЕННЫЙ КНУТ — мягкий штраф за полученный урон (стимул кайтить и уклоняться)
-                    let damage_penalty = res.damage_dealt_to_boss * 0.04;
-
-                    let score = (time_reward + win_bonus + level_reward + altar_reward + meditation_reward - damage_penalty).max(10.0);
+                    let score = (time_reward + win_bonus + meditation_reward).max(10.0);
                     total_score += score;
                 }
 
@@ -215,6 +249,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
                     avg_meditation_time: total_meditation_time / m_f,
                     mobs_spawned: avg_mobs,
+                    director_grades: last_director_grades,
+                    weapons: last_weapons,
+                    passives: last_passives,
                 }
             })
             .collect();
@@ -228,8 +265,13 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                 let mut total_score = 0.0;
                 let mut total_damage_dealt = 0.0;
                 let mut total_altars_built = 0;
+                let mut total_altars_destroyed = 0;
+                let mut total_boss_level = 0;
+                let mut total_boss_meditation = 0.0;
                 let mut total_mobs = [0usize; 16];
                 let mut last_grades = (0, 0, 0);
+                let mut last_boss_weapons = Vec::new();
+                let mut last_boss_passives = Vec::new();
                 let matches_count = 3;
 
                 for match_i in 0..matches_count {
@@ -273,9 +315,17 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     total_kill_speed += res.survival_time;
                     total_damage_dealt += res.damage_dealt_to_boss;
                     total_altars_built += res.altars_built;
+                    total_altars_destroyed += res.altars_destroyed;
+                    total_boss_level += res.boss_level;
+                    total_boss_meditation += res.total_meditation_time;
                     last_grades = res.director_grades;
                     for t in 0..16 {
                         total_mobs[t] += res.mobs_spawned_by_tier[t];
+                    }
+
+                    if match_i == 0 || res.survival_time >= total_kill_speed / (match_i + 1) as f32 {
+                        last_boss_weapons = res.final_weapons;
+                        last_boss_passives = res.final_passives;
                     }
                 }
 
@@ -291,8 +341,13 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     avg_kill_speed: total_kill_speed / m_f,
                     avg_damage_dealt: total_damage_dealt / m_f,
                     avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
+                    avg_altars_destroyed: ((total_altars_destroyed as f32) / m_f).round() as usize,
+                    avg_boss_level: (total_boss_level as f32 / m_f).round() as u32,
+                    avg_boss_meditation: total_boss_meditation / m_f,
                     mobs_spawned: avg_mobs,
                     grades: last_grades,
+                    boss_weapons: last_boss_weapons,
+                    boss_passives: last_boss_passives,
                 }
             })
             .collect();
@@ -349,9 +404,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             .unwrap();
 
         let total_mobs_spawned: usize = best_dir_eval.mobs_spawned.iter().sum();
-        let boss_time_reward = best_boss_eval.avg_survival * 2.5;
-        let boss_whip = best_boss_eval.avg_damage_taken * 0.04;
-        let boss_meditation_reward = best_boss_eval.avg_meditation_time * 3.0;
+        let boss_mobs_spawned: usize = best_boss_eval.mobs_spawned.iter().sum();
+        let boss_time_reward = best_boss_eval.avg_survival * 3.5;
+        let boss_meditation_reward = best_boss_eval.avg_meditation_time * 0.75;
         let dir_speed_reward = (1020.0 - best_dir_eval.avg_kill_speed).max(0.0) * 5.0;
         let dir_time_whip = if best_dir_eval.avg_kill_speed > 300.0 {
             (best_dir_eval.avg_kill_speed - 300.0) * 4.0
@@ -359,6 +414,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             0.0
         };
         let dir_dmg_reward = (best_dir_eval.avg_damage_dealt * 0.04).min(500.0);
+
+        let (boss_w_str, boss_p_str) = format_build_summary(&best_boss_eval.weapons, &best_boss_eval.passives);
+        let (dir_boss_w_str, dir_boss_p_str) = format_build_summary(&best_dir_eval.boss_weapons, &best_dir_eval.boss_passives);
 
         println!("================================================================================");
         println!(
@@ -383,37 +441,61 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_boss_eval.fitness, best_boss_eval.avg_level
         );
         println!(
-            "    * Время жизни босса: {:.1} мин (+{:.0}) | Урон получен: {:.0} HP (-{:.0}) | Медитация: {:.1} мин (+{:.0})",
+            "    * Время жизни босса: {:>4.1} мин ({:>5.1} сек)",
             best_boss_eval.avg_survival / 60.0,
-            boss_time_reward,
-            best_boss_eval.avg_damage_taken, boss_whip,
-            best_boss_eval.avg_meditation_time / 60.0, boss_meditation_reward
+            best_boss_eval.avg_survival
         );
         println!(
-            "    * Алтарей разрушено: {} | Урон по типам: [Ближний: {:.0}, Дальний: {:.0}, Окружение: {:.0}]",
-            best_boss_eval.avg_altars_destroyed,
+            "    * Очки фитнеса: Выживание: +{:.0} | Медитация: {:.1} мин (+{:.0})",
+            boss_time_reward,
+            best_boss_eval.avg_meditation_time / 60.0,
+            boss_meditation_reward
+        );
+        println!(
+            "    * Получено урона: {:.0} HP [Ближний: {:.0}, Дальний: {:.0}, Окружение: {:.0}] | Разрушено алтарей: {}",
+            best_boss_eval.avg_damage_taken,
             best_boss_eval.avg_melee_damage,
             best_boss_eval.avg_ranged_damage,
             best_boss_eval.avg_hazard_damage,
+            best_boss_eval.avg_altars_destroyed
+        );
+        println!(
+            "    * Скиллы и оружия ({}): [{}]",
+            best_boss_eval.weapons.len(),
+            boss_w_str
+        );
+        println!(
+            "    * Предметы и пассивки ({}): [{}]",
+            best_boss_eval.passives.len(),
+            boss_p_str
+        );
+        println!(
+            "    ↳ Противник (Директор): Построил алтарей: {} | Призвал мобов: {} шт | Грейды орды: [Ярость: {}, Панцирь: {}, Мор: {}]",
+            best_boss_eval.avg_altars_built,
+            boss_mobs_spawned,
+            best_boss_eval.director_grades.0,
+            best_boss_eval.director_grades.1,
+            best_boss_eval.director_grades.2
         );
         println!(
             "  ДИРЕКТОР (Фитнес: {:.0}):",
             best_dir_eval.fitness
         );
         println!(
-            "    * Время жизни босса: {:.1} мин | Бонус за ранний конец: +{:.0} | Штраф за затяжку: -{:.0} | Урон: {:.0} HP (+{:.0})",
+            "    * Время жизни босса: {:>4.1} мин ({:>5.1} сек)",
             best_dir_eval.avg_kill_speed / 60.0,
+            best_dir_eval.avg_kill_speed
+        );
+        println!(
+            "    * Очки фитнеса: Бонус за ранний конец: +{:.0} | Штраф за затяжку: -{:.0} | Урон нанесен: {:.0} HP (+{:.0})",
             dir_speed_reward, dir_time_whip,
             best_dir_eval.avg_damage_dealt, dir_dmg_reward
         );
         println!(
-            "    * Алтарей построено: {} | Улучшения орды: [Ярость: {}, Панцирь: {}, Мор: {}]",
+            "    * Построено алтарей: {} | Призвано мобов: {} шт | Грейды орды: [Ярость: {}, Панцирь: {}, Мор: {}]",
             best_dir_eval.avg_altars_built,
+            total_mobs_spawned,
             best_dir_eval.grades.0, best_dir_eval.grades.1, best_dir_eval.grades.2
-        );
-        println!(
-            "    * Призвано монстров: {} шт",
-            total_mobs_spawned
         );
         println!(
             "      - Орда (T1-8): [Скелеты: {}, Гончие: {}, Культисты: {}, Големы: {}, Камикадзе: {}, Демоны: {}, Огонь: {}, Жнецы: {}]",
@@ -440,6 +522,22 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                 best_dir_eval.mobs_spawned[15],
             );
         }
+        println!(
+            "    ↳ Противник (Босс): Уровень: {} | Медитация: {:.1} мин | Разрушил алтарей: {}",
+            best_dir_eval.avg_boss_level,
+            best_dir_eval.avg_boss_meditation / 60.0,
+            best_dir_eval.avg_altars_destroyed
+        );
+        println!(
+            "    ↳ Скиллы и оружия босса ({}): [{}]",
+            best_dir_eval.boss_weapons.len(),
+            dir_boss_w_str
+        );
+        println!(
+            "    ↳ Предметы и пассивки босса ({}): [{}]",
+            best_dir_eval.boss_passives.len(),
+            dir_boss_p_str
+        );
         println!("================================================================================");
 
         // 4. Селекция, кроссовер и мутации для следующего поколения

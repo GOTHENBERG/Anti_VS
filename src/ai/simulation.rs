@@ -25,6 +25,8 @@ pub struct MatchResult {
     pub director_grades: (u32, u32, u32),
     pub total_meditation_time: f32,
     pub boss_damage_stats: crate::ecs::components::inventory::BossDamageStats,
+    pub final_weapons: Vec<(crate::ecs::components::inventory::WeaponType, u8)>,
+    pub final_passives: Vec<(crate::ecs::components::inventory::PassiveType, u8)>,
 }
 
 /// Выполняет один раунд автономной ускоренной симуляции сражения без рендеринга
@@ -163,6 +165,8 @@ pub fn run_headless_simulation(
     let director_grades = world.directors.first()
         .map(|d| (d.grade_fury, d.grade_carapace, d.grade_pestilence))
         .unwrap_or((0, 0, 0));
+    let final_weapons = world.boss_inventory.weapons.iter().map(|w| (w.kind, w.level)).collect();
+    let final_passives = world.boss_inventory.passives.iter().map(|p| (p.kind, p.level)).collect();
 
     MatchResult {
         survival_time: sim_time,
@@ -175,6 +179,8 @@ pub fn run_headless_simulation(
         director_grades,
         total_meditation_time,
         boss_damage_stats: world.boss_inventory.damage_stats.clone(),
+        final_weapons,
+        final_passives,
     }
 }
 

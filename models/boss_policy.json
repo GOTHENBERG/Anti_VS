@@ -1,8 +1,8 @@
 {
   "version": "v2.0-neural",
-  "generation": 772,
-  "fitness": 3216.4316,
-  "avg_survival_time": 662.97833,
+  "generation": 773,
+  "fitness": 2416.6855,
+  "avg_survival_time": 640.4172,
   "total_synapses": 5824,
   "neural_net": {
     "input_size": 150,
