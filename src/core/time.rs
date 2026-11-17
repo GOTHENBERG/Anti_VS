@@ -33,4 +33,11 @@ impl GameClock {
         let secs = remaining % 60;
         format!("{:02}:{:02}", mins, secs)
     }
+
+    pub fn formatted_elapsed(&self) -> String {
+        let elapsed = self.elapsed_secs as u32;
+        let mins = elapsed / 60;
+        let secs = elapsed % 60;
+        format!("{:02}:{:02}", mins, secs)
+    }
 }

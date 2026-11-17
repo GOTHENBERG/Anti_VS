@@ -24,6 +24,7 @@ pub struct MatchResult {
     pub mobs_spawned_by_tier: [usize; 16],
     pub director_grades: (u32, u32, u32),
     pub total_meditation_time: f32,
+    pub distance_walked: f32,
     pub boss_damage_stats: crate::ecs::components::inventory::BossDamageStats,
     pub final_weapons: Vec<(crate::ecs::components::inventory::WeaponType, u8)>,
     pub final_passives: Vec<(crate::ecs::components::inventory::PassiveType, u8)>,
@@ -43,6 +44,7 @@ pub fn run_headless_simulation(
     let mut director_decision_timer = 0.0f32;
     let mut altars_built = 1;
     let mut total_meditation_time = 0.0f32;
+    let mut total_distance_walked = 0.0f32;
     let mut mobs_spawned_by_tier = [0usize; 16];
 
     // Начальный алтарь
@@ -148,8 +150,10 @@ pub fn run_headless_simulation(
         }
 
         // 2. Системные обновления игрового мира
+        let prev_pos = world.boss_pos;
         update_director(&mut world, dt);
         update_boss_ai_sim(&mut world, dt, boss_model);
+        total_distance_walked += prev_pos.distance(world.boss_pos);
         update_meditation(&mut world, dt);
         if world.boss_still_time >= 1.2 {
             total_meditation_time += dt;
@@ -178,6 +182,7 @@ pub fn run_headless_simulation(
         mobs_spawned_by_tier,
         director_grades,
         total_meditation_time,
+        distance_walked: total_distance_walked,
         boss_damage_stats: world.boss_inventory.damage_stats.clone(),
         final_weapons,
         final_passives,

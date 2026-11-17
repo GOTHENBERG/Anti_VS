@@ -755,7 +755,7 @@ fn draw_game_over(world: &World, clock: &GameClock, victory: bool, fonts: &GameF
     let final_income = director.map(|d| d.income_rate).unwrap_or(0.0);
 
     let stats = [
-        format!("Время выживания босса: {}", clock.formatted_remaining()),
+        format!("Время выживания босса: {}", clock.formatted_elapsed()),
         format!("Финальный уровень босса: {}", world.boss_inventory.level),
         format!("Суммарный нанесенный урон: {:.0}", world.total_damage_dealt_to_boss),
         format!("Призвано монстров: {}", total_spawned),
