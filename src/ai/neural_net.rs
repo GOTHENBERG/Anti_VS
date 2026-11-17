@@ -203,24 +203,21 @@ impl NeuralNet {
 pub const DIRECTOR_INPUT_SIZE: usize = 132;
 pub const DIRECTOR_HIDDEN1_SIZE: usize = 64;
 pub const DIRECTOR_HIDDEN2_SIZE: usize = 48;
-pub const DIRECTOR_SPAWN_HEAD_SIZE: usize = 17;   // 0: Копить души, 1..16: Тиры 1..16
-pub const DIRECTOR_UPGRADE_HEAD_SIZE: usize = 4;  // 0: Копить души, 1: Ярость, 2: Панцирь, 3: Чумные споры
-pub const DIRECTOR_ALTAR_HEAD_SIZE: usize = 3;    // [0]: Триггер постройки, [1]: X, [2]: Y
+pub const DIRECTOR_ECONOMY_HEAD_SIZE: usize = 20; // 0: Пас/Копить, 1..16: Тиры 1..16, 17: Ярость, 18: Панцирь, 19: Чумные споры
+pub const DIRECTOR_ALTAR_HEAD_SIZE: usize = 3;   // [0]: Триггер постройки, [1]: X, [2]: Y
 
 #[derive(Clone, Debug)]
 pub struct DirectorDecision {
-    pub target_squad: usize,      // 0..16
-    pub target_upgrade: usize,    // 0..3
+    pub target_action: usize,     // 0: Пас, 1..16: Отряд 1..16, 17: Ярость, 18: Панцирь, 19: Чумные споры
     pub should_build_altar: bool,
     pub altar_target_pos: macroquad::prelude::Vec2,
 }
 
-/// Многоголовая глубокая нейросеть Директора (Multi-Head RTS Commander Brain)
-/// Архитектура: 132 сенсорных входа -> 64 (ReLU) -> 48 (ReLU) -> 3 головы решений:
-/// 1. Голова А (17 выходов): Целевой призыв мобов (Target Intent)
-/// 2. Голова Б (4 выхода): Целевой апгрейд грейда армии
-/// 3. Голова В (3 выхода): Постройка и координаты размещения Алтаря Крови
-/// Всего синапсов: 12,808 параметров!
+/// Двухголовая глубокая нейросеть Директора (Dual-Head RTS Commander Brain)
+/// Архитектура: 132 сенсорных входа -> 64 (ReLU) -> 48 (ReLU) -> 2 головы решений:
+/// 1. Голова Экономики (20 выходов): Единая цель бюджета (Пас / 16 Тиров мобов / 3 Грейда армии)
+/// 2. Голова Алтаря (3 выхода): Постройка и пространственные координаты (X, Y) Алтаря Крови
+/// Всего синапсов: 12,759 параметров!
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DirectorBrainNet {
     pub input_size: usize,
@@ -235,15 +232,11 @@ pub struct DirectorBrainNet {
     pub w2: Vec<Vec<f32>>,
     pub b2: Vec<f32>,
 
-    // Голова А: Призыв мобов (48 -> 17)
-    pub w_spawn: Vec<Vec<f32>>,
-    pub b_spawn: Vec<f32>,
+    // Голова 1: Единая Экономика (48 -> 20)
+    pub w_econ: Vec<Vec<f32>>,
+    pub b_econ: Vec<f32>,
 
-    // Голова Б: Апгрейды грейдов (48 -> 4)
-    pub w_upgrade: Vec<Vec<f32>>,
-    pub b_upgrade: Vec<f32>,
-
-    // Голова В: Алтарь Крови (48 -> 3)
+    // Голова 2: Алтарь Крови (48 -> 3)
     pub w_altar: Vec<Vec<f32>>,
     pub b_altar: Vec<f32>,
 }
@@ -252,8 +245,7 @@ impl DirectorBrainNet {
     pub fn new() -> Self {
         let scale1 = (2.0 / DIRECTOR_INPUT_SIZE as f32).sqrt();
         let scale2 = (2.0 / DIRECTOR_HIDDEN1_SIZE as f32).sqrt();
-        let scale_spawn = (2.0 / DIRECTOR_HIDDEN2_SIZE as f32).sqrt();
-        let scale_upgrade = (2.0 / DIRECTOR_HIDDEN2_SIZE as f32).sqrt();
+        let scale_econ = (2.0 / DIRECTOR_HIDDEN2_SIZE as f32).sqrt();
         let scale_altar = (2.0 / DIRECTOR_HIDDEN2_SIZE as f32).sqrt();
 
         let w1 = (0..DIRECTOR_HIDDEN1_SIZE)
@@ -266,15 +258,10 @@ impl DirectorBrainNet {
             .collect();
         let b2 = vec![0.0; DIRECTOR_HIDDEN2_SIZE];
 
-        let w_spawn = (0..DIRECTOR_SPAWN_HEAD_SIZE)
-            .map(|_| (0..DIRECTOR_HIDDEN2_SIZE).map(|_| rand::gen_range(-scale_spawn, scale_spawn)).collect())
+        let w_econ = (0..DIRECTOR_ECONOMY_HEAD_SIZE)
+            .map(|_| (0..DIRECTOR_HIDDEN2_SIZE).map(|_| rand::gen_range(-scale_econ, scale_econ)).collect())
             .collect();
-        let b_spawn = vec![0.0; DIRECTOR_SPAWN_HEAD_SIZE];
-
-        let w_upgrade = (0..DIRECTOR_UPGRADE_HEAD_SIZE)
-            .map(|_| (0..DIRECTOR_HIDDEN2_SIZE).map(|_| rand::gen_range(-scale_upgrade, scale_upgrade)).collect())
-            .collect();
-        let b_upgrade = vec![0.0; DIRECTOR_UPGRADE_HEAD_SIZE];
+        let b_econ = vec![0.0; DIRECTOR_ECONOMY_HEAD_SIZE];
 
         let w_altar = (0..DIRECTOR_ALTAR_HEAD_SIZE)
             .map(|_| (0..DIRECTOR_HIDDEN2_SIZE).map(|_| rand::gen_range(-scale_altar, scale_altar)).collect())
@@ -289,17 +276,15 @@ impl DirectorBrainNet {
             b1,
             w2,
             b2,
-            w_spawn,
-            b_spawn,
-            w_upgrade,
-            b_upgrade,
+            w_econ,
+            b_econ,
             w_altar,
             b_altar,
         }
     }
 
-    /// Прямой проход нейросети Директора (Forward Pass)
-    pub fn forward(&self, inputs: &[f32; DIRECTOR_INPUT_SIZE]) -> DirectorDecision {
+    /// Прямой проход нейросети Директора (Forward Pass с Action Masking)
+    pub fn forward(&self, inputs: &[f32; DIRECTOR_INPUT_SIZE], total_points_spent: f32) -> DirectorDecision {
         // 1. Скрытый слой 1 (Linear + Leaky ReLU)
         let mut h1 = [0.0f32; DIRECTOR_HIDDEN1_SIZE];
         for i in 0..DIRECTOR_HIDDEN1_SIZE {
@@ -322,37 +307,31 @@ impl DirectorBrainNet {
             h2[i] = if sum > 0.0 { sum } else { 0.01 * sum };
         }
 
-        // 3. Голова А: Призыв мобов (17 логитов -> argmax)
-        let mut best_spawn = 0;
-        let mut max_spawn_logit = f32::NEG_INFINITY;
-        for i in 0..DIRECTOR_SPAWN_HEAD_SIZE {
-            let mut sum = self.b_spawn[i];
-            let row = &self.w_spawn[i];
+        // 3. Голова 1: Единая Экономика (20 логитов -> argmax с Action Masking)
+        // Заблокированные тиры отрядов не могут быть выбраны целью (Action Masking)
+        let mut best_action = 0;
+        let mut max_econ_logit = f32::NEG_INFINITY;
+        for i in 0..DIRECTOR_ECONOMY_HEAD_SIZE {
+            if (1..=16).contains(&i) {
+                let tier = i as u8;
+                let threshold = crate::content::mobs::get_squad_config(tier).unlock_spent_threshold;
+                if total_points_spent < threshold {
+                    continue; // Заблокировано в дереве технологий
+                }
+            }
+
+            let mut sum = self.b_econ[i];
+            let row = &self.w_econ[i];
             for j in 0..DIRECTOR_HIDDEN2_SIZE {
                 sum += row[j] * h2[j];
             }
-            if sum > max_spawn_logit {
-                max_spawn_logit = sum;
-                best_spawn = i;
+            if sum > max_econ_logit {
+                max_econ_logit = sum;
+                best_action = i;
             }
         }
 
-        // 4. Голова Б: Апгрейды грейдов (4 логита -> argmax)
-        let mut best_upgrade = 0;
-        let mut max_upgrade_logit = f32::NEG_INFINITY;
-        for i in 0..DIRECTOR_UPGRADE_HEAD_SIZE {
-            let mut sum = self.b_upgrade[i];
-            let row = &self.w_upgrade[i];
-            for j in 0..DIRECTOR_HIDDEN2_SIZE {
-                sum += row[j] * h2[j];
-            }
-            if sum > max_upgrade_logit {
-                max_upgrade_logit = sum;
-                best_upgrade = i;
-            }
-        }
-
-        // 5. Голова В: Алтарь Крови (3 выхода)
+        // 4. Голова 2: Алтарь Крови (3 выхода)
         // [0]: Триггер (Sigmoid > 0.5)
         // [1]: X координата (Sigmoid -> [35.0, MAP_WIDTH - 35.0])
         // [2]: Y координата (Sigmoid -> [35.0, MAP_HEIGHT - 35.0])
@@ -371,8 +350,7 @@ impl DirectorBrainNet {
         let altar_y = 35.0 + altar_raw[2] * (crate::core::MAP_HEIGHT - 70.0);
 
         DirectorDecision {
-            target_squad: best_spawn,
-            target_upgrade: best_upgrade,
+            target_action: best_action,
             should_build_altar,
             altar_target_pos: macroquad::prelude::Vec2::new(altar_x, altar_y),
         }
@@ -397,8 +375,7 @@ impl DirectorBrainNet {
 
         mutate_layer(&mut self.w1, &mut self.b1, rate, sigma);
         mutate_layer(&mut self.w2, &mut self.b2, rate, sigma);
-        mutate_layer(&mut self.w_spawn, &mut self.b_spawn, rate, sigma);
-        mutate_layer(&mut self.w_upgrade, &mut self.b_upgrade, rate, sigma);
+        mutate_layer(&mut self.w_econ, &mut self.b_econ, rate, sigma);
         mutate_layer(&mut self.w_altar, &mut self.b_altar, rate, sigma);
     }
 
@@ -425,8 +402,7 @@ impl DirectorBrainNet {
         let mut child = self.clone();
         crossover_layer(&mut child.w1, &mut child.b1, &other.w1, &other.b1);
         crossover_layer(&mut child.w2, &mut child.b2, &other.w2, &other.b2);
-        crossover_layer(&mut child.w_spawn, &mut child.b_spawn, &other.w_spawn, &other.b_spawn);
-        crossover_layer(&mut child.w_upgrade, &mut child.b_upgrade, &other.w_upgrade, &other.b_upgrade);
+        crossover_layer(&mut child.w_econ, &mut child.b_econ, &other.w_econ, &other.b_econ);
         crossover_layer(&mut child.w_altar, &mut child.b_altar, &other.w_altar, &other.b_altar);
         child
     }
@@ -435,8 +411,7 @@ impl DirectorBrainNet {
     pub fn total_synapses(&self) -> usize {
         (DIRECTOR_INPUT_SIZE * DIRECTOR_HIDDEN1_SIZE + DIRECTOR_HIDDEN1_SIZE)
             + (DIRECTOR_HIDDEN1_SIZE * DIRECTOR_HIDDEN2_SIZE + DIRECTOR_HIDDEN2_SIZE)
-            + (DIRECTOR_HIDDEN2_SIZE * DIRECTOR_SPAWN_HEAD_SIZE + DIRECTOR_SPAWN_HEAD_SIZE)
-            + (DIRECTOR_HIDDEN2_SIZE * DIRECTOR_UPGRADE_HEAD_SIZE + DIRECTOR_UPGRADE_HEAD_SIZE)
+            + (DIRECTOR_HIDDEN2_SIZE * DIRECTOR_ECONOMY_HEAD_SIZE + DIRECTOR_ECONOMY_HEAD_SIZE)
             + (DIRECTOR_HIDDEN2_SIZE * DIRECTOR_ALTAR_HEAD_SIZE + DIRECTOR_ALTAR_HEAD_SIZE)
     }
 }

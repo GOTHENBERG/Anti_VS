@@ -699,10 +699,12 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             if let (Some(net1), Some(net2)) = (&p1.neural_net, &p2.neural_net) {
                 let mut crossed_net = net1.crossover(net2);
                 crossed_net.mutate(0.08, 0.18);
+                child.total_synapses = crossed_net.total_synapses();
                 child.neural_net = Some(crossed_net);
             } else {
                 let mut net = crate::ai::neural_net::DirectorBrainNet::new();
                 net.mutate(0.10, 0.20);
+                child.total_synapses = net.total_synapses();
                 child.neural_net = Some(net);
             }
 
@@ -778,7 +780,7 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, i
     if let Some(ref net) = director.neural_net {
         if let Ok(dir_brain_json) = serde_json::to_string_pretty(net) {
             let _ = std::fs::write("models/director_brain_neural.json", dir_brain_json);
-            println!("  [OK] Матрица синапсов Директора (132 сенсора, 3 головы решений) -> models/director_brain_neural.json");
+            println!("  [OK] Матрица синапсов Директора (132 сенсора, 2 головы: 20 экономика + 3 алтарь) -> models/director_brain_neural.json");
         }
     }
 

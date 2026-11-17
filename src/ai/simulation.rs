@@ -64,7 +64,8 @@ pub fn run_headless_simulation(
             let dir_obs = crate::ai::sensors::extract_director_observations(&world, sim_time);
 
             if let Some(ref net) = director_model.neural_net {
-                let decision = net.forward(&dir_obs);
+                let total_spent = world.directors.first().map(|d| d.total_points_spent).unwrap_or(0.0);
+                let decision = net.forward(&dir_obs, total_spent);
 
                 // 1.1 Постройка Алтаря Крови (Голова В)
                 if decision.should_build_altar {
@@ -84,52 +85,58 @@ pub fn run_headless_simulation(
                     }
                 }
 
-                // 1.2 Целевой призыв отрядов монстров (Голова А - Target Intent с накоплением)
-                if decision.target_squad > 0 && decision.target_squad <= 16 {
-                    let tier = decision.target_squad as u8;
-                    let config = get_squad_config(tier);
-                    let can_spawn = if let Some(director) = world.directors.first() {
-                        let is_unlocked = director.total_points_spent >= config.unlock_spent_threshold;
-                        is_unlocked && director.points >= config.cost
-                    } else {
-                        false
-                    };
+                // 1.2 Единая Голова Экономики (Unified Economic Head: 0 = Пас/Копить, 1..16 = Отряды, 17..19 = Грейды)
+                match decision.target_action {
+                    0 => {
+                        // Пас / Накопление душ (saving souls for high-cost squads or upgrades)
+                    }
+                    1..=16 => {
+                        let tier = decision.target_action as u8;
+                        let config = get_squad_config(tier);
+                        let can_spawn = if let Some(director) = world.directors.first() {
+                            let is_unlocked = director.total_points_spent >= config.unlock_spent_threshold;
+                            is_unlocked && director.points >= config.cost
+                        } else {
+                            false
+                        };
 
-                    if can_spawn {
+                        if can_spawn {
+                            if let Some(director) = world.directors.first_mut() {
+                                if director.spend_points(config.cost) {
+                                    spawn_squad_perimeter(&mut world, tier);
+                                    mobs_spawned_by_tier[(tier - 1) as usize] += config.count;
+                                }
+                            }
+                        }
+                    }
+                    17 => {
+                        // Улучшение Ярости (Fury: +15% к урону мобов)
                         if let Some(director) = world.directors.first_mut() {
-                            if director.spend_points(config.cost) {
-                                spawn_squad_perimeter(&mut world, tier);
-                                mobs_spawned_by_tier[(tier - 1) as usize] += config.count;
+                            let fury_cost = 100.0 * (director.grade_fury as f32 + 1.0);
+                            if director.spend_points(fury_cost) {
+                                director.grade_fury += 1;
                             }
                         }
                     }
-                }
-
-                // 1.3 Улучшение грейдов армии (Голова Б - Target Upgrade)
-                if decision.target_upgrade > 0 {
-                    if let Some(director) = world.directors.first_mut() {
-                        match decision.target_upgrade {
-                            1 => {
-                                let fury_cost = 100.0 * (director.grade_fury as f32 + 1.0);
-                                if director.spend_points(fury_cost) {
-                                    director.grade_fury += 1;
-                                }
+                    18 => {
+                        // Улучшение Панциря (Carapace: +20% к здоровью мобов)
+                        if let Some(director) = world.directors.first_mut() {
+                            let carapace_cost = 120.0 * (director.grade_carapace as f32 + 1.0);
+                            if director.spend_points(carapace_cost) {
+                                director.grade_carapace += 1;
                             }
-                            2 => {
-                                let carapace_cost = 120.0 * (director.grade_carapace as f32 + 1.0);
-                                if director.spend_points(carapace_cost) {
-                                    director.grade_carapace += 1;
-                                }
-                            }
-                            3 => {
-                                let pestilence_cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
-                                if director.spend_points(pestilence_cost) {
-                                    director.grade_pestilence += 1;
-                                }
-                            }
-                            _ => {}
                         }
                     }
+                    19 => {
+                        // Улучшение Чумных спор (Pestilence: ядовитый урон от атак и миазмов алтарей)
+                        if let Some(director) = world.directors.first_mut() {
+                            let pestilence_cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+                            if director.spend_points(pestilence_cost) {
+                                director.grade_pestilence += 1;
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             } else {
                 // Fallback (если у модели нет обученной нейросети)
