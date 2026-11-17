@@ -73,9 +73,19 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures, 
     }
 
     // 3. Разрушаемые структуры (Алтари Крови)
+    let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
     for structure in &world.structures {
-        if !in_view(structure.pos, 100.0) {
+        if !in_view(structure.pos, 180.0) {
             continue;
+        }
+        // Защитные ядовитые миазмы Алтарей Крови при прокачке Чумных Спор Директора
+        if pestilence_lvl > 0 {
+            let miasma_radius = 160.0f32;
+            let pulse = (time * 2.5).sin() * 6.0;
+            let r = miasma_radius + pulse;
+            let alpha = 0.12 + (time * 2.0).sin().abs() * 0.06;
+            draw_circle(structure.pos.x, structure.pos.y, r, Color::new(0.55, 0.10, 0.75, alpha));
+            draw_circle_lines(structure.pos.x, structure.pos.y, r, 1.8, Color::new(0.75, 0.20, 0.95, alpha * 2.0));
         }
         draw_blood_altar(structure.pos, structure.health.current, structure.health.max, time, textures);
     }

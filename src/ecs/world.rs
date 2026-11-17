@@ -147,6 +147,8 @@ pub struct World {
     pub boss_dash_cooldown: f32,
     pub boss_invulnerable_timer: f32,
     pub boss_still_time: f32, // Время стояния на месте (для медитации)
+    pub boss_poison_timer: f32, // Таймер отравления босса (от Чумных Спор Директора)
+    pub boss_poison_dps: f32,   // Урон ядом в секунду
     pub game_time: f32, // Игровое время симуляции / сессии
 
     // Углы вращения для эволюций
@@ -204,6 +206,8 @@ impl World {
             boss_dash_cooldown: 0.0,
             boss_invulnerable_timer: 0.0,
             boss_still_time: 0.0,
+            boss_poison_timer: 0.0,
+            boss_poison_dps: 0.0,
             game_time: 0.0,
             blade_storm_angle: 0.0,
             divine_shield_angle: 0.0,

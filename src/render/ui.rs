@@ -138,16 +138,27 @@ pub fn render_ui(
     let bar_y = 14.0;
 
     let hp_ratio = (world.boss_health.current / world.boss_health.max).clamp(0.0, 1.0);
+    let hp_bar_color = if world.boss_poison_timer > 0.0 {
+        Color::new(0.68, 0.15, 0.75, 1.0) // Фиолетово-токсичный цвет при отравлении
+    } else {
+        Color::new(0.88, 0.18, 0.22, 1.0)
+    };
     draw_rectangle(bar_x, bar_y, bar_w, bar_h, Color::new(0.10, 0.10, 0.15, 0.96));
-    draw_rectangle(bar_x, bar_y, bar_w * hp_ratio, bar_h, Color::new(0.88, 0.18, 0.22, 1.0));
+    draw_rectangle(bar_x, bar_y, bar_w * hp_ratio, bar_h, hp_bar_color);
     draw_rectangle_lines(bar_x, bar_y, bar_w, bar_h, 2.0, Color::new(0.9, 0.8, 0.5, 1.0));
 
+    let poison_tag = if world.boss_poison_timer > 0.0 {
+        format!(" | ☣️ ЯД (-{:.0}/с)", world.boss_poison_dps)
+    } else {
+        String::new()
+    };
     let hp_text = format!(
-        "👑 ВЕРХОВНЫЙ ПАЛАДИН (Ур. {}) | {:.0} / {:.0} HP | Броня: {:.1}",
+        "👑 ВЕРХОВНЫЙ ПАЛАДИН (Ур. {}) | {:.0} / {:.0} HP | Броня: {:.1}{}",
         world.boss_inventory.level,
         world.boss_health.current,
         world.boss_health.max,
-        world.boss_resistances.flat_armor
+        world.boss_resistances.flat_armor,
+        poison_tag
     );
     let hp_text_w = fonts.measure_heading(&hp_text, 13.5).width;
     fonts.draw_heading(&hp_text, (screen_w - hp_text_w) / 2.0, bar_y + 16.0, 13.5, WHITE);
@@ -518,7 +529,7 @@ pub fn render_ui(
         let grades = [
             ("F", "Ярость Крови", director.grade_fury, 100.0 * (director.grade_fury as f32 + 1.0), "+12% урон, +6% скор."),
             ("G", "Панцирь", director.grade_carapace, 120.0 * (director.grade_carapace as f32 + 1.0), "+2.5 брони, +5% рез."),
-            ("H", "Чумные Споры", director.grade_pestilence, 150.0 * (director.grade_pestilence as f32 + 1.0), "25% шанс лужи яда"),
+            ("H", "Чумные Споры", director.grade_pestilence, 150.0 * (director.grade_pestilence as f32 + 1.0), "Яд атак + Аура алтарей"),
         ];
 
         for (i, (key, name, lvl, cost, desc)) in grades.iter().enumerate() {

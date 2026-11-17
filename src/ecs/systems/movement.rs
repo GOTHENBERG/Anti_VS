@@ -127,67 +127,71 @@ pub fn update_movement(world: &mut World, dt: f32) {
     }
     world.projectiles.retain(|p| p.lifetime > 0.0);
 
-    // 4. Обновление кислотных луж
-    let boss_pos = world.boss_pos;
-    let mut overlapping_director_pools = 0;
-    let mut max_director_dps = 0.0f32;
-    let mut corrosive_active = false;
-
+    // 4. Обновление кислотных луж Босса (Чумные Сферы и Токсичный Мор)
     for pool in &mut world.acid_pools {
         pool.lifetime -= dt;
 
-        if pool.is_director_source {
-            // Лужа Директора (Чумные Споры): отслеживаем нахождение босса в зоне заражения
-            if boss_pos.distance_squared(pool.pos) < pool.radius * pool.radius {
-                overlapping_director_pools += 1;
-                max_director_dps = max_director_dps.max(pool.dps);
-                if pool.corrosive {
-                    corrosive_active = true;
-                }
-            }
-        } else {
-            // Лужа Босса (Чумные Сферы): наносит урон МОБАМ, а самого Босса НЕ трогает!
-            let nearby = world.spatial_grid.query_nearby(pool.pos, pool.radius);
-            for idx in nearby {
-                if let Some(mob) = world.mobs.get_mut(idx) {
-                    if mob.pos.distance_squared(pool.pos) < pool.radius * pool.radius {
-                        mob.status.apply_poison(2.5, pool.dps * 0.5);
-                        if pool.corrosive {
-                            // Разъедает плоскую броню
-                            mob.resistances.flat_armor = (mob.resistances.flat_armor - dt * 2.0).max(0.0);
-                        }
-                        world.damage_queue.push(DamagePacket {
-                            source_id: Some(0),
-                            target_id: mob.id,
-                            amount: pool.dps * dt,
-                            damage_type: DamageType::Poison,
-                            armor_penetration: 0.5,
-                        });
+        // Лужи Босса наносят урон МОБАМ (Босса они не трогают)
+        let nearby = world.spatial_grid.query_nearby(pool.pos, pool.radius);
+        for idx in nearby {
+            if let Some(mob) = world.mobs.get_mut(idx) {
+                if mob.pos.distance_squared(pool.pos) < pool.radius * pool.radius {
+                    mob.status.apply_poison(2.5, pool.dps * 0.5);
+                    if pool.corrosive {
+                        // Разъедает плоскую броню
+                        mob.resistances.flat_armor = (mob.resistances.flat_armor - dt * 2.0).max(0.0);
                     }
+                    world.damage_queue.push(DamagePacket {
+                        source_id: Some(0),
+                        target_id: mob.id,
+                        amount: pool.dps * dt,
+                        damage_type: DamageType::Poison,
+                        armor_penetration: 0.5,
+                    });
                 }
             }
         }
     }
+    world.acid_pools.retain(|p| p.lifetime > 0.0);
 
-    // Балансировка Чумных Спор: суммирование с затуханием (макс кап 3 стака) и учет резиста к яду
-    if overlapping_director_pools > 0 {
-        let stack_mult = match overlapping_director_pools {
-            1 => 1.0,
-            2 => 1.4,
-            _ => 1.75, // Ограничение: предотвращает моментальный ваншот босса от сотен наложившихся луж
-        };
+    // 4.1 Чумные Споры Директора: периодический урон отравления (Poison DoT по Боссу)
+    if world.boss_poison_timer > 0.0 {
+        world.boss_poison_timer = (world.boss_poison_timer - dt).max(0.0);
         let poison_res = world.boss_resistances.poison_res.clamp(-0.5, 0.85);
-        let effective_dps = max_director_dps * stack_mult * (1.0 - poison_res);
+        let effective_dps = world.boss_poison_dps * (1.0 - poison_res);
         let poison_dmg = effective_dps * dt;
         world.boss_health.take_damage(poison_dmg);
         world.boss_inventory.record_damage_taken(poison_dmg, DamageType::Poison, DamageSourceKind::Hazard);
         world.total_damage_dealt_to_boss += poison_dmg;
 
-        if corrosive_active {
-            world.boss_resistances.flat_armor = (world.boss_resistances.flat_armor - dt * 1.5).max(0.0);
+        if !world.is_headless && macroquad::prelude::rand::gen_range(0.0, 1.0) < 0.25 {
+            world.particles.push(crate::ecs::world::ParticleEntity {
+                pos: world.boss_pos + Vec2::new(macroquad::prelude::rand::gen_range(-14.0, 14.0), macroquad::prelude::rand::gen_range(-14.0, 14.0)),
+                vel: Vec2::new(macroquad::prelude::rand::gen_range(-10.0, 10.0), macroquad::prelude::rand::gen_range(-25.0, -8.0)),
+                color: Color::new(0.65, 0.15, 0.85, 0.75),
+                radius: 2.2,
+                lifetime: 0.35,
+                max_lifetime: 0.35,
+            });
         }
     }
-    world.acid_pools.retain(|p| p.lifetime > 0.0);
+
+    // 4.2 Чумные Споры Директора: защитные миазмы вокруг Алтарей Крови
+    let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
+    if pestilence_lvl > 0 {
+        let miasma_radius = 160.0f32;
+        let miasma_dps = 10.0 + (pestilence_lvl as f32) * 2.5;
+        let poison_res = world.boss_resistances.poison_res.clamp(-0.5, 0.85);
+        for st in &world.structures {
+            if world.boss_pos.distance_squared(st.pos) < miasma_radius * miasma_radius {
+                let dmg = miasma_dps * (1.0 - poison_res) * dt;
+                world.boss_health.take_damage(dmg);
+                world.boss_inventory.record_damage_taken(dmg, DamageType::Poison, DamageSourceKind::Hazard);
+                world.total_damage_dealt_to_boss += dmg;
+                break;
+            }
+        }
+    }
 
     // 5. Магнетизм кристаллов душ к боссу (с учетом пассивки MagnetSphere)
     let effective_magnet_r = world.boss_inventory.get_effective_magnet_radius();

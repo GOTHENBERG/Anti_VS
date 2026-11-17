@@ -47,6 +47,16 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, DamageSourceKind::Melee);
                     world.total_damage_dealt_to_boss += actual_dmg;
 
+                    // Чумные Споры Директора: шанс отравить босса при контактной атаке
+                    let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
+                    if pestilence_lvl > 0 {
+                        let poison_chance = ((pestilence_lvl as f32) * 0.05).min(0.40);
+                        if rand::gen_range(0.0, 1.0) < poison_chance {
+                            world.boss_poison_timer = 2.5;
+                            world.boss_poison_dps = world.boss_poison_dps.max(6.0 + (pestilence_lvl as f32) * 2.2);
+                        }
+                    }
+
                     // Скелеты слегка притормаживают босса
                     if mob.tier == 1 {
                         world.boss_vel *= 0.98;
@@ -341,6 +351,16 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, DamageSourceKind::Ranged);
                     world.total_damage_dealt_to_boss += actual_dmg;
                     boss_hits.push(actual_dmg);
+
+                    // Чумные Споры Директора: шанс отравить босса стрелами культистов
+                    let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
+                    if pestilence_lvl > 0 {
+                        let poison_chance = ((pestilence_lvl as f32) * 0.08).min(0.50);
+                        if rand::gen_range(0.0, 1.0) < poison_chance {
+                            world.boss_poison_timer = 2.5;
+                            world.boss_poison_dps = world.boss_poison_dps.max(6.0 + (pestilence_lvl as f32) * 2.2);
+                        }
+                    }
                 }
             }
         }
@@ -370,33 +390,15 @@ pub fn update_combat(world: &mut World, dt: f32) {
     // Удаляем израсходованные снаряды
     world.projectiles.retain(|p| p.lifetime > 0.0 && p.pierce > 0);
 
-    // 4. Смерть мобов, взрыв трупов (Hellfire), чумные споры и дроп кристаллов душ
+    // 4. Смерть мобов, взрыв трупов (Hellfire) и дроп кристаллов душ
     let mut corpse_explosions = Vec::new();
     let mut dropped_gems = Vec::new();
-    let mut pestilence_pools = Vec::new();
-
-    let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
 
     world.mobs.retain(|mob| {
         if !mob.health.is_alive() {
             // Эволюция "Адское Пекло": Взрыв трупов горящих врагов!
             if has_hellfire && mob.status.burn_timer > 0.0 {
                 corpse_explosions.push((mob.pos, 55.0, 75.0));
-            }
-
-            // Улучшение Директора: Чумные Споры (Pestilence Spores)
-            if pestilence_lvl > 0 {
-                let chance = ((pestilence_lvl as f32) * 0.15).min(0.60);
-                if rand::gen_range(0.0, 1.0) < chance {
-                    pestilence_pools.push(crate::ecs::world::AcidPoolEntity {
-                        pos: mob.pos,
-                        radius: 60.0,
-                        lifetime: 3.5,
-                        dps: 10.0 + (pestilence_lvl as f32) * 2.5,
-                        corrosive: false,
-                        is_director_source: true,
-                    });
-                }
             }
 
             // Шанс дропа особого артефакта "Магнит" (1.5%, а с элиты 8%)
@@ -445,8 +447,6 @@ pub fn update_combat(world: &mut World, dt: f32) {
             true
         }
     });
-
-    world.acid_pools.extend(pestilence_pools);
 
     // 4.1 Разрушение Алтарей Крови
     let mut destroyed_altars = Vec::new();

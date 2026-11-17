@@ -68,21 +68,22 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
         }
     }
 
-    // В. Опрос Чумных Спор Директора (лужи яда acid_pools)
-    for pool in &world.acid_pools {
-        if pool.is_director_source {
-            let dx = pool.pos.x - boss_pos.x;
-            let dy = pool.pos.y - boss_pos.y;
-            // Проверяем, пересекает ли окружность споры внутреннюю сетку
-            if dx.abs() < HALF_GRID_PX + pool.radius && dy.abs() < HALF_GRID_PX + pool.radius {
+    // В. Опрос Чумных Спор Директора (защитные миазмы вокруг Алтарей Крови)
+    let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
+    if pestilence_lvl > 0 {
+        let miasma_radius = 160.0f32;
+        let miasma_dps = 10.0 + (pestilence_lvl as f32) * 2.5;
+        for st in &world.structures {
+            let dx = st.pos.x - boss_pos.x;
+            let dy = st.pos.y - boss_pos.y;
+            if dx.abs() < HALF_GRID_PX + miasma_radius && dy.abs() < HALF_GRID_PX + miasma_radius {
                 for r in 0..GRID_SIZE {
                     let cell_y = -HALF_GRID_PX + (r as f32 + 0.5) * CELL_SIZE;
                     for c in 0..GRID_SIZE {
                         let cell_x = -HALF_GRID_PX + (c as f32 + 0.5) * CELL_SIZE;
                         let dist_sq = (cell_x - dx) * (cell_x - dx) + (cell_y - dy) * (cell_y - dy);
-                        // Если центр ячейки (или ее граница) попадает под ядовитую спору
-                        if dist_sq < (pool.radius + CELL_SIZE * 0.4) * (pool.radius + CELL_SIZE * 0.4) {
-                            let hazard = (pool.dps / 15.0).clamp(0.4, 1.2);
+                        if dist_sq < (miasma_radius + CELL_SIZE * 0.4) * (miasma_radius + CELL_SIZE * 0.4) {
+                            let hazard = (miasma_dps / 15.0).clamp(0.4, 1.2);
                             spore_grid[r][c] += hazard;
                         }
                     }
