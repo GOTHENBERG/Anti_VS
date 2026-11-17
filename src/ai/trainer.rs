@@ -86,8 +86,11 @@ fn director_utility(res: &MatchResult) -> f32 {
     let kill_bonus = if res.boss_won { 0.0 } else { 400.0 };
     let damage_frac = (res.damage_dealt_to_boss / res.boss_max_health.max(1.0)).clamp(0.0, 1.0);
     let damage_reward = damage_frac * 200.0;
-    let uptime_denom = res.survival_time.max(1.0) * res.altars_built.max(1) as f32;
-    let uptime_frac = (res.total_altar_uptime_seconds / uptime_denom).clamp(0.0, 1.0);
+    // Награда за удержание алтарей: делится на интервалы по 14 секунд (кулдаун алтаря).
+    // Суммарный бонус за 1020с ограничен 150.0 (как за 17 алтарей при старом кулдауне в 60с).
+    let altar_intervals = (res.survival_time / 14.0).max(1.0);
+    let expected_max_uptime = (res.survival_time * (altar_intervals + 1.0) * 0.5).max(14.0);
+    let uptime_frac = (res.total_altar_uptime_seconds / expected_max_uptime).clamp(0.0, 1.0);
     let altar_reward = uptime_frac * 150.0;
     let economy_denom = res.director_points_spent + res.director_points_unspent + 100.0;
     let economy_reward =

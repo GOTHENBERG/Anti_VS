@@ -13,12 +13,12 @@ pub fn update_meditation(world: &mut World, dt: f32) {
     }
 
     // 1. СТАНДАРТНАЯ МЕДИТАЦИЯ
-    // Проверяем, есть ли рядом мобы
-    let has_nearby_mobs = world.spatial_grid.query_nearby(boss_pos, 160.0)
+    // Проверяем, есть ли рядом мобы (зона блокировки медитации: 300 px)
+    let has_nearby_mobs = world.spatial_grid.query_nearby(boss_pos, 300.0)
         .iter()
         .any(|&idx| {
             if let Some(mob) = world.mobs.get(idx) {
-                mob.pos.distance_squared(boss_pos) < 160.0 * 160.0
+                mob.pos.distance_squared(boss_pos) < 300.0 * 300.0
             } else {
                 false
             }

@@ -105,6 +105,7 @@ async fn main() {
 
     let mut last_mouse_pos = Vec2::from(mouse_position());
     let mut is_dragging_map = false;
+    let mut is_placing_altar = false;
     let mut active_dossier_tier: Option<u8> = if auto_dossier { Some(1) } else { None };
     let mut opened_dossier_from_codex = false;
     let mut active_item_inspection: Option<crate::render::item_dossier::ItemInspectionTarget> = if auto_recipe {
@@ -276,6 +277,7 @@ async fn main() {
             follow_boss = true;
             spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
             is_paused = false;
+            is_placing_altar = false;
             show_codex = false;
             active_dossier_tier = None;
             active_item_inspection = None;
@@ -328,9 +330,67 @@ async fn main() {
         set_camera(&world_cam);
         render_world(&world, &fonts, &textures, cam_pos, cam_zoom);
 
+        // Призрак Алтаря при интерактивном режиме установки
+        if is_placing_altar {
+            let (mx, my) = mouse_position();
+            let world_cursor = world_cam.screen_to_world(Vec2::new(mx, my));
+            let margin = 45.0;
+            let clamped = Vec2::new(
+                world_cursor.x.clamp(margin, MAP_WIDTH - margin),
+                world_cursor.y.clamp(margin, MAP_HEIGHT - margin),
+            );
+            let can_place = can_place_blood_altar(&world, clamped);
+            let border_color = if can_place {
+                Color::new(0.2, 1.0, 0.4, 0.9)
+            } else {
+                Color::new(1.0, 0.2, 0.2, 0.9)
+            };
+            let fill_color = if can_place {
+                Color::new(0.2, 0.9, 0.4, 0.25)
+            } else {
+                Color::new(0.9, 0.2, 0.2, 0.25)
+            };
+
+            // Радиус дистанции между алтарями (ALTAR_MIN_SPACING = 120.0)
+            draw_circle_lines(clamped.x, clamped.y, 120.0, 1.5, Color::new(border_color.r, border_color.g, border_color.b, 0.35));
+            // Радиус самого алтаря
+            draw_circle(clamped.x, clamped.y, 30.0, fill_color);
+            draw_circle_lines(clamped.x, clamped.y, 30.0, 2.5, border_color);
+
+            if let Some(tex) = textures.altar.as_ref() {
+                let w = 48.0;
+                let h = 70.0;
+                let tint = if can_place {
+                    Color::new(0.8, 1.0, 0.8, 0.75)
+                } else {
+                    Color::new(1.0, 0.5, 0.5, 0.75)
+                };
+                draw_texture_ex(
+                    tex,
+                    clamped.x - w * 0.5,
+                    clamped.y - h * 0.5,
+                    tint,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(w, h)),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+
         // 6. Отрисовка интерфейса на экране (screen-space)
         set_default_camera();
         let ui_interaction = render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures, audio.is_muted, audio.get_current_track_title());
+
+        if is_placing_altar {
+            let banner_w = 460.0;
+            let banner_h = 32.0;
+            let banner_x = (screen_w - banner_w) * 0.5;
+            let banner_y = 12.0;
+            draw_rectangle(banner_x, banner_y, banner_w, banner_h, Color::new(0.08, 0.08, 0.16, 0.95));
+            draw_rectangle_lines(banner_x, banner_y, banner_w, banner_h, 2.0, GOLD);
+            fonts.draw_heading("УСТАНОВКА: [ЛКМ] - Поставить  |  [ПКМ / Esc] - Отмена", banner_x + 16.0, banner_y + 21.0, 12.0, GOLD);
+        }
 
         // Обработка интеракций из UI
         if ui_interaction.clicked_sound_toggle {
@@ -394,20 +454,54 @@ async fn main() {
             }
         }
 
-        // Логика перемещения карты зажатием ЛКМ (если курсор не над UI и окна закрыты)
-        if is_mouse_button_pressed(MouseButton::Left) {
-            if !ui_interaction.is_mouse_over_ui && !show_codex && active_dossier_tier.is_none() && active_item_inspection.is_none() && !is_paused && !is_game_over {
-                is_dragging_map = true;
+        if ui_interaction.start_altar_placement {
+            is_placing_altar = true;
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
+        }
+
+        // Логика перемещения карты или подтверждения установки Алтаря
+        if is_placing_altar {
+            if is_key_pressed(KeyCode::Escape) || is_mouse_button_pressed(MouseButton::Right) {
+                is_placing_altar = false;
+                audio.handle_event(crate::audio::AudioEvent::UiClick);
+            } else if is_mouse_button_pressed(MouseButton::Left) && !ui_interaction.is_mouse_over_ui {
+                let (mx, my) = mouse_position();
+                let world_click = world_cam.screen_to_world(Vec2::new(mx, my));
+                let margin = 45.0;
+                let clamped_click = Vec2::new(
+                    world_click.x.clamp(margin, MAP_WIDTH - margin),
+                    world_click.y.clamp(margin, MAP_HEIGHT - margin),
+                );
+                if can_place_blood_altar(&world, clamped_click) {
+                    if let Some(director) = world.directors.first() {
+                        if director.points >= BLOOD_ALTAR_COST && director.altar_cooldown <= 0.0 {
+                            net_driver.send_command(Command::PlaceStructure {
+                                director_id: director.id,
+                                structure_type: 1,
+                                pos: clamped_click.into(),
+                            });
+                            is_placing_altar = false;
+                        }
+                    }
+                } else {
+                    world.add_floating_text(clamped_click, "Нельзя построить здесь!".to_string(), RED, 1.2);
+                }
             }
-        }
-        if is_mouse_button_down(MouseButton::Left) && is_dragging_map {
-            cam_pos -= mouse_delta / cam_zoom;
-            cam_pos.x = cam_pos.x.clamp(200.0, MAP_WIDTH - 200.0);
-            cam_pos.y = cam_pos.y.clamp(200.0, MAP_HEIGHT - 200.0);
-            follow_boss = false;
-        }
-        if is_mouse_button_released(MouseButton::Left) {
-            is_dragging_map = false;
+        } else {
+            if is_mouse_button_pressed(MouseButton::Left) {
+                if !ui_interaction.is_mouse_over_ui && !show_codex && active_dossier_tier.is_none() && active_item_inspection.is_none() && !is_paused && !is_game_over {
+                    is_dragging_map = true;
+                }
+            }
+            if is_mouse_button_down(MouseButton::Left) && is_dragging_map {
+                cam_pos -= mouse_delta / cam_zoom;
+                cam_pos.x = cam_pos.x.clamp(200.0, MAP_WIDTH - 200.0);
+                cam_pos.y = cam_pos.y.clamp(200.0, MAP_HEIGHT - 200.0);
+                follow_boss = false;
+            }
+            if is_mouse_button_released(MouseButton::Left) {
+                is_dragging_map = false;
+            }
         }
         last_mouse_pos = current_mpos;
 
@@ -467,6 +561,7 @@ async fn main() {
                     follow_boss = true;
                     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
                     is_paused = false;
+                    is_placing_altar = false;
                     show_codex = false;
                     active_dossier_tier = None;
                     active_item_inspection = None;
@@ -567,7 +662,7 @@ fn handle_camera_input(
     cam_pos.y = cam_pos.y.clamp(200.0, MAP_HEIGHT - 200.0);
 }
 
-fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam: &Camera2D) {
+fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, _world_cam: &Camera2D) {
     if let Some(director) = world.directors.first() {
         let is_shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
 
@@ -613,26 +708,6 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, world_cam
                 driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 2 });
             } else {
                 driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 2 });
-            }
-        }
-
-        // 2. Клик правой кнопкой мыши — построить разрушаемый Алтарь Крови в координатах мира!
-        if is_mouse_button_pressed(MouseButton::Right) {
-            if director.points >= BLOOD_ALTAR_COST
-                && director.altar_cooldown <= 0.0
-            {
-                let (mx, my) = mouse_position();
-                let world_click = world_cam.screen_to_world(Vec2::new(mx, my));
-                let margin = 35.0;
-                let clamped_click = Vec2::new(
-                    world_click.x.clamp(margin, MAP_WIDTH - margin),
-                    world_click.y.clamp(margin, MAP_HEIGHT - margin),
-                );
-                driver.send_command(Command::PlaceStructure {
-                    director_id: director.id,
-                    structure_type: 1,
-                    pos: clamped_click.into(),
-                });
             }
         }
     }

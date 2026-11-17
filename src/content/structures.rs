@@ -59,6 +59,7 @@ pub fn spawn_blood_altar(world: &mut World, pos: Vec2) {
         radius: 30.0,
         structure_type: 1,
         pulse_timer: 0.0,
+        spawn_timer: 0.0,
     });
 
     world.spawn_particles(pos, 25, Color::new(0.6, 0.0, 0.8, 1.0), 90.0);

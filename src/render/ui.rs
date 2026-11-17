@@ -25,6 +25,7 @@ pub struct UiInteraction {
     pub set_mob_page: Option<u8>,
     pub is_mouse_over_ui: bool,
     pub map_click_world_pos: Option<Vec2>,
+    pub start_altar_placement: bool,
 }
 
 enum HoverTooltip {
@@ -484,13 +485,16 @@ pub fn render_ui(
         let aw_h = 52.0;
         let aw_y = panel_y - aw_h - 6.0;
 
+        let on_cooldown = director.altar_cooldown > 0.0;
+        let can_afford_altar = director.points >= BLOOD_ALTAR_COST;
+
         if mx >= aw_x && mx <= aw_x + aw_w && my >= aw_y && my <= aw_y + aw_h {
             interaction.is_mouse_over_ui = true;
             hovered_tooltip = Some(HoverTooltip::AltarWidget(aw_x, aw_y));
+            if is_mouse_button_pressed(MouseButton::Left) && !on_cooldown && can_afford_altar {
+                interaction.start_altar_placement = true;
+            }
         }
-
-        let on_cooldown = director.altar_cooldown > 0.0;
-        let can_afford_altar = director.points >= BLOOD_ALTAR_COST;
 
         let aw_border = if on_cooldown {
             Color::new(0.9, 0.25, 0.25, 0.95)
@@ -522,7 +526,7 @@ pub fn render_ui(
         }
 
         let content_x = aw_x + 38.0;
-        fonts.draw_heading("АЛТАРЬ КРОВИ [ПКМ]", content_x, aw_y + 16.0, 11.5, GOLD);
+        fonts.draw_heading("АЛТАРЬ КРОВИ [ЛКМ]", content_x, aw_y + 16.0, 11.5, GOLD);
 
         if on_cooldown {
             let cd_text = format!("Перезарядка: {:.1}с", director.altar_cooldown);
@@ -1067,23 +1071,24 @@ fn draw_souls_plaque_tooltip(
 
 /// Всплывающая подсказка для виджета Алтаря Крови
 fn draw_altar_widget_tooltip(aw_x: f32, aw_y: f32, screen_w: f32, fonts: &GameFonts, world: &World) {
-    let card_w = 360.0;
-    let card_h = 175.0;
+    let card_w = 390.0;
+    let card_h = 195.0;
     let card_x = (aw_x - card_w - 12.0).clamp(10.0, screen_w - card_w - 10.0);
-    let card_y = aw_y;
+    let card_y = (aw_y - 20.0).max(10.0);
 
     draw_rectangle(card_x, card_y, card_w, card_h, Color::new(0.06, 0.06, 0.12, 0.96));
     draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, PURPLE);
 
     fonts.draw_heading("🏛️ АЛТАРЬ КРОВИ (Инфернальная база)", card_x + 12.0, card_y + 22.0, 15.0, GOLD);
-    fonts.draw_text("• Постройка: Клик ПКМ на свободной точке арены", card_x + 12.0, card_y + 44.0, 12.0, WHITE);
-    let cost_str = format!("• Стоимость: {:.0} Душ | Кулдаун: 60 сек (Без лимита шт)", BLOOD_ALTAR_COST);
-    fonts.draw_text(&cost_str, card_x + 12.0, card_y + 64.0, 12.0, YELLOW);
-    let inc_str = format!("• Доход: +3.0 Очков Душ каждые 2 сек за каждый алтарь (Текущий: +{:.0}/2с)", world.structures.len() as f32 * 3.0);
-    fonts.draw_text(&inc_str, card_x + 12.0, card_y + 84.0, 12.0, GREEN);
-    fonts.draw_text("• Аура Крови: Восстанавливает +35 HP союзникам в радиусе 180px", card_x + 12.0, card_y + 104.0, 12.0, SKYBLUE);
-    fonts.draw_text("• Здоровье: 650 HP (Броня: 12, уязвим к святому урону -60%)", card_x + 12.0, card_y + 124.0, 12.0, LIGHTGRAY);
-    fonts.draw_text("⚠️ ОПАСНОСТЬ: Босс активно ищет и штурмует алтари (+150 XP)", card_x + 12.0, card_y + 148.0, 12.0, ORANGE);
+    fonts.draw_text("• Постройка: Клик [ЛКМ] по виджету, затем [ЛКМ] на арене", card_x + 12.0, card_y + 44.0, 11.5, WHITE);
+    let cost_str = format!("• Стоимость: {:.0} Душ | Кулдаун: 14 сек (Без лимита шт)", BLOOD_ALTAR_COST);
+    fonts.draw_text(&cost_str, card_x + 12.0, card_y + 64.0, 11.5, YELLOW);
+    let inc_str = format!("• Доход: +3.0 Душ каждые 2 сек (Текущий: +{:.0}/2с)", world.structures.len() as f32 * 3.0);
+    fonts.draw_text(&inc_str, card_x + 12.0, card_y + 84.0, 11.5, GREEN);
+    fonts.draw_text("• Спавн: 1 Скелет каждую секунду непрерывно штурмует босса!", card_x + 12.0, card_y + 104.0, 11.5, SKYBLUE);
+    fonts.draw_text("• Аура Крови: Восстанавливает +35 HP союзникам в радиусе 180px/3с", card_x + 12.0, card_y + 124.0, 11.5, LIGHTGRAY);
+    fonts.draw_text("• Здоровье: 650 HP (Броня: 12, уязвим к святому урону -60%)", card_x + 12.0, card_y + 144.0, 11.5, GRAY);
+    fonts.draw_text("⚠️ ОПАСНОСТЬ: Босс активно ищет и штурмует алтари (+150 XP)", card_x + 12.0, card_y + 168.0, 11.5, ORANGE);
 }
 
 /// Всплывающая подсказка для оружия Босса

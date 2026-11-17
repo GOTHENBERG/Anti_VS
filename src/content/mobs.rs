@@ -281,3 +281,70 @@ fn spawn_squad_arc(
         director.total_mobs_spawned += config.count;
     }
 }
+
+/// Точечный спавн одного юнита в указанных координатах (например, скелета от Алтаря Крови)
+pub fn spawn_single_mob_at_pos(world: &mut World, tier: u8, pos: Vec2) {
+    let map_w = crate::core::MAP_WIDTH;
+    let map_h = crate::core::MAP_HEIGHT;
+    let clamped_pos = Vec2::new(
+        pos.x.clamp(20.0, map_w - 20.0),
+        pos.y.clamp(20.0, map_h - 20.0),
+    );
+    let id = world.alloc_id();
+    let (base_hp, base_spd, base_dmg, base_rad, mut flat_armor, mut phys_res, ice_res, fire_res, is_undead, knockback_immune) = match tier {
+        1 => (32.0, 105.0, 7.0, 10.0, 0.0, 0.05, 0.0, 0.0, true, false), // Скелет
+        2 => (50.0, 160.0, 12.0, 11.0, 1.0, 0.10, 0.0, 0.0, false, false), // Чёрная гончая
+        3 => (75.0, 80.0, 16.0, 13.0, 2.0, 0.15, 0.0, 0.0, true, false), // Культист
+        _ => (32.0, 105.0, 7.0, 10.0, 0.0, 0.05, 0.0, 0.0, true, false),
+    };
+
+    let (fury_lvl, carapace_lvl) = if let Some(d) = world.directors.first() {
+        (d.grade_fury, d.grade_carapace)
+    } else {
+        (0, 0)
+    };
+
+    let mut speed = base_spd * (1.0 + (fury_lvl as f32 * 0.06));
+    let mut damage = base_dmg * (1.0 + (fury_lvl as f32 * 0.12));
+    flat_armor += carapace_lvl as f32 * 2.5;
+    phys_res = (phys_res + (carapace_lvl as f32 * 0.05)).min(0.70);
+
+    let is_elite = rand::gen_range(0.0, 1.0) < 0.12;
+    let mut hp = base_hp;
+    let mut radius = base_rad;
+    if is_elite {
+        hp *= 1.8;
+        damage *= 1.35;
+        radius *= 1.25;
+        speed *= 1.1;
+    }
+
+    world.mobs.push(MobEntity {
+        id,
+        pos: clamped_pos,
+        vel: Vec2::ZERO,
+        speed,
+        health: Health::new(hp),
+        resistances: Resistances {
+            flat_armor,
+            physical_res: phys_res,
+            fire_res,
+            ice_res,
+            poison_res: if tier == 4 || tier == 7 { 0.5 } else { 0.0 },
+            holy_res: if is_undead { -0.25 } else { 0.0 },
+        },
+        status: StatusEffects::default(),
+        damage,
+        tier,
+        radius,
+        is_undead,
+        is_elite,
+        knockback_immune,
+        knockback_vel: Vec2::ZERO,
+        attack_timer: rand::gen_range(0.5, 1.5),
+    });
+
+    if let Some(director) = world.directors.first_mut() {
+        director.total_mobs_spawned += 1;
+    }
+}

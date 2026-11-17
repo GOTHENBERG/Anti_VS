@@ -57,6 +57,7 @@ pub struct StructureEntity {
     pub radius: f32,
     pub structure_type: u8,
     pub pulse_timer: f32,
+    pub spawn_timer: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -118,7 +119,7 @@ impl DirectorState {
             income_timer: 0.0,
             squad_cooldowns: [0.0; 16],
             altar_cooldown: 0.0,
-            altar_max_cooldown: 60.0, // 60 секунд (1 минута) кулдаун на постройку Алтаря (без искусственного лимита)
+            altar_max_cooldown: 14.0, // 14 секунд кулдаун на постройку Алтаря (высокий темп тактики)
             time_since_last_spawn: 10.0,
             total_mobs_spawned: 0,
             mob_page: 0,

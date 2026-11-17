@@ -1390,17 +1390,37 @@ pub fn update_skills(world: &mut World, dt: f32) {
         });
     }
 
-    // 3. Импульсы Алтарей Крови
-    let mut altar_pulses = Vec::new();
+    // 3. Импульсы и спавн скелетов Алтарей Крови
+    let mut altar_heal_pulses = Vec::new();
+    let mut altar_spawns = Vec::new();
+
     for structure in &mut world.structures {
-        structure.pulse_timer += dt;
-        if structure.pulse_timer >= 3.0 {
-            structure.pulse_timer = 0.0;
-            altar_pulses.push(structure.pos);
+        if structure.structure_type == 1 && structure.health.is_alive() {
+            structure.pulse_timer += dt;
+            if structure.pulse_timer >= 3.0 {
+                structure.pulse_timer = 0.0;
+                altar_heal_pulses.push(structure.pos);
+            }
+
+            structure.spawn_timer += dt;
+            if structure.spawn_timer >= 1.0 {
+                structure.spawn_timer = 0.0;
+                altar_spawns.push(structure.pos);
+            }
         }
     }
 
-    for altar_pos in altar_pulses {
+    // Непрерывный спавн 1 скелета каждую секунду от каждого живого алтаря
+    for altar_pos in altar_spawns {
+        let offset = Vec2::new(rand::gen_range(-25.0, 25.0), rand::gen_range(-25.0, 25.0));
+        crate::content::mobs::spawn_single_mob_at_pos(world, 1, altar_pos + offset);
+        if !world.is_headless {
+            world.spawn_particles(altar_pos, 5, Color::new(0.6, 0.1, 0.8, 0.7), 40.0);
+        }
+    }
+
+    // Лечебный импульс (+35 HP союзным мобам каждые 3 секунды)
+    for altar_pos in altar_heal_pulses {
         let nearby = world.spatial_grid.query_nearby(altar_pos, 180.0);
         for idx in nearby {
             if let Some(mob) = world.mobs.get_mut(idx) {
