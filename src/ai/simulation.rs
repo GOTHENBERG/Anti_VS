@@ -25,6 +25,7 @@ pub struct MatchResult {
     pub director_grades: (u32, u32, u32),
     pub total_meditation_time: f32,
     pub distance_walked: f32,
+    pub boss_dashes: usize,
     pub boss_damage_stats: crate::ecs::components::inventory::BossDamageStats,
     pub final_weapons: Vec<(crate::ecs::components::inventory::WeaponType, u8)>,
     pub final_passives: Vec<(crate::ecs::components::inventory::PassiveType, u8)>,
@@ -45,6 +46,7 @@ pub fn run_headless_simulation(
     let mut altars_built = 1;
     let mut total_meditation_time = 0.0f32;
     let mut total_distance_walked = 0.0f32;
+    let mut total_dashes = 0usize;
     let mut mobs_spawned_by_tier = [0usize; 16];
 
     // Начальный алтарь
@@ -150,10 +152,12 @@ pub fn run_headless_simulation(
         }
 
         // 2. Системные обновления игрового мира
-        let prev_pos = world.boss_pos;
         update_director(&mut world, dt);
-        update_boss_ai_sim(&mut world, dt, boss_model);
-        total_distance_walked += prev_pos.distance(world.boss_pos);
+        let (walk_dist, dashed) = update_boss_ai_sim(&mut world, dt, boss_model);
+        total_distance_walked += walk_dist;
+        if dashed {
+            total_dashes += 1;
+        }
         update_meditation(&mut world, dt);
         if world.boss_still_time >= 1.2 {
             total_meditation_time += dt;
@@ -183,6 +187,7 @@ pub fn run_headless_simulation(
         director_grades,
         total_meditation_time,
         distance_walked: total_distance_walked,
+        boss_dashes: total_dashes,
         boss_damage_stats: world.boss_inventory.damage_stats.clone(),
         final_weapons,
         final_passives,
@@ -190,7 +195,7 @@ pub fn run_headless_simulation(
 }
 
 /// Симуляция ИИ Босса с использованием параметров обученной модели и нейросети
-fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
+fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) -> (f32, bool) {
     if world.boss_dash_cooldown > 0.0 {
         world.boss_dash_cooldown = (world.boss_dash_cooldown - dt).max(0.0);
     }
@@ -333,6 +338,9 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
     let should_dash = (mobs_in_close >= dash_threshold || hp_ratio < retreat_hp || heavy_ranged_fire || neural_dash)
         && world.boss_dash_cooldown <= 0.0;
 
+    let mut walked_distance = 0.0f32;
+    let mut dashed = false;
+
     if should_dash {
         let dash_dir = if neural_dash && nn_bias.length_squared() > 1.0 {
             nn_bias.normalize()
@@ -347,7 +355,10 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
         world.boss_pos = dash_target;
         world.boss_invulnerable_timer = 0.25;
         world.boss_dash_cooldown = 7.0;
+        dashed = true;
+        // Движение от рывка (дэша) намеренно НЕ добавляется в дистанцию ходьбы!
     } else {
+        let prev_walk_pos = world.boss_pos;
         let max_speed = world.boss_inventory.get_movement_speed(160.0);
         let desired = if nn_stand_still {
             Vec2::ZERO
@@ -358,8 +369,15 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) {
         };
         world.boss_vel = world.boss_vel.lerp(desired, (dt * 10.0).min(1.0));
         world.boss_pos += world.boss_vel * dt;
+        world.boss_pos.x = world.boss_pos.x.clamp(35.0, map_w - 35.0);
+        world.boss_pos.y = world.boss_pos.y.clamp(35.0, map_h - 35.0);
+        walked_distance = prev_walk_pos.distance(world.boss_pos);
     }
 
-    world.boss_pos.x = world.boss_pos.x.clamp(35.0, map_w - 35.0);
-    world.boss_pos.y = world.boss_pos.y.clamp(35.0, map_h - 35.0);
+    if dashed {
+        world.boss_pos.x = world.boss_pos.x.clamp(35.0, map_w - 35.0);
+        world.boss_pos.y = world.boss_pos.y.clamp(35.0, map_h - 35.0);
+    }
+
+    (walked_distance, dashed)
 }

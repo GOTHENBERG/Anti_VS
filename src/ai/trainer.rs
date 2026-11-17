@@ -33,6 +33,7 @@ struct BossEval {
     avg_altars_built: usize,
     avg_meditation_time: f32,
     avg_distance_walked: f32,
+    avg_dashes: usize,
     mobs_spawned: [usize; 16],
     director_grades: (u32, u32, u32),
     weapons: Vec<(crate::ecs::components::inventory::WeaponType, u8)>,
@@ -50,6 +51,7 @@ struct DirectorEval {
     avg_boss_level: u32,
     avg_boss_meditation: f32,
     avg_boss_distance_walked: f32,
+    avg_boss_dashes: usize,
     mobs_spawned: [usize; 16],
     grades: (u32, u32, u32),
     boss_weapons: Vec<(crate::ecs::components::inventory::WeaponType, u8)>,
@@ -201,6 +203,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                 let mut total_hazard_damage = 0.0;
                 let mut total_meditation_time = 0.0;
                 let mut total_distance_walked = 0.0;
+                let mut total_dashes = 0usize;
                 let mut total_altars_destroyed = 0;
                 let mut total_altars_built = 0;
                 let mut total_mobs = [0usize; 16];
@@ -229,6 +232,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     total_hazard_damage += res.boss_damage_stats.hazard_total;
                     total_meditation_time += res.total_meditation_time;
                     total_distance_walked += res.distance_walked;
+                    total_dashes += res.boss_dashes;
                     total_altars_destroyed += res.altars_destroyed;
                     total_altars_built += res.altars_built;
                     for t in 0..16 {
@@ -273,6 +277,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
                     avg_meditation_time: total_meditation_time / m_f,
                     avg_distance_walked: total_distance_walked / m_f,
+                    avg_dashes: ((total_dashes as f32) / m_f).round() as usize,
                     mobs_spawned: avg_mobs,
                     director_grades: last_director_grades,
                     weapons: last_weapons,
@@ -294,6 +299,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                 let mut total_boss_level = 0;
                 let mut total_boss_meditation = 0.0;
                 let mut total_boss_distance_walked = 0.0;
+                let mut total_boss_dashes = 0usize;
                 let mut total_mobs = [0usize; 16];
                 let mut last_grades = (0, 0, 0);
                 let mut last_boss_weapons = Vec::new();
@@ -345,6 +351,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     total_boss_level += res.boss_level;
                     total_boss_meditation += res.total_meditation_time;
                     total_boss_distance_walked += res.distance_walked;
+                    total_boss_dashes += res.boss_dashes;
                     last_grades = res.director_grades;
                     for t in 0..16 {
                         total_mobs[t] += res.mobs_spawned_by_tier[t];
@@ -372,6 +379,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     avg_boss_level: (total_boss_level as f32 / m_f).round() as u32,
                     avg_boss_meditation: total_boss_meditation / m_f,
                     avg_boss_distance_walked: total_boss_distance_walked / m_f,
+                    avg_boss_dashes: ((total_boss_dashes as f32) / m_f).round() as usize,
                     mobs_spawned: avg_mobs,
                     grades: last_grades,
                     boss_weapons: last_boss_weapons,
@@ -490,8 +498,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             0.0
         };
         log_line!(
-            "    * Пройдено дистанции: {:.0} px | Движение: {:.1} мин | Медитация: {:.1} мин | Ср. скорость: {:.1} px/сек",
+            "    * Пройдено пешком (без дэша): {:.0} px [Рывков: {}] | Движение: {:.1} мин | Медитация: {:.1} мин | Ср. скорость: {:.1} px/сек",
             best_boss_eval.avg_distance_walked,
+            best_boss_eval.avg_dashes,
             boss_move_time / 60.0,
             best_boss_eval.avg_meditation_time / 60.0,
             boss_speed
@@ -575,9 +584,10 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         }
         let dir_boss_move_time = (best_dir_eval.avg_kill_speed - best_dir_eval.avg_boss_meditation).max(0.0);
         log_line!(
-            "    ↳ Противник (Босс): Уровень: {} | Дистанция: {:.0} px (Движение: {:.1} мин, Медитация: {:.1} мин) | Разрушил алтарей: {}",
+            "    ↳ Противник (Босс): Уровень: {} | Пешком (без дэша): {:.0} px [Рывков: {}] (Движение: {:.1} мин, Медитация: {:.1} мин) | Разрушил алтарей: {}",
             best_dir_eval.avg_boss_level,
             best_dir_eval.avg_boss_distance_walked,
+            best_dir_eval.avg_boss_dashes,
             dir_boss_move_time / 60.0,
             best_dir_eval.avg_boss_meditation / 60.0,
             best_dir_eval.avg_altars_destroyed
