@@ -207,150 +207,90 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) -> (f32, bo
     world.boss_inventory.update_damage_decay(dt);
 
     let boss_pos = world.boss_pos;
-    let mut total_force = Vec2::ZERO;
+    let map_w = MAP_WIDTH;
+    let map_h = MAP_HEIGHT;
 
-    let (nn_bias, repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp, neural_dash) =
-        if let Some(ref net) = model.neural_net {
-            let obs = crate::ai::sensors::extract_boss_observations(world);
-            let nn_out = net.forward(&obs);
-            (
-                Vec2::new(nn_out[0], nn_out[1]) * 120.0,
-                200.0 + nn_out[2] * 500.0,
-                100.0 + nn_out[3] * 350.0,
-                150.0 + nn_out[4] * 400.0,
-                150.0 + nn_out[5] * 400.0,
-                (8.0 + nn_out[6] * 10.0) as usize,
-                model.retreat_hp_threshold,
-                nn_out[6] > 0.60,
-            )
+    let (desired_vel, should_dash, dash_dir) = if let Some(ref net) = model.neural_net {
+        // --- 100% ЧИСТЫЙ END-TO-END REINFORCEMENT LEARNING ---
+        // Никаких вспомогательных сил, потенциальных полей или эвристических триггеров!
+        // Вся кинематика движения и триггер рывка определяются исключительно прямым проходом через синапсы нейросети.
+        let obs = crate::ai::sensors::extract_boss_observations(world);
+        let nn_out = net.forward(&obs);
+        let move_intent = Vec2::new(nn_out[0], nn_out[1]);
+        let clamped_intent = if move_intent.length_squared() > 1.0 {
+            move_intent.normalize()
         } else {
-            (
-                Vec2::ZERO,
-                model.mob_repulsion_weight,
-                model.gem_attraction_weight,
-                model.altar_siege_aggression,
-                model.sniper_hunt_aggression,
-                model.dash_danger_threshold,
-                model.retreat_hp_threshold,
-                false,
-            )
+            move_intent
         };
+        let max_speed = world.boss_inventory.get_movement_speed(160.0);
+        let vel = clamped_intent * max_speed;
+        let dash = (nn_out[6] > 0.60) && world.boss_dash_cooldown <= 0.0;
+        let d_dir = if move_intent.length_squared() > 0.01 {
+            move_intent.normalize()
+        } else {
+            Vec2::X
+        };
+        (vel, dash, d_dir)
+    } else {
+        // Эвристический Context Steering (только как fallback, если у модели нет обученной нейросети)
+        let mut total_force = Vec2::ZERO;
+        let mobs_in_close = world.spatial_grid.query_nearby(boss_pos, 90.0).len();
+        let hp_ratio = world.boss_health.current / world.boss_health.max;
 
-    total_force += nn_bias;
-
-    let mobs_in_close = world.spatial_grid.query_nearby(boss_pos, 90.0).len();
-    let hp_ratio = world.boss_health.current / world.boss_health.max;
-
-    // 1. Отталкивание от мобов с весом модели
-    let nearby = world.spatial_grid.query_nearby(boss_pos, 180.0);
-    for idx in nearby {
-        if let Some(mob) = world.mobs.get(idx) {
-            let repel = crate::core::math::calculate_repel_force(boss_pos, mob.pos, 180.0, repel_weight);
-            total_force += repel;
-        }
-    }
-
-    // 2. Притяжение к кристаллам душ и глобальным супер-предметам "Магнит"
-    let mut closest_magnet = None;
-    let mut min_magnet_dist_sq = f32::MAX;
-    for gem in &world.gems {
-        if gem.is_magnet {
-            let dist_sq = gem.pos.distance_squared(boss_pos);
-            if dist_sq < min_magnet_dist_sq {
-                min_magnet_dist_sq = dist_sq;
-                closest_magnet = Some(gem.pos);
+        let nearby = world.spatial_grid.query_nearby(boss_pos, 180.0);
+        for idx in nearby {
+            if let Some(mob) = world.mobs.get(idx) {
+                let repel = crate::core::math::calculate_repel_force(boss_pos, mob.pos, 180.0, model.mob_repulsion_weight);
+                total_force += repel;
             }
         }
-    }
 
-    if let Some(m_pos) = closest_magnet {
-        let pull = crate::core::math::calculate_attract_force(boss_pos, m_pos, MAP_WIDTH, gem_pull_weight * 3.5);
-        total_force += pull;
-    } else {
         let mut closest_gem_dist_sq = 280.0 * 280.0;
         let mut gem_pull = Vec2::ZERO;
         for gem in &world.gems {
             let dist_sq = gem.pos.distance_squared(boss_pos);
             if dist_sq < closest_gem_dist_sq {
                 closest_gem_dist_sq = dist_sq;
-                gem_pull = crate::core::math::calculate_attract_force(boss_pos, gem.pos, 280.0, gem_pull_weight);
+                gem_pull = crate::core::math::calculate_attract_force(boss_pos, gem.pos, 280.0, model.gem_attraction_weight);
             }
         }
         total_force += gem_pull;
-    }
 
-    // 3. Осада Алтарей Крови с весом модели
-    if hp_ratio > retreat_hp && mobs_in_close < 8 {
-        for st in &world.structures {
-            let dist_sq = st.pos.distance_squared(boss_pos);
-            if dist_sq < 550.0 * 550.0 {
-                let pull = crate::core::math::calculate_attract_force(boss_pos, st.pos, 550.0, altar_aggression);
-                total_force += pull;
-            }
+        let wall_margin = 220.0;
+        let push = model.wall_repel_weight;
+        if boss_pos.x < wall_margin {
+            let factor = 1.0 - (boss_pos.x / wall_margin).clamp(0.0, 1.0);
+            total_force.x += push * factor * factor;
+        } else if boss_pos.x > map_w - wall_margin {
+            let factor = 1.0 - ((map_w - boss_pos.x) / wall_margin).clamp(0.0, 1.0);
+            total_force.x -= push * factor * factor;
         }
-    }
-
-    // 4. Охота на снайперов-культистов с весом модели
-    let cultists: Vec<Vec2> = world.spatial_grid.query_nearby(boss_pos, 420.0)
-        .iter()
-        .filter_map(|&idx| world.mobs.get(idx))
-        .filter(|m| m.tier == 3 || m.tier == 11)
-        .map(|m| m.pos)
-        .collect();
-
-    if cultists.len() >= model.sniper_engage_min_count && hp_ratio > retreat_hp {
-        let mut center = Vec2::ZERO;
-        for p in &cultists {
-            center += *p;
+        if boss_pos.y < wall_margin {
+            let factor = 1.0 - (boss_pos.y / wall_margin).clamp(0.0, 1.0);
+            total_force.y += push * factor * factor;
+        } else if boss_pos.y > map_h - wall_margin {
+            let factor = 1.0 - ((map_h - boss_pos.y) / wall_margin).clamp(0.0, 1.0);
+            total_force.y -= push * factor * factor;
         }
-        center /= cultists.len() as f32;
-        let to_c = center - boss_pos;
-        if to_c.length_squared() > 100.0 {
-            total_force += to_c.normalize_or_zero() * sniper_aggression;
-        }
-    }
 
-    // 5. Отталкивание от стен (плавное параболическое замедление)
-    let map_w = MAP_WIDTH;
-    let map_h = MAP_HEIGHT;
-    let wall_margin = 220.0;
-    let push = model.wall_repel_weight;
-
-    if boss_pos.x < wall_margin {
-        let factor = 1.0 - (boss_pos.x / wall_margin).clamp(0.0, 1.0);
-        total_force.x += push * factor * factor;
-    } else if boss_pos.x > map_w - wall_margin {
-        let factor = 1.0 - ((map_w - boss_pos.x) / wall_margin).clamp(0.0, 1.0);
-        total_force.x -= push * factor * factor;
-    }
-    if boss_pos.y < wall_margin {
-        let factor = 1.0 - (boss_pos.y / wall_margin).clamp(0.0, 1.0);
-        total_force.y += push * factor * factor;
-    } else if boss_pos.y > map_h - wall_margin {
-        let factor = 1.0 - ((map_h - boss_pos.y) / wall_margin).clamp(0.0, 1.0);
-        total_force.y -= push * factor * factor;
-    }
-
-    // 6. Рывок (Dash): 100% автономия нейросети (Чистый Reinforcement Learning)
-    let should_dash = if model.neural_net.is_some() {
-        neural_dash && world.boss_dash_cooldown <= 0.0
-    } else {
         let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
-        (mobs_in_close >= dash_threshold || hp_ratio < retreat_hp || heavy_ranged_fire)
-            && world.boss_dash_cooldown <= 0.0
+        let dash = (mobs_in_close >= model.dash_danger_threshold || hp_ratio < model.retreat_hp_threshold || heavy_ranged_fire)
+            && world.boss_dash_cooldown <= 0.0;
+        let d_dir = if total_force.length_squared() > 1.0 { total_force.normalize() } else { Vec2::X };
+
+        let max_speed = world.boss_inventory.get_movement_speed(160.0);
+        let vel = if total_force.length_squared() > 4.0 {
+            total_force.clamp_length_max(max_speed)
+        } else {
+            Vec2::ZERO
+        };
+        (vel, dash, d_dir)
     };
 
     let mut walked_distance = 0.0f32;
     let mut dashed = false;
 
     if should_dash {
-        let dash_dir = if neural_dash && nn_bias.length_squared() > 1.0 {
-            nn_bias.normalize()
-        } else if total_force.length_squared() > 1.0 {
-            total_force.normalize()
-        } else {
-            Vec2::X
-        };
         let dash_target = (boss_pos + dash_dir * 180.0)
             .clamp(Vec2::new(40.0, 40.0), Vec2::new(map_w - 40.0, map_h - 40.0));
 
@@ -358,16 +298,9 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) -> (f32, bo
         world.boss_invulnerable_timer = 0.25;
         world.boss_dash_cooldown = 7.0;
         dashed = true;
-        // Движение от рывка (дэша) намеренно НЕ добавляется в дистанцию ходьбы!
     } else {
         let prev_walk_pos = world.boss_pos;
-        let max_speed = world.boss_inventory.get_movement_speed(160.0);
-        let desired = if total_force.length_squared() > 4.0 {
-            total_force.clamp_length_max(max_speed)
-        } else {
-            Vec2::ZERO
-        };
-        world.boss_vel = world.boss_vel.lerp(desired, (dt * 10.0).min(1.0));
+        world.boss_vel = world.boss_vel.lerp(desired_vel, (dt * 10.0).min(1.0));
         world.boss_pos += world.boss_vel * dt;
         world.boss_pos.x = world.boss_pos.x.clamp(35.0, map_w - 35.0);
         world.boss_pos.y = world.boss_pos.y.clamp(35.0, map_h - 35.0);

@@ -95,15 +95,20 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     // Запись 120 ячеек (пропуская центр [5, 5])
     let mut out_idx = 0;
     for r in 0..GRID_SIZE {
+        let cell_y = boss_pos.y - HALF_GRID_PX + (r as f32 + 0.5) * CELL_SIZE;
         for c in 0..GRID_SIZE {
             if r == 5 && c == 5 {
                 continue; // Позиция самого Босса
             }
+            let cell_x = boss_pos.x - HALF_GRID_PX + (c as f32 + 0.5) * CELL_SIZE;
+            let is_wall = cell_x < 0.0 || cell_x > MAP_WIDTH || cell_y < 0.0 || cell_y > MAP_HEIGHT;
+            let wall_val = if is_wall { 1.0 } else { 0.0 };
+
             let mob_val = (mob_grid[r][c] / 5.0).clamp(0.0, 1.0);
             let proj_val = proj_grid[r][c].clamp(0.0, 1.0);
             let spore_val = spore_grid[r][c].clamp(0.0, 1.0);
-            // Комплексная опасность ячейки: сочетание толпы, летящих пуль и чумных спор
-            obs[out_idx] = (mob_val * 0.35 + proj_val * 0.70 + spore_val * 0.60).clamp(0.0, 1.0);
+            // Комплексная опасность ячейки: сочетание толпы, летящих пуль, чумных спор и стен карты
+            obs[out_idx] = (mob_val * 0.35 + proj_val * 0.70 + spore_val * 0.60 + wall_val * 0.85).clamp(0.0, 1.0);
             out_idx += 1;
         }
     }
@@ -184,9 +189,18 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     obs[146] = (world.boss_health.current / world.boss_health.max).clamp(0.0, 1.0);
     obs[147] = if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 };
 
-    // Сенсор медитации и скорости [148..150]
-    obs[148] = (world.boss_still_time / 1.2).clamp(0.0, 1.0); // 0.0 = в движении, 1.0 = активная медитация
-    obs[149] = (world.boss_vel.length() / 160.0).clamp(0.0, 1.5); // Нормализованная скорость
+    // Тактический сенсор: вектор на ближайший кристалл душ (Soul Gem) [148..150]
+    let mut closest_gem_diff = Vec2::ZERO;
+    let mut min_gem_dist_sq = 450.0 * 450.0;
+    for gem in &world.gems {
+        let dist_sq = gem.pos.distance_squared(boss_pos);
+        if dist_sq < min_gem_dist_sq {
+            min_gem_dist_sq = dist_sq;
+            closest_gem_diff = gem.pos - boss_pos;
+        }
+    }
+    obs[148] = (closest_gem_diff.x / 450.0).clamp(-1.0, 1.0);
+    obs[149] = (closest_gem_diff.y / 450.0).clamp(-1.0, 1.0);
 
     obs
 }

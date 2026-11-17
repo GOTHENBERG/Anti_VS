@@ -245,16 +245,14 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                         last_passives = res.final_passives;
                     }
 
-                    // 1. Фитнес Босса:
-                    // ГЛАВНЫЙ ПРЯНИК — чистое время выживания + бонус за полную победу
+                    // 1. Фитнес Босса (Чистый Reinforcement Learning):
+                    // Время выживания + победа + прокачка (сбор душ) + разрушение алтарей
                     let time_reward = res.survival_time * 3.5;
                     let win_bonus = if res.boss_won { 2000.0 } else { 0.0 };
+                    let level_reward = (res.boss_level as f32) * 20.0;
+                    let altar_reward = (res.altars_destroyed as f32) * 40.0;
 
-                    // МЯГКИЙ ПРЯНИК ЗА МЕДИТАЦИЮ — уменьшен в 4 раза (0.75 вместо 3.0),
-                    // чтобы босс не рисковал жизнью ради очков, но сохранял навык покоя
-                    let meditation_reward = res.total_meditation_time * 0.75;
-
-                    let score = (time_reward + win_bonus + meditation_reward).max(10.0);
+                    let score = (time_reward + win_bonus + level_reward + altar_reward).max(10.0);
                     total_score += score;
                 }
 
@@ -442,7 +440,8 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         let total_mobs_spawned: usize = best_dir_eval.mobs_spawned.iter().sum();
         let boss_mobs_spawned: usize = best_boss_eval.mobs_spawned.iter().sum();
         let boss_time_reward = best_boss_eval.avg_survival * 3.5;
-        let boss_meditation_reward = best_boss_eval.avg_meditation_time * 0.75;
+        let boss_level_reward = (best_boss_eval.avg_level as f32) * 20.0;
+        let boss_altar_reward = (best_boss_eval.avg_altars_destroyed as f32) * 40.0;
         let dir_speed_reward = (1020.0 - best_dir_eval.avg_kill_speed).max(0.0) * 5.0;
         let dir_time_whip = if best_dir_eval.avg_kill_speed > 300.0 {
             (best_dir_eval.avg_kill_speed - 300.0) * 4.0
@@ -491,25 +490,24 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_boss_eval.avg_survival / 60.0,
             best_boss_eval.avg_survival
         );
-        let boss_move_time = (best_boss_eval.avg_survival - best_boss_eval.avg_meditation_time).max(0.0);
         let boss_speed = if best_boss_eval.avg_survival > 0.0 {
             best_boss_eval.avg_distance_walked / best_boss_eval.avg_survival
         } else {
             0.0
         };
         log_line!(
-            "    * Пройдено пешком (без дэша): {:.0} px [Рывков: {}] | Движение: {:.1} мин | Медитация: {:.1} мин | Ср. скорость: {:.1} px/сек",
+            "    * Пройдено пешком (без дэша): {:.0} px [Рывков: {}] | Ср. скорость: {:.1} px/сек",
             best_boss_eval.avg_distance_walked,
             best_boss_eval.avg_dashes,
-            boss_move_time / 60.0,
-            best_boss_eval.avg_meditation_time / 60.0,
             boss_speed
         );
         log_line!(
-            "    * Очки фитнеса: Выживание: +{:.0} | Медитация: {:.1} мин (+{:.0})",
+            "    * Очки фитнеса: Выживание: +{:.0} | Уровень (x{}): +{:.0} | Алтари (x{}): +{:.0}",
             boss_time_reward,
-            best_boss_eval.avg_meditation_time / 60.0,
-            boss_meditation_reward
+            best_boss_eval.avg_level,
+            boss_level_reward,
+            best_boss_eval.avg_altars_destroyed,
+            boss_altar_reward
         );
         log_line!(
             "    * Получено урона: {:.0} HP [Ближний: {:.0}, Дальний: {:.0}, Окружение: {:.0}] | Разрушено алтарей: {}",
