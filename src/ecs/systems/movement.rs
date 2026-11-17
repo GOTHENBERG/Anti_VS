@@ -212,6 +212,10 @@ pub fn update_movement(world: &mut World, dt: f32) {
         world.boss_health.take_damage(poison_dmg);
         world.boss_inventory.record_damage_taken(poison_dmg, DamageType::Poison, DamageSourceKind::Hazard);
         world.total_damage_dealt_to_boss += poison_dmg;
+        if poison_dmg > 0.0 {
+            world.boss_damage_taken_timer = 3.0;
+            world.boss_still_time = 0.0;
+        }
 
         if world.boss_poison_timer <= 0.0 {
             world.boss_poison_dps = 0.0;
@@ -243,6 +247,10 @@ pub fn update_movement(world: &mut World, dt: f32) {
                 world.boss_health.take_damage(dmg);
                 world.boss_inventory.record_damage_taken(dmg, DamageType::Poison, DamageSourceKind::Hazard);
                 world.total_damage_dealt_to_boss += dmg;
+                if dmg > 0.0 {
+                    world.boss_damage_taken_timer = 3.0;
+                    world.boss_still_time = 0.0;
+                }
                 break;
             }
         }

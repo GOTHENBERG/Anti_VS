@@ -148,5 +148,10 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Осадный Бегемот",
             description: "Прямые попадания вызывают вторичную детонацию по площади радиусом 55px.",
         },
+        PassiveType::SporeMushroom => PassiveDefinition {
+            kind,
+            name: "Споровый Мицелий",
+            description: "Пускает целебные корни при остановке. Восстанавливает HP даже в гуще врагов и под градом ударов!",
+        },
     }
 }

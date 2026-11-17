@@ -426,6 +426,7 @@ pub fn passive_type_to_index(p: PassiveType) -> usize {
         PassiveType::UkuleleResonance => 25,
         PassiveType::FateWeaver => 26,
         PassiveType::SiegeMortar => 27,
+        PassiveType::SporeMushroom => 28,
     }
 }
 
@@ -709,6 +710,7 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
             | PassiveType::TitanAegis
             | PassiveType::ImmortalAegis
             | PassiveType::BlessedHeart
+            | PassiveType::SporeMushroom
             | PassiveType::BloodStone => def_levels += lvl,
             PassiveType::PrismaticFocus
             | PassiveType::ArchmageShard

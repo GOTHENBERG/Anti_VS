@@ -83,6 +83,7 @@ async fn main() {
     let auto_screenshot = std::env::args().any(|a| a == "--screenshot");
     let auto_codex = std::env::args().any(|a| a == "--codex");
     let auto_dossier = std::env::args().any(|a| a == "--dossier");
+    let auto_recipe = std::env::args().any(|a| a == "--recipe" || a == "--dossier-item");
     let auto_settings = std::env::args().any(|a| a == "--settings" || a == "--pause");
     let mut is_paused = auto_settings;
     let mut boss_death_sound_played = false;
@@ -106,12 +107,18 @@ async fn main() {
     let mut is_dragging_map = false;
     let mut active_dossier_tier: Option<u8> = if auto_dossier { Some(1) } else { None };
     let mut opened_dossier_from_codex = false;
+    let mut active_item_inspection: Option<crate::render::item_dossier::ItemInspectionTarget> = if auto_recipe {
+        Some(crate::render::item_dossier::ItemInspectionTarget::Weapon(crate::ecs::components::inventory::WeaponType::Hellfire, 8, 0))
+    } else {
+        None
+    };
+    let mut opened_item_from_codex = false;
 
     // Начальный разрушаемый алтарь игрока
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
 
     // Запуск динамичного джазового / симфонического плейлиста (со случайного трека)
-    if !auto_screenshot && !auto_codex && !auto_dossier && !auto_settings {
+    if !auto_screenshot && !auto_codex && !auto_dossier && !auto_recipe && !auto_settings {
         audio.shuffle_start();
     }
 
@@ -193,7 +200,12 @@ async fn main() {
 
         // Инфернальный кодекс по I
         if is_key_pressed(KeyCode::I) {
-            if active_dossier_tier.is_some() {
+            if active_item_inspection.is_some() {
+                active_item_inspection = None;
+                opened_item_from_codex = false;
+                show_codex = false;
+                audio.handle_event(crate::audio::AudioEvent::BookClose);
+            } else if active_dossier_tier.is_some() {
                 active_dossier_tier = None;
                 opened_dossier_from_codex = false;
                 show_codex = false;
@@ -202,6 +214,7 @@ async fn main() {
                 show_codex = !show_codex;
                 if show_codex {
                     active_dossier_tier = None;
+                    active_item_inspection = None;
                     audio.handle_event(crate::audio::AudioEvent::BookOpen);
                 } else {
                     audio.handle_event(crate::audio::AudioEvent::BookClose);
@@ -210,7 +223,14 @@ async fn main() {
         }
         // Закрытие окон или открытие настроек по Esc
         if is_key_pressed(KeyCode::Escape) {
-            if active_dossier_tier.is_some() {
+            if active_item_inspection.is_some() {
+                active_item_inspection = None;
+                audio.handle_event(crate::audio::AudioEvent::BookClose);
+                if opened_item_from_codex {
+                    show_codex = true;
+                    opened_item_from_codex = false;
+                }
+            } else if active_dossier_tier.is_some() {
                 active_dossier_tier = None;
                 audio.handle_event(crate::audio::AudioEvent::BookClose);
                 if opened_dossier_from_codex {
@@ -258,6 +278,9 @@ async fn main() {
             is_paused = false;
             show_codex = false;
             active_dossier_tier = None;
+            active_item_inspection = None;
+            opened_item_from_codex = false;
+            opened_dossier_from_codex = false;
             boss_death_sound_played = false;
             audio.shuffle_start();
         }
@@ -340,6 +363,11 @@ async fn main() {
             opened_dossier_from_codex = false;
             audio.handle_event(crate::audio::AudioEvent::BookOpen);
         }
+        if let Some(target) = ui_interaction.open_item_inspection {
+            active_item_inspection = Some(target);
+            opened_item_from_codex = false;
+            audio.handle_event(crate::audio::AudioEvent::BookOpen);
+        }
         if let Some(tier) = ui_interaction.direct_summon_tier {
             if let Some(director) = world.directors.first() {
                 try_summon_squad(director, tier, &mut net_driver);
@@ -368,7 +396,7 @@ async fn main() {
 
         // Логика перемещения карты зажатием ЛКМ (если курсор не над UI и окна закрыты)
         if is_mouse_button_pressed(MouseButton::Left) {
-            if !ui_interaction.is_mouse_over_ui && !show_codex && active_dossier_tier.is_none() && !is_paused && !is_game_over {
+            if !ui_interaction.is_mouse_over_ui && !show_codex && active_dossier_tier.is_none() && active_item_inspection.is_none() && !is_paused && !is_game_over {
                 is_dragging_map = true;
             }
         }
@@ -383,13 +411,32 @@ async fn main() {
         }
         last_mouse_pos = current_mpos;
 
-        // 7. Отрисовка модальных окон (Кодекс, Вики-досье, Пауза или Завершение игры)
-        if show_codex {
-            if let Some(tier) = draw_codex(&mut codex_tab, &fonts, &textures) {
+        // 7. Отрисовка модальных окон (Кодекс, Вики-досье, Осмотр предметов/рецептов, Пауза или Завершение игры)
+        if let Some(target) = active_item_inspection {
+            let close = crate::render::item_dossier::draw_item_inspection_modal(target, &world, &fonts, &textures);
+            if close {
+                active_item_inspection = None;
+                audio.handle_event(crate::audio::AudioEvent::BookClose);
+                if opened_item_from_codex {
+                    show_codex = true;
+                    opened_item_from_codex = false;
+                }
+            }
+        } else if show_codex {
+            if let Some(res) = draw_codex(&mut codex_tab, &fonts, &textures) {
                 show_codex = false;
-                active_dossier_tier = Some(tier);
-                opened_dossier_from_codex = true;
-                audio.handle_event(crate::audio::AudioEvent::BookOpen);
+                match res {
+                    crate::render::codex::CodexResult::MobDossier(tier) => {
+                        active_dossier_tier = Some(tier);
+                        opened_dossier_from_codex = true;
+                        audio.handle_event(crate::audio::AudioEvent::BookOpen);
+                    }
+                    crate::render::codex::CodexResult::ItemInspection(target) => {
+                        active_item_inspection = Some(target);
+                        opened_item_from_codex = true;
+                        audio.handle_event(crate::audio::AudioEvent::BookOpen);
+                    }
+                }
             }
         } else if let Some(tier) = active_dossier_tier {
             let res = draw_mob_dossier(tier, &world, &fonts, &textures);
@@ -422,6 +469,9 @@ async fn main() {
                     is_paused = false;
                     show_codex = false;
                     active_dossier_tier = None;
+                    active_item_inspection = None;
+                    opened_item_from_codex = false;
+                    opened_dossier_from_codex = false;
                     boss_death_sound_played = false;
                     audio.shuffle_start();
                 }
@@ -429,6 +479,7 @@ async fn main() {
                     is_paused = false;
                     show_codex = true;
                     active_dossier_tier = None;
+                    active_item_inspection = None;
                 }
                 crate::render::settings::SettingsAction::None => {}
             }
@@ -438,7 +489,7 @@ async fn main() {
         }
 
         // 8. Отрисовка тематичного курсора Повелителя поверх всех окон
-        let is_hovering = ui_interaction.is_mouse_over_ui || show_codex || active_dossier_tier.is_some() || is_paused;
+        let is_hovering = ui_interaction.is_mouse_over_ui || show_codex || active_dossier_tier.is_some() || active_item_inspection.is_some() || is_paused;
         draw_overlord_cursor(
             current_mpos,
             is_mouse_button_down(MouseButton::Left),
@@ -452,6 +503,8 @@ async fn main() {
                 get_screen_data().export_png("screenshot_settings.png");
             } else if auto_dossier {
                 get_screen_data().export_png("screenshot_dossier.png");
+            } else if auto_recipe {
+                get_screen_data().export_png("screenshot_recipe.png");
             } else if auto_codex {
                 get_screen_data().export_png("screenshot_codex.png");
             } else {

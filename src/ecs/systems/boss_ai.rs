@@ -261,6 +261,7 @@ fn get_passive_index(kind: PassiveType) -> usize {
         PassiveType::UkuleleResonance => 25,
         PassiveType::FateWeaver => 26,
         PassiveType::SiegeMortar => 27,
+        PassiveType::SporeMushroom => 28,
     }
 }
 
@@ -286,6 +287,7 @@ fn get_passive_archetypes(kind: PassiveType) -> &'static [usize] {
         PassiveType::OctarineCore | PassiveType::SoulHarvester | PassiveType::CorrosiveFlask => &[4],
         PassiveType::EagleScope | PassiveType::BlessedHeart | PassiveType::DivinityAura | PassiveType::SpeedGloves => &[5],
         PassiveType::GiantHeart => &[0, 2],
+        PassiveType::SporeMushroom => &[0, 2],
         PassiveType::CloverOfFate | PassiveType::FateWeaver => &[1, 4],
         PassiveType::DivineRapier => &[4, 5],
         PassiveType::FrostRing => &[1, 2],
@@ -526,6 +528,7 @@ fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             PassiveType::UkuleleResonance,
             PassiveType::FateWeaver,
             PassiveType::SiegeMortar,
+            PassiveType::SporeMushroom,
         ];
         for ap in all_passives {
             if !inventory.has_passive(ap) {
@@ -558,6 +561,7 @@ fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
                     PassiveType::UkuleleResonance => inventory.has_weapon(WeaponType::ChainLightning) || inventory.has_weapon(WeaponType::ThunderOrb),
                     PassiveType::FateWeaver => inventory.has_passive(PassiveType::CloverOfFate),
                     PassiveType::SiegeMortar => inventory.has_weapon(WeaponType::MissileSwarm) || inventory.has_weapon(WeaponType::ChaosMeteor),
+                    PassiveType::SporeMushroom => true,
                 };
                 let weight = if has_pair { 180.0 } else { 40.0 };
                 available.push((PerkChoice::UpgradePassive(ap), weight));
@@ -749,6 +753,10 @@ fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                 }
                 PassiveType::ImmortalAegis => {
                     world.boss_resistances.flat_armor += 5.0;
+                }
+                PassiveType::SporeMushroom => {
+                    world.boss_health.max += 30.0;
+                    world.boss_health.heal(50.0);
                 }
                 _ => {}
             }

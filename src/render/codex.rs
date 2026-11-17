@@ -1,13 +1,21 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use macroquad::prelude::*;
+use crate::ecs::components::inventory::{PassiveType, WeaponType};
 use crate::render::font::GameFonts;
+use crate::render::item_dossier::ItemInspectionTarget;
 use crate::render::textures::GameTextures;
 
 static BESTIARY_PAGE: AtomicUsize = AtomicUsize::new(0);
 static WEAPONS_PAGE: AtomicUsize = AtomicUsize::new(0);
 static PASSIVES_PAGE: AtomicUsize = AtomicUsize::new(0);
 
-pub fn draw_codex(current_tab: &mut usize, fonts: &GameFonts, textures: &GameTextures) -> Option<u8> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CodexResult {
+    MobDossier(u8),
+    ItemInspection(ItemInspectionTarget),
+}
+
+pub fn draw_codex(current_tab: &mut usize, fonts: &GameFonts, textures: &GameTextures) -> Option<CodexResult> {
     let screen_w = screen_width();
     let screen_h = screen_height();
 
@@ -89,14 +97,8 @@ pub fn draw_codex(current_tab: &mut usize, fonts: &GameFonts, textures: &GameTex
 
     match *current_tab {
         0 => draw_tab_bestiary(content_x, content_y, content_w, content_h, fonts, textures),
-        1 => {
-            draw_tab_weapons(content_x, content_y, content_w, content_h, fonts, textures);
-            None
-        }
-        2 => {
-            draw_tab_passives(content_x, content_y, content_w, content_h, fonts, textures);
-            None
-        }
+        1 => draw_tab_weapons(content_x, content_y, content_w, content_h, fonts, textures),
+        2 => draw_tab_passives(content_x, content_y, content_w, content_h, fonts, textures),
         _ => {
             draw_tab_mechanics(content_x, content_y, content_w, content_h, fonts);
             None
@@ -105,8 +107,8 @@ pub fn draw_codex(current_tab: &mut usize, fonts: &GameFonts, textures: &GameTex
 }
 
 /// Вкладка 1: Бестиарий мобов (с переключением страниц: Страница 1 [Тир 1-8] и Страница 2 [Тир 9-16])
-fn draw_tab_bestiary(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures: &GameTextures) -> Option<u8> {
-    let mut requested_tier = None;
+fn draw_tab_bestiary(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures: &GameTextures) -> Option<CodexResult> {
+    let mut requested_action = None;
     let (mx, my) = mouse_position();
     let current_page = BESTIARY_PAGE.load(Ordering::Relaxed);
 
@@ -380,15 +382,16 @@ fn draw_tab_bestiary(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
 
         // Клик по кнопке [i] или по всей карточке -> открывает полное досье
         if is_mouse_button_pressed(MouseButton::Left) && (is_btn_hover || is_card_hover) {
-            requested_tier = Some(*tier);
+            requested_action = Some(CodexResult::MobDossier(*tier));
         }
     }
 
-    requested_tier
+    requested_action
 }
 
 /// Вкладка 2: Оружие и Эволюции Босса (с переключением страниц: Оружие 1-10 и Оружие 11-20)
-fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures: &GameTextures) {
+fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures: &GameTextures) -> Option<CodexResult> {
+    let mut requested_action = None;
     let (mx, my) = mouse_position();
     let current_page = WEAPONS_PAGE.load(Ordering::Relaxed);
 
@@ -420,14 +423,16 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
 
     let weapons_page1 = [
         (
+            WeaponType::WindBlade,
             "1. Клинок Ветра -> БУРЯ КЛИНКОВ",
             "Рецепт: Клинок Ветра (ур. 8) + Перчатка Скорости",
             "Базовый: Серповидные клинки ветра по курсу бега.",
             "ЭВОЛЮЦИЯ: Вихрь из 8 вращающихся лезвий вокруг босса.",
-            textures.icon_sword.as_ref(),
+            textures.icon_wind_blade.as_ref().or(textures.icon_sword.as_ref()),
             SKYBLUE,
         ),
         (
+            WeaponType::FireAura,
             "2. Огненная Аура -> АДСКОЕ ПЕКЛО",
             "Рецепт: Огненная Аура (ур. 8) + Сердце Гиганта",
             "Базовый: Пульсирующая огненная волна (DoT горение).",
@@ -436,14 +441,16 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             ORANGE,
         ),
         (
+            WeaponType::MagicWand,
             "3. Магический Жезл -> ЛУЧ СМЕРТИ",
             "Рецепт: Магический Жезл (ур. 8) + Фолиант Времени",
             "Базовый: Самонаводящиеся сгустки тайной магии.",
             "ЭВОЛЮЦИЯ: Прожигающий лазерный луч через весь экран.",
-            textures.icon_wand.as_ref(),
+            textures.icon_magic_wand.as_ref().or(textures.icon_wand.as_ref()),
             VIOLET,
         ),
         (
+            WeaponType::HolyHammer,
             "4. Святой Молот -> ПРАВЕДНЫЙ ЩИТ",
             "Рецепт: Святой Молот (ур. 8) + Броня Света",
             "Базовый: Тяжёлые удары святым молотом по площади.",
@@ -452,6 +459,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             GOLD,
         ),
         (
+            WeaponType::IceShards,
             "5. Ледяные Осколки -> ЛЕДНИКОВАЯ БУРЯ",
             "Рецепт: Ледяные Осколки (ур. 8) + Кольцо Заморозки",
             "Базовый: Веер ледяных стрел с замедлением на 40%.",
@@ -460,30 +468,34 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             Color::new(0.4, 0.85, 1.0, 1.0),
         ),
         (
+            WeaponType::PoisonOrbs,
             "6. Чумные Сферы -> ТОКСИЧНЫЙ МОР",
             "Рецепт: Чумные Сферы (ур. 8) + Едкий Сосуд",
             "Базовый: Ядовитые сферы, оставляющие лужи яда.",
             "ЭВОЛЮЦИЯ: Разъедающая кислота, игнорирующая 50% брони!",
-            textures.icon_bottle.as_ref(),
+            textures.icon_poison_orbs.as_ref().or(textures.icon_corrosive_flask.as_ref()).or(textures.icon_bottle.as_ref()),
             LIME,
         ),
         (
+            WeaponType::ExecutionerAxe,
             "7. Топор Палача -> ВИХРЕВОЙ СЕКАЧ",
             "Рецепт: Топор Палача (ур. 8) + Кровавый Камень",
             "Базовый: Вращающиеся секиры с пробитием 4 целей.",
             "ЭВОЛЮЦИЯ: 12 рассекающих топоров по спирали с кровотечением.",
-            textures.icon_ax.as_ref(),
+            textures.icon_executioner_axe.as_ref().or(textures.icon_ax.as_ref()),
             RED,
         ),
         (
+            WeaponType::CelestialBow,
             "8. Небесный Лук -> ЗВЕЗДОПАДНЫЙ ЗАЛП",
             "Рецепт: Небесный Лук (ур. 8) + Орлиный Прицел",
             "Базовый: Скорострельные стрелы света в дальних стрелков.",
             "ЭВОЛЮЦИЯ: Ливень падающих звезд с неба по всей арене.",
-            textures.icon_bow.as_ref(),
+            textures.icon_celestial_bow.as_ref().or(textures.icon_bow.as_ref()),
             GOLD,
         ),
         (
+            WeaponType::ThunderOrb,
             "9. Грозовая Сфера -> ГНЕВ ГРОЗЫ",
             "Рецепт: Грозовая Сфера (ур. 8) + Песочные Часы",
             "Базовый: Электрические разряды по случайным мобам.",
@@ -492,6 +504,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             YELLOW,
         ),
         (
+            WeaponType::BloodDaggers,
             "10. Кровавые Кинжалы -> КРОВАВАЯ ЖАТВА",
             "Рецепт: Кровавые Кинжалы (ур. 8) + Сфера Притяжения",
             "Базовый: Быстрые броски кинжалов во фронтальный конус.",
@@ -503,6 +516,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
 
     let weapons_page2 = [
         (
+            WeaponType::SingularityOrb,
             "11. Грави-Сфера -> ГОРИЗОНТ СОБЫТИЙ",
             "Рецепт: Гравитационная Сфера (ур. 8) + Катушка Теслы",
             "Базовый: Стягивает толпы врагов в единую точку.",
@@ -511,6 +525,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             PURPLE,
         ),
         (
+            WeaponType::BrimstoneRay,
             "12. Кровавый Луч -> ИНФЕРНАЛЬНЫЙ КАТАКЛИЗМ",
             "Рецепт: Кровавый Гиперлуч (ур. 8) + Призматический Фокус",
             "Базовый: Непрерывный плазменный лазер, прожигающий арену.",
@@ -519,6 +534,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             Color::new(1.0, 0.2, 0.2, 1.0),
         ),
         (
+            WeaponType::ChainLightning,
             "13. Цепная Молния -> ТЕСЛА-ШТОРМ",
             "Рецепт: Цепная Молния (ур. 8) + Катушка Теслы",
             "Базовый: Электрическая дуга, бьющая по 5 целям подряд.",
@@ -527,6 +543,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             Color::new(0.3, 0.85, 1.0, 1.0),
         ),
         (
+            WeaponType::DivineBell,
             "14. Колокол Собора -> АУРА ВЕЛИЧИЯ",
             "Рецепт: Колокол Собора (ур. 8) + Благословенное Ядро",
             "Базовый: Священный звон наносит чистый урон и отбрасывает.",
@@ -535,6 +552,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             GOLD,
         ),
         (
+            WeaponType::SoulPhantoms,
             "15. Фантомы Душ -> АРМИЯ ПРИЗРАКОВ",
             "Рецепт: Призрачные Фантомы (ур. 8) + Призрачный Сосуд",
             "Базовый: Духи рыцарей преследуют элиту и алтари.",
@@ -543,6 +561,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             SKYBLUE,
         ),
         (
+            WeaponType::AegisOrbiters,
             "16. Бастион Эгиды -> НЕСОКРУШИМАЯ КРЕПОСТЬ",
             "Рецепт: Бастион Эгиды (ур. 8) + Эгида Бессмертия",
             "Базовый: 4 парящих щита, отражающих снаряды мобов.",
@@ -551,6 +570,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             GOLD,
         ),
         (
+            WeaponType::ChaosMeteor,
             "17. Метеорит Хаоса -> АРМАГЕДДОН",
             "Рецепт: Метеорит Хаоса (ур. 8) + Октариновое Ядро",
             "Базовый: Падение пылающих комет в скопления мобов.",
@@ -559,6 +579,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             ORANGE,
         ),
         (
+            WeaponType::VoidRift,
             "18. Разрыв Бездны -> ЧЕРНАЯ ДЫРА БЕЗДНЫ",
             "Рецепт: Разрыв Бездны (ур. 8) + Ткач Судеб",
             "Базовый: Пространственные воронки, затягивающие пехоту.",
@@ -567,6 +588,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             PURPLE,
         ),
         (
+            WeaponType::ChainFrost,
             "19. Кольцо Холода -> ВЕЧНАЯ МЕРЗЛОТА",
             "Рецепт: Кольцо Холода (ур. 8) + Кольцо Заморозки",
             "Базовый: Кольцевая волна с замедлением врагов на 60%.",
@@ -575,6 +597,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             Color::new(0.4, 0.9, 1.0, 1.0),
         ),
         (
+            WeaponType::MissileSwarm,
             "20. Рой Микроракет -> ОСАДА СУДНОГО ДНЯ",
             "Рецепт: Рой Микроракет (ур. 8) + Черный Эгис",
             "Базовый: Самонаводящиеся микроракеты по скоплениям.",
@@ -591,7 +614,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
     let col_w = (w - 14.0) / 2.0;
     let row_h = (grid_h - 15.0) / 5.0;
 
-    for (i, (name, recipe, base_desc, evo_desc, icon, col)) in active_weapons.iter().enumerate() {
+    for (i, (w_kind, name, recipe, base_desc, evo_desc, icon, col)) in active_weapons.iter().enumerate() {
         let col_idx = (i / 5) as f32;
         let row_idx = (i % 5) as f32;
 
@@ -599,10 +622,31 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
         let cy = grid_y + row_idx * (row_h + 3.0);
         let card_h = row_h - 2.0;
 
-        let is_hover = mx >= cx && mx <= cx + col_w && my >= cy && my <= cy + card_h;
+        let is_card_hover = mx >= cx && mx <= cx + col_w && my >= cy && my <= cy + card_h;
 
-        draw_rectangle(cx, cy, col_w, card_h, if is_hover { Color::new(0.14, 0.13, 0.20, 0.95) } else { Color::new(0.11, 0.11, 0.16, 0.92) });
-        draw_rectangle_lines(cx, cy, col_w, card_h, if is_hover { 2.0 } else { 1.5 }, if is_hover { GOLD } else { Color::new(0.35, 0.3, 0.45, 0.8) });
+        let btn_w = 84.0;
+        let btn_h = 22.0;
+        let btn_x = cx + col_w - btn_w - 6.0;
+        let btn_y = cy + 5.0;
+        let is_btn_hover = mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+
+        let bg_col = if is_card_hover && !is_btn_hover {
+            Color::new(0.14, 0.13, 0.20, 0.95)
+        } else {
+            Color::new(0.11, 0.11, 0.16, 0.92)
+        };
+        draw_rectangle(cx, cy, col_w, card_h, bg_col);
+        draw_rectangle_lines(cx, cy, col_w, card_h, if is_card_hover { 2.0 } else { 1.5 }, if is_card_hover { GOLD } else { Color::new(0.35, 0.3, 0.45, 0.8) });
+
+        // Отрисовка кнопки [i] Рецепт
+        draw_rectangle(btn_x, btn_y, btn_w, btn_h, if is_btn_hover { Color::new(0.38, 0.18, 0.50, 0.95) } else { Color::new(0.16, 0.16, 0.22, 0.90) });
+        draw_rectangle_lines(btn_x, btn_y, btn_w, btn_h, if is_btn_hover { 1.5 } else { 1.0 }, if is_btn_hover { GOLD } else { GRAY });
+        let blw = fonts.measure_heading("✨ Синтез [i]", 10.5).width;
+        fonts.draw_heading("✨ Синтез [i]", btn_x + (btn_w - blw) / 2.0, btn_y + 15.0, 10.5, if is_btn_hover { GOLD } else { WHITE });
+
+        if is_mouse_button_pressed(MouseButton::Left) && (is_btn_hover || is_card_hover) {
+            requested_action = Some(CodexResult::ItemInspection(ItemInspectionTarget::Weapon(*w_kind, 1, 0)));
+        }
 
         if let Some(tex) = icon {
             let isize = 40.0;
@@ -626,10 +670,13 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
         fonts.draw_text_wrapped(base_desc, tx, cy + 45.0, 9.3, 11.5, text_max_w, LIGHTGRAY);
         fonts.draw_text_wrapped(evo_desc, tx, cy + 68.0, 9.3, 11.5, text_max_w, YELLOW);
     }
+
+    requested_action
 }
 
 /// Вкладка 3: Пассивные предметы и Легендарные Реликвии Босса
-fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures: &GameTextures) {
+fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures: &GameTextures) -> Option<CodexResult> {
+    let mut requested_action = None;
     let (mx, my) = mouse_position();
     let current_page = PASSIVES_PAGE.load(Ordering::Relaxed);
 
@@ -661,13 +708,15 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
 
     let passives_page1 = [
         (
+            PassiveType::SpeedGloves,
             "1. Перчатка Скорости",
             "-10% времени перезарядки атак за ур. (до -50%).",
             "Эволюция: Клинок Ветра -> БУРЯ КЛИНКОВ",
-            textures.icon_glove.as_ref(),
+            textures.icon_speed_gloves.as_ref().or(textures.icon_glove.as_ref()),
             SKYBLUE,
         ),
         (
+            PassiveType::GiantHeart,
             "2. Сердце Гиганта",
             "+25% к макс. HP и +3.0 HP/сек регенерации за ур.",
             "Эволюция: Огненная Аура -> АДСКОЕ ПЕКЛО",
@@ -675,27 +724,31 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             RED,
         ),
         (
+            PassiveType::CooldownTome,
             "3. Фолиант Времени",
             "-8% ко всем кулдаунам оружия и рывка (Dash).",
             "Эволюция: Магический Жезл -> ЛУЧ СМЕРТИ",
-            textures.icon_book.as_ref(),
+            textures.icon_cooldown_tome.as_ref().or(textures.icon_book.as_ref()),
             VIOLET,
         ),
         (
+            PassiveType::LightArmor,
             "4. Броня Света",
             "+3 к плоской броне и +8% к сопротивлению физ. урону.",
             "Эволюция: Святой Молот -> ПРАВЕДНЫЙ ЩИТ",
-            textures.icon_armor.as_ref(),
+            textures.icon_light_armor.as_ref().or(textures.icon_armor.as_ref()),
             GOLD,
         ),
         (
+            PassiveType::FrostRing,
             "5. Кольцо Заморозки",
             "+20% к радиусу замедления и силе заморозки.",
             "Эволюция: Ледяные Осколки -> ЛЕДНИКОВАЯ БУРЯ",
-            textures.icon_ring.as_ref(),
+            textures.icon_frost_ring.as_ref().or(textures.icon_ring.as_ref()),
             Color::new(0.4, 0.85, 1.0, 1.0),
         ),
         (
+            PassiveType::CorrosiveFlask,
             "6. Едкий Сосуд",
             "Игнорирует 15% брони врагов и продлевает лужи яда.",
             "Эволюция: Чумные Сферы -> ТОКСИЧНЫЙ МОР",
@@ -703,6 +756,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             LIME,
         ),
         (
+            PassiveType::BloodStone,
             "7. Кровавый Камень",
             "+12% к общему урону и +2.5 HP/сек регенерации.",
             "Эволюция: Топор Палача -> ВИХРЕВОЙ СЕКАЧ",
@@ -710,6 +764,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             RED,
         ),
         (
+            PassiveType::EagleScope,
             "8. Орлиный Прицел",
             "+20% к скорости и дальности полета снарядов.",
             "Эволюция: Небесный Лук -> ЗВЕЗДОПАДНЫЙ ЗАЛП",
@@ -717,13 +772,15 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             GOLD,
         ),
         (
+            PassiveType::ChronoHourglass,
             "9. Песочные Часы",
             "+25% к длительности заморозки, горения и яда.",
             "Эволюция: Грозовая Сфера -> ГНЕВ ГРОЗЫ",
-            textures.icon_hourglass.as_ref(),
+            textures.icon_chrono_hourglass.as_ref().or(textures.icon_hourglass.as_ref()),
             YELLOW,
         ),
         (
+            PassiveType::MagnetSphere,
             "10. Сфера Притяжения",
             "+45 px к радиусу сбора кристаллов душ за ур.",
             "Эволюция: Кровавые Кинжалы -> КРОВАВАЯ ЖАТВА",
@@ -731,6 +788,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             SKYBLUE,
         ),
         (
+            PassiveType::TeslaCoil,
             "11. Катушка Теслы",
             "+12% шанс цепной молнии на 3 цели за ур.",
             "Эволюция: Гравитационная Сфера / Цепная Молния",
@@ -738,6 +796,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             Color::new(0.3, 0.8, 1.0, 1.0),
         ),
         (
+            PassiveType::CloverOfFate,
             "12. Клевер Судьбы",
             "+12% шанс критического удара (х2 урон) за ур.",
             "Эволюция: Удваивает весь исходящий крит!",
@@ -745,6 +804,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             Color::new(0.3, 0.9, 0.4, 1.0),
         ),
         (
+            PassiveType::PrismaticFocus,
             "13. Призматический Фокус",
             "+15% к радиусу поражения всех атак (AoE) за ур.",
             "Эволюция: Кровавый Луч -> ИНФЕРНАЛЬНЫЙ КАТАКЛИЗМ",
@@ -752,6 +812,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             Color::new(0.9, 0.5, 0.9, 1.0),
         ),
         (
+            PassiveType::TitanAegis,
             "14. Черный Эгис",
             "-2.5 плоского входящего урона от каждого удара.",
             "Эволюция: Рой Микроракет -> ОСАДА СУДНОГО ДНЯ",
@@ -762,6 +823,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
 
     let passives_page2 = [
         (
+            PassiveType::OctarineCore,
             "15. Октариновое Ядро",
             "+25% снижение отката всех способностей, 6% вампиризм от заклинаний.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Безграничная магическая мощь.",
@@ -769,6 +831,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             VIOLET,
         ),
         (
+            PassiveType::DivineRapier,
             "16. Божественная Рапира",
             "+50% ко всему наносимому урону, +35% пробития брони врагов.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Сокрушительный удар паладина.",
@@ -776,6 +839,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             GOLD,
         ),
         (
+            PassiveType::SolarRelic,
             "17. Солнечная Реликвия",
             "+40 Святого урона/сек всем мобам в радиусе 220 px вокруг босса.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Испепеляющее сияние небес.",
@@ -783,6 +847,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             GOLD,
         ),
         (
+            PassiveType::FateWeaver,
             "18. Ткач Судеб",
             "+1 дополнительный снаряд ко всем атакам, +15% шанс крита.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Нити судьбы множат снаряды.",
@@ -790,6 +855,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             Color::new(0.4, 0.9, 1.0, 1.0),
         ),
         (
+            PassiveType::ImmortalAegis,
             "19. Эгида Бессмертия",
             "ВОСКРЕШЕНИЕ: При гибели босс восстает со 100% HP и отбрасывает орду!",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Второе дыхание в смертельном бою.",
@@ -797,6 +863,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             GOLD,
         ),
         (
+            PassiveType::ColossalEye,
             "20. Око Колосса",
             "+50% к размеру всех снарядов и +2 пробития сквозь толпу.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Гигантские снаряды сметают строй.",
@@ -804,6 +871,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             RED,
         ),
         (
+            PassiveType::SoulHarvester,
             "21. Призрачный Сосуд",
             "+25% к макс HP, призывает 2 призраков-защитников на арену.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Защита верных духов.",
@@ -811,6 +879,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             SKYBLUE,
         ),
         (
+            PassiveType::ArchmageShard,
             "22. Осколок Архимага",
             "+20% к урону, все заклинания пробивают +1 дополнительного врага.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Сквозная магическая волна.",
@@ -818,6 +887,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             Color::new(0.85, 0.4, 1.0, 1.0),
         ),
         (
+            PassiveType::Pyromaniac,
             "23. Сердце Пепла",
             "+30% к урону огнем, поджигает врагов и восстанавливает 8% HP.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Вампиризм пламени очищения.",
@@ -825,6 +895,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             ORANGE,
         ),
         (
+            PassiveType::StaticCore,
             "24. Ядро Буревестника",
             "+20% к урону молний, оглушает пораженных врагов на 0.4 сек.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Статический шок парализует мобов.",
@@ -832,6 +903,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             YELLOW,
         ),
         (
+            PassiveType::SiegeMortar,
             "25. Мортира Бедствия",
             "+40% к урону по площади (AoE), сотрясает ряды наступающих.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Сокрушительная взрывная мощь.",
@@ -839,6 +911,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             Color::new(1.0, 0.4, 0.2, 1.0),
         ),
         (
+            PassiveType::UkuleleResonance,
             "26. Резонирующие Струны",
             "+25% к радиусу поражения, враги резонируют на 30 урона вокруг.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Музыка битвы разрывает плоть.",
@@ -846,6 +919,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             Color::new(0.3, 0.9, 0.7, 1.0),
         ),
         (
+            PassiveType::BlessedHeart,
             "27. Благословенное Ядро",
             "+35% к эффективности лечения и регенерации, +4 к броне.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Неиссякаемый источник благодати.",
@@ -853,33 +927,64 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             GOLD,
         ),
         (
+            PassiveType::DivinityAura,
             "28. Сияющий Нимб",
             "+20% к урону святостью, ослепляет врагов в радиусе 160 px.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Святое сияние истинного Паладина.",
             textures.icon_halo_radiance.as_ref().or(textures.icon_armor.as_ref()),
             GOLD,
         ),
+        (
+            PassiveType::SporeMushroom,
+            "29. Споровый Мицелий",
+            "Пускает корни при остановке: +18 HP/с (+1.5% макс HP), игнорируя урон и врагов!",
+            "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Непрерывная биолюминесцентная регенерация.",
+            textures.icon_spore_mushroom.as_ref(),
+            Color::new(0.2, 0.95, 0.6, 1.0),
+        ),
     ];
 
-    let active_passives = if current_page == 0 { passives_page1 } else { passives_page2 };
+    let active_passives = if current_page == 0 { passives_page1.as_slice() } else { passives_page2.as_slice() };
 
     let grid_y = y + 34.0;
     let grid_h = h - 38.0;
     let col_w = (w - 14.0) / 2.0;
-    let row_h = (grid_h - 15.0) / 7.0;
+    let rows_per_col = ((active_passives.len() + 1) / 2).max(1);
+    let row_h = (grid_h - 15.0) / (rows_per_col as f32);
 
-    for (i, (name, effect, evo, icon, col)) in active_passives.iter().enumerate() {
-        let col_idx = (i / 7) as f32;
-        let row_idx = (i % 7) as f32;
+    for (i, (p_kind, name, effect, evo, icon, col)) in active_passives.iter().enumerate() {
+        let col_idx = (i / rows_per_col) as f32;
+        let row_idx = (i % rows_per_col) as f32;
 
         let cx = x + col_idx * (col_w + 14.0);
         let cy = grid_y + row_idx * (row_h + 3.0);
         let card_h = row_h - 2.0;
 
-        let is_hover = mx >= cx && mx <= cx + col_w && my >= cy && my <= cy + card_h;
+        let is_card_hover = mx >= cx && mx <= cx + col_w && my >= cy && my <= cy + card_h;
 
-        draw_rectangle(cx, cy, col_w, card_h, if is_hover { Color::new(0.14, 0.13, 0.20, 0.95) } else { Color::new(0.11, 0.11, 0.16, 0.92) });
-        draw_rectangle_lines(cx, cy, col_w, card_h, if is_hover { 2.0 } else { 1.5 }, if is_hover { GOLD } else { Color::new(0.3, 0.35, 0.45, 0.8) });
+        let btn_w = 78.0;
+        let btn_h = 20.0;
+        let btn_x = cx + col_w - btn_w - 6.0;
+        let btn_y = cy + 4.0;
+        let is_btn_hover = mx >= btn_x && mx <= btn_x + btn_w && my >= btn_y && my <= btn_y + btn_h;
+
+        let bg_col = if is_card_hover && !is_btn_hover {
+            Color::new(0.14, 0.13, 0.20, 0.95)
+        } else {
+            Color::new(0.11, 0.11, 0.16, 0.92)
+        };
+        draw_rectangle(cx, cy, col_w, card_h, bg_col);
+        draw_rectangle_lines(cx, cy, col_w, card_h, if is_card_hover { 2.0 } else { 1.5 }, if is_card_hover { GOLD } else { Color::new(0.3, 0.35, 0.45, 0.8) });
+
+        // Отрисовка кнопки [i] Инфо
+        draw_rectangle(btn_x, btn_y, btn_w, btn_h, if is_btn_hover { Color::new(0.38, 0.18, 0.50, 0.95) } else { Color::new(0.16, 0.16, 0.22, 0.90) });
+        draw_rectangle_lines(btn_x, btn_y, btn_w, btn_h, if is_btn_hover { 1.5 } else { 1.0 }, if is_btn_hover { GOLD } else { GRAY });
+        let blw = fonts.measure_heading("🔮 Инфо [i]", 10.0).width;
+        fonts.draw_heading("🔮 Инфо [i]", btn_x + (btn_w - blw) / 2.0, btn_y + 14.0, 10.0, if is_btn_hover { GOLD } else { WHITE });
+
+        if is_mouse_button_pressed(MouseButton::Left) && (is_btn_hover || is_card_hover) {
+            requested_action = Some(CodexResult::ItemInspection(ItemInspectionTarget::Passive(*p_kind, 1)));
+        }
 
         if let Some(tex) = icon {
             let isize = 36.0;
@@ -902,6 +1007,8 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
         fonts.draw_text_wrapped(effect, tx, cy + 28.0, 9.2, 11.0, text_max_w, WHITE);
         fonts.draw_text_wrapped(evo, tx, cy + 48.0, 9.0, 11.0, text_max_w, GOLD);
     }
+
+    requested_action
 }
 
 /// Вкладка 4: Алтари, Экономика и Механики
@@ -942,8 +1049,9 @@ fn draw_tab_mechanics(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts) {
     // Карточка 4: Анти-Пассивность (Медитация) и Сноуболл
     draw_card_box(x2, y2, half_w, card_h, "🧘 АНТИ-ПАССИВНОСТЬ И LIMIT BREAK", fonts);
     let mut cy4 = y2 + 40.0;
-    cy4 = fonts.draw_text_wrapped("• МЕДИТАЦИЯ ПОКОЯ: Если босс стоит без движения > 2 сек (нет угроз): восстанавливает +2% HP/с и получает +30 XP/с. Не оставляйте арену пустой!", x2 + 12.0, cy4, 11.0, 14.5, text_w, RED) + 3.0;
-    cy4 = fonts.draw_text_wrapped("• ЗАПРЕДЕЛЬНОЕ ВОЗВЫШЕНИЕ (Limit Break после 10-й мин):", x2 + 12.0, cy4, 11.0, 14.5, text_w, GOLD) + 3.0;
+    cy4 = fonts.draw_text_wrapped("• МЕДИТАЦИЯ ПОКОЯ: Если босс стоит без движения > 2 сек, не получал урона последние 3 секунды и рядом нет врагов: восстанавливает +2% HP/с и +30 XP/с. Любой входящий урон сбивает медитацию на 3 сек!", x2 + 12.0, cy4, 10.5, 14.0, text_w, RED) + 3.0;
+    cy4 = fonts.draw_text_wrapped("• СПОРОВЫЙ МИЦЕЛИЙ (Реликвия 29): Если босс находит грибницу, при остановке корни лечат его (+18 HP/с + 1.5% макс HP) вне зависимости от атак и урона!", x2 + 12.0, cy4, 10.5, 14.0, text_w, GREEN) + 3.0;
+    cy4 = fonts.draw_text_wrapped("• ЗАПРЕДЕЛЬНОЕ ВОЗВЫШЕНИЕ (Limit Break после 10-й мин):", x2 + 12.0, cy4, 10.5, 14.0, text_w, GOLD) + 3.0;
     fonts.draw_text_wrapped("  После эволюции всех 6 слотов босс бесконечно качает: +10% урона, -8% отката, +1 снаряд, Закалку Титана (+80 HP) и Адаптивную Броню (+2.0 брони).", x2 + 12.0, cy4, 11.0, 14.5, text_w, WHITE);
 }
 

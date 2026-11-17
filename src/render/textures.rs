@@ -108,6 +108,29 @@ pub struct GameTextures {
     pub icon_spectral_jar: Option<Texture2D>,
     pub icon_stormhammer_core: Option<Texture2D>,
     pub icon_void_rift: Option<Texture2D>,
+    // Новые яркие цельные иконки оружия и пассивок (взамен прозрачных)
+    pub icon_wind_blade: Option<Texture2D>,
+    pub icon_magic_wand: Option<Texture2D>,
+    pub icon_poison_orbs: Option<Texture2D>,
+    pub icon_executioner_axe: Option<Texture2D>,
+    pub icon_celestial_bow: Option<Texture2D>,
+    pub icon_speed_gloves: Option<Texture2D>,
+    pub icon_cooldown_tome: Option<Texture2D>,
+    pub icon_light_armor: Option<Texture2D>,
+    pub icon_frost_ring: Option<Texture2D>,
+    pub icon_chrono_hourglass: Option<Texture2D>,
+    pub icon_spore_mushroom: Option<Texture2D>,
+    // Уникальные иконки для всех первых 10 эволюций
+    pub icon_evo_blade_storm: Option<Texture2D>,
+    pub icon_evo_hellfire: Option<Texture2D>,
+    pub icon_evo_death_ray: Option<Texture2D>,
+    pub icon_evo_divine_shield: Option<Texture2D>,
+    pub icon_evo_blizzard_storm: Option<Texture2D>,
+    pub icon_evo_toxic_pestilence: Option<Texture2D>,
+    pub icon_evo_whirlwind_cleaver: Option<Texture2D>,
+    pub icon_evo_starfall_barrage: Option<Texture2D>,
+    pub icon_evo_thunderstorm_wrath: Option<Texture2D>,
+    pub icon_evo_blood_harvest: Option<Texture2D>,
 }
 
 async fn load_filtered(path: &str, filter: FilterMode) -> Option<Texture2D> {
@@ -246,6 +269,31 @@ impl GameTextures {
         let icon_stormhammer_core = load_filtered("assets/icons/icon_stormhammer_core.png", ui_filter).await;
         let icon_void_rift = load_filtered("assets/icons/icon_void_rift.png", ui_filter).await;
 
+        // Новые цельные иконки оружия и пассивок
+        let icon_wind_blade = load_filtered("assets/icons/icon_wind_blade.png", ui_filter).await;
+        let icon_magic_wand = load_filtered("assets/icons/icon_magic_wand.png", ui_filter).await;
+        let icon_poison_orbs = load_filtered("assets/icons/icon_poison_orbs.png", ui_filter).await;
+        let icon_executioner_axe = load_filtered("assets/icons/icon_executioner_axe.png", ui_filter).await;
+        let icon_celestial_bow = load_filtered("assets/icons/icon_celestial_bow.png", ui_filter).await;
+        let icon_speed_gloves = load_filtered("assets/icons/icon_speed_gloves.png", ui_filter).await;
+        let icon_cooldown_tome = load_filtered("assets/icons/icon_cooldown_tome.png", ui_filter).await;
+        let icon_light_armor = load_filtered("assets/icons/icon_light_armor.png", ui_filter).await;
+        let icon_frost_ring = load_filtered("assets/icons/icon_frost_ring.png", ui_filter).await;
+        let icon_chrono_hourglass = load_filtered("assets/icons/icon_chrono_hourglass.png", ui_filter).await;
+        let icon_spore_mushroom = load_filtered("assets/icons/icon_spore_mushroom.png", ui_filter).await;
+
+        // Иконки эволюций (1..10)
+        let icon_evo_blade_storm = load_filtered("assets/icons/icon_evo_blade_storm.png", ui_filter).await;
+        let icon_evo_hellfire = load_filtered("assets/icons/icon_evo_hellfire.png", ui_filter).await;
+        let icon_evo_death_ray = load_filtered("assets/icons/icon_evo_death_ray.png", ui_filter).await;
+        let icon_evo_divine_shield = load_filtered("assets/icons/icon_evo_divine_shield.png", ui_filter).await;
+        let icon_evo_blizzard_storm = load_filtered("assets/icons/icon_evo_blizzard_storm.png", ui_filter).await;
+        let icon_evo_toxic_pestilence = load_filtered("assets/icons/icon_evo_toxic_pestilence.png", ui_filter).await;
+        let icon_evo_whirlwind_cleaver = load_filtered("assets/icons/icon_evo_whirlwind_cleaver.png", ui_filter).await;
+        let icon_evo_starfall_barrage = load_filtered("assets/icons/icon_evo_starfall_barrage.png", ui_filter).await;
+        let icon_evo_thunderstorm_wrath = load_filtered("assets/icons/icon_evo_thunderstorm_wrath.png", ui_filter).await;
+        let icon_evo_blood_harvest = load_filtered("assets/icons/icon_evo_blood_harvest.png", ui_filter).await;
+
         Self {
             skeleton,
             hound_frames,
@@ -339,25 +387,60 @@ impl GameTextures {
             icon_spectral_jar,
             icon_stormhammer_core,
             icon_void_rift,
+            icon_wind_blade,
+            icon_magic_wand,
+            icon_poison_orbs,
+            icon_executioner_axe,
+            icon_celestial_bow,
+            icon_speed_gloves,
+            icon_cooldown_tome,
+            icon_light_armor,
+            icon_frost_ring,
+            icon_chrono_hourglass,
+            icon_spore_mushroom,
+            icon_evo_blade_storm,
+            icon_evo_hellfire,
+            icon_evo_death_ray,
+            icon_evo_divine_shield,
+            icon_evo_blizzard_storm,
+            icon_evo_toxic_pestilence,
+            icon_evo_whirlwind_cleaver,
+            icon_evo_starfall_barrage,
+            icon_evo_thunderstorm_wrath,
+            icon_evo_blood_harvest,
         }
     }
 
     pub fn get_weapon_icon(&self, weapon_type: WeaponType) -> Option<&Texture2D> {
         match weapon_type {
-            WeaponType::WindBlade | WeaponType::BladeStorm => self.icon_sword.as_ref(),
-            WeaponType::FireAura | WeaponType::Hellfire => self.icon_fire_aura.as_ref().or(self.icon_elixir.as_ref()),
-            WeaponType::MagicWand | WeaponType::DeathRay => self.icon_wand.as_ref(),
-            WeaponType::HolyHammer | WeaponType::DivineShield => self.icon_holy_hammer.as_ref().or(self.icon_shield.as_ref()),
-            WeaponType::IceShards | WeaponType::BlizzardStorm => self.icon_ice_shards.as_ref().or(self.icon_ring.as_ref()),
-            WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => self.icon_corrosive_flask.as_ref().or(self.icon_bottle.as_ref()),
-            WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver => self.icon_ax.as_ref(),
-            WeaponType::CelestialBow | WeaponType::StarfallBarrage => self.icon_bow.as_ref(),
-            WeaponType::ThunderOrb | WeaponType::ThunderstormWrath => self.icon_thunder.as_ref().or(self.icon_jewel.as_ref()),
-            WeaponType::BloodDaggers | WeaponType::BloodHarvest => self.icon_blood_daggers.as_ref().or(self.icon_sword.as_ref()),
-            WeaponType::SingularityOrb | WeaponType::EventHorizon => self.icon_singularity.as_ref().or(self.icon_jewel.as_ref()),
-            WeaponType::ChainFrost | WeaponType::AbsoluteZero => self.icon_chain_frost.as_ref().or(self.icon_ring.as_ref()),
-            WeaponType::BrimstoneRay | WeaponType::InfernalCataclysm => self.icon_brimstone.as_ref().or(self.icon_fire_aura.as_ref()),
-            WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage => self.icon_missiles.as_ref().or(self.icon_bow.as_ref()),
+            WeaponType::WindBlade => self.icon_wind_blade.as_ref().or(self.icon_sword.as_ref()),
+            WeaponType::BladeStorm => self.icon_evo_blade_storm.as_ref().or(self.icon_wind_blade.as_ref()),
+            WeaponType::FireAura => self.icon_fire_aura.as_ref().or(self.icon_elixir.as_ref()),
+            WeaponType::Hellfire => self.icon_evo_hellfire.as_ref().or(self.icon_fire_aura.as_ref()),
+            WeaponType::MagicWand => self.icon_magic_wand.as_ref().or(self.icon_wand.as_ref()),
+            WeaponType::DeathRay => self.icon_evo_death_ray.as_ref().or(self.icon_magic_wand.as_ref()),
+            WeaponType::HolyHammer => self.icon_holy_hammer.as_ref().or(self.icon_shield.as_ref()),
+            WeaponType::DivineShield => self.icon_evo_divine_shield.as_ref().or(self.icon_holy_hammer.as_ref()),
+            WeaponType::IceShards => self.icon_ice_shards.as_ref().or(self.icon_ring.as_ref()),
+            WeaponType::BlizzardStorm => self.icon_evo_blizzard_storm.as_ref().or(self.icon_ice_shards.as_ref()),
+            WeaponType::PoisonOrbs => self.icon_poison_orbs.as_ref().or(self.icon_corrosive_flask.as_ref()),
+            WeaponType::ToxicPestilence => self.icon_evo_toxic_pestilence.as_ref().or(self.icon_poison_orbs.as_ref()),
+            WeaponType::ExecutionerAxe => self.icon_executioner_axe.as_ref().or(self.icon_ax.as_ref()),
+            WeaponType::WhirlwindCleaver => self.icon_evo_whirlwind_cleaver.as_ref().or(self.icon_executioner_axe.as_ref()),
+            WeaponType::CelestialBow => self.icon_celestial_bow.as_ref().or(self.icon_bow.as_ref()),
+            WeaponType::StarfallBarrage => self.icon_evo_starfall_barrage.as_ref().or(self.icon_celestial_bow.as_ref()),
+            WeaponType::ThunderOrb => self.icon_thunder.as_ref().or(self.icon_jewel.as_ref()),
+            WeaponType::ThunderstormWrath => self.icon_evo_thunderstorm_wrath.as_ref().or(self.icon_thunder.as_ref()),
+            WeaponType::BloodDaggers => self.icon_blood_daggers.as_ref().or(self.icon_sword.as_ref()),
+            WeaponType::BloodHarvest => self.icon_evo_blood_harvest.as_ref().or(self.icon_blood_daggers.as_ref()),
+            WeaponType::SingularityOrb => self.icon_singularity.as_ref().or(self.icon_jewel.as_ref()),
+            WeaponType::EventHorizon => self.icon_void_rift.as_ref().or(self.icon_singularity.as_ref()),
+            WeaponType::ChainFrost => self.icon_chain_frost.as_ref().or(self.icon_ring.as_ref()),
+            WeaponType::AbsoluteZero => self.icon_octarine_core.as_ref().or(self.icon_chain_frost.as_ref()),
+            WeaponType::BrimstoneRay => self.icon_brimstone.as_ref().or(self.icon_fire_aura.as_ref()),
+            WeaponType::InfernalCataclysm => self.icon_chaos_meteor.as_ref().or(self.icon_brimstone.as_ref()),
+            WeaponType::MissileSwarm => self.icon_missiles.as_ref().or(self.icon_bow.as_ref()),
+            WeaponType::DoomsdayBarrage => self.icon_calamity_mortar.as_ref().or(self.icon_missiles.as_ref()),
             WeaponType::ChainLightning => self.icon_chain_lightning.as_ref().or(self.icon_thunder.as_ref()),
             WeaponType::StormGodWrath => self.icon_stormhammer_core.as_ref().or(self.icon_chain_lightning.as_ref()),
             WeaponType::DivineBell => self.icon_divine_bell.as_ref().or(self.icon_holy_hammer.as_ref()),
@@ -375,15 +458,16 @@ impl GameTextures {
 
     pub fn get_passive_icon(&self, passive_type: PassiveType) -> Option<&Texture2D> {
         match passive_type {
-            PassiveType::SpeedGloves => self.icon_glove.as_ref(),
+            PassiveType::SpeedGloves => self.icon_speed_gloves.as_ref().or(self.icon_glove.as_ref()),
             PassiveType::GiantHeart => self.icon_giant_heart.as_ref().or(self.icon_chest.as_ref()),
-            PassiveType::CooldownTome => self.icon_book.as_ref(),
-            PassiveType::LightArmor => self.icon_armor.as_ref(),
-            PassiveType::FrostRing => self.icon_ring.as_ref(),
+            PassiveType::CooldownTome => self.icon_cooldown_tome.as_ref().or(self.icon_book.as_ref()),
+            PassiveType::LightArmor => self.icon_light_armor.as_ref().or(self.icon_armor.as_ref()),
+            PassiveType::FrostRing => self.icon_frost_ring.as_ref().or(self.icon_ring.as_ref()),
             PassiveType::CorrosiveFlask => self.icon_corrosive_flask.as_ref().or(self.icon_bottle.as_ref()),
             PassiveType::BloodStone => self.icon_blood_stone.as_ref().or(self.icon_jewel.as_ref()),
             PassiveType::EagleScope => self.icon_eagle_scope.as_ref().or(self.icon_ring.as_ref()),
-            PassiveType::ChronoHourglass => self.icon_hourglass.as_ref(),
+            PassiveType::ChronoHourglass => self.icon_chrono_hourglass.as_ref().or(self.icon_hourglass.as_ref()),
+            PassiveType::SporeMushroom => self.icon_spore_mushroom.as_ref(),
             PassiveType::MagnetSphere => self.icon_magnet_sphere.as_ref().or(self.icon_jewel.as_ref()),
             PassiveType::TeslaCoil => self.icon_tesla_coil.as_ref().or(self.icon_jewel.as_ref()),
             PassiveType::CloverOfFate => self.icon_clover.as_ref().or(self.icon_jewel.as_ref()),

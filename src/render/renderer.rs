@@ -212,6 +212,31 @@ pub fn render_world(world: &World, _fonts: &GameFonts, textures: &GameTextures, 
         draw_circle(bx, by, 35.0, Color::new(0.1, 0.9, 0.3, 0.12));
     }
 
+    // Аура Спорового Мицелия (Исцеляющие грибы под ногами босса при остановке)
+    if world.boss_mushroom_still_time >= 0.4 {
+        let pulse = (time * 4.0).sin() * 5.0;
+        let ring_radius = 52.0 + pulse;
+
+        // Биолюминесцентная грибная зона
+        draw_circle(bx, by, ring_radius, Color::new(0.08, 0.85, 0.45, 0.16));
+        draw_circle_lines(bx, by, ring_radius, 2.0, Color::new(0.2, 1.0, 0.6, 0.80));
+
+        // 6 светящихся грибочков по периметру мицелия
+        let shroom_count = 6;
+        for i in 0..shroom_count {
+            let angle = (i as f32) * std::f32::consts::PI * 2.0 / (shroom_count as f32) + 0.35;
+            let sx = bx + angle.cos() * (ring_radius - 10.0);
+            let sy = by + angle.sin() * (ring_radius - 10.0);
+
+            // Ножка гриба
+            draw_line(sx, sy + 5.0, sx, sy - 1.0, 2.5, Color::new(0.90, 0.95, 0.85, 0.95));
+            // Шляпка гриба (бирюзово-изумрудная)
+            let cap_pulse = (time * 6.0 + i as f32).sin() * 1.5;
+            draw_circle(sx, sy - 3.0, 5.5 + cap_pulse, Color::new(0.12, 0.95, 0.55, 0.95));
+            draw_circle(sx, sy - 3.0, 2.5, Color::new(0.85, 1.0, 0.90, 1.0));
+        }
+    }
+
     // Способность: Огненная Аура / Адское Пекло (Fire Aura & Hellfire Inferno)
     let has_fire_aura = world.boss_inventory.has_weapon(WeaponType::FireAura);
     let has_hellfire = world.boss_inventory.has_weapon(WeaponType::Hellfire);

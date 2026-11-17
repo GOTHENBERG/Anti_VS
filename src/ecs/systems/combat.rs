@@ -46,6 +46,10 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     world.boss_health.take_damage(actual_dmg);
                     world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, DamageSourceKind::Melee);
                     world.total_damage_dealt_to_boss += actual_dmg;
+                    if actual_dmg > 0.0 {
+                        world.boss_damage_taken_timer = 3.0;
+                        world.boss_still_time = 0.0;
+                    }
 
                     // Чумные Споры Директора: шанс отравить босса при контактной атаке
                     let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
@@ -177,6 +181,10 @@ pub fn update_combat(world: &mut World, dt: f32) {
             world.boss_health.take_damage(actual_dmg);
             world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, DamageSourceKind::Hazard);
             world.total_damage_dealt_to_boss += actual_dmg;
+            if actual_dmg > 0.0 {
+                world.boss_damage_taken_timer = 3.0;
+                world.boss_still_time = 0.0;
+            }
             world.add_floating_text(boss_pos, format!("-{:.0}", actual_dmg), RED, 1.4);
         }
 
@@ -220,6 +228,10 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 };
                 world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, source_kind);
                 world.total_damage_dealt_to_boss += actual_dmg;
+                if actual_dmg > 0.0 {
+                    world.boss_damage_taken_timer = 3.0;
+                    world.boss_still_time = 0.0;
+                }
             }
         } else if let Some(&mob_idx) = mob_index.get(&packet.target_id) {
             if let Some(mob) = world.mobs.get_mut(mob_idx) {
@@ -371,6 +383,10 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, DamageSourceKind::Ranged);
                     world.total_damage_dealt_to_boss += actual_dmg;
                     boss_hits.push(actual_dmg);
+                    if actual_dmg > 0.0 {
+                        world.boss_damage_taken_timer = 3.0;
+                        world.boss_still_time = 0.0;
+                    }
 
                     // Чумные Споры Директора: шанс отравить босса стрелами культистов
                     let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);

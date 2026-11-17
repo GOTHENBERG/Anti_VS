@@ -2,6 +2,7 @@ pub mod codex;
 pub mod cursor;
 pub mod dossier;
 pub mod font;
+pub mod item_dossier;
 pub mod renderer;
 pub mod settings;
 pub mod sprites;

@@ -13,6 +13,7 @@ use crate::render::textures::GameTextures;
 #[derive(Default, Debug)]
 pub struct UiInteraction {
     pub open_dossier_tier: Option<u8>,
+    pub open_item_inspection: Option<crate::render::item_dossier::ItemInspectionTarget>,
     pub direct_summon_tier: Option<u8>,
     pub direct_summon_max_tier: Option<u8>,
     pub upgrade_grade: Option<u8>,
@@ -230,6 +231,22 @@ pub fn render_ui(
             draw_rectangle(sx + slot_size - tag_w, wep_slots_y + slot_size - 11.0, tag_w, 11.0, tag_bg);
             fonts.draw_heading(&lvl_tag, sx + slot_size - tag_w + 2.0, wep_slots_y + slot_size - 2.0, 10.0, if w.limit_break_level > 0 || w.is_evolved { GOLD } else { WHITE });
 
+            // Значок [i] в правом верхнем углу слота для открытия полного Древа Синтеза
+            let btn_i_w = 13.0;
+            let btn_i_h = 12.0;
+            let btn_i_x = sx + slot_size - btn_i_w - 2.0;
+            let btn_i_y = wep_slots_y + 2.0;
+            let is_i_hover = mx >= btn_i_x && mx <= btn_i_x + btn_i_w && my >= btn_i_y && my <= btn_i_y + btn_i_h;
+
+            draw_rectangle(btn_i_x, btn_i_y, btn_i_w, btn_i_h, if is_i_hover { Color::new(0.35, 0.15, 0.50, 0.95) } else { Color::new(0.12, 0.14, 0.22, 0.90) });
+            draw_rectangle_lines(btn_i_x, btn_i_y, btn_i_w, btn_i_h, 1.0, if is_i_hover { GOLD } else { SKYBLUE });
+            let iw_text = fonts.measure_heading("i", 9.0).width;
+            fonts.draw_heading("i", btn_i_x + (btn_i_w - iw_text) / 2.0, btn_i_y + 9.5, 9.0, if is_i_hover { GOLD } else { WHITE });
+
+            if is_hover && is_mouse_button_pressed(MouseButton::Left) {
+                interaction.open_item_inspection = Some(crate::render::item_dossier::ItemInspectionTarget::Weapon(w.kind, w.level, w.limit_break_level));
+            }
+
             if is_hover {
                 hovered_tooltip = Some(HoverTooltip::Weapon(w.clone(), sx, wep_slots_y));
             }
@@ -288,6 +305,22 @@ pub fn render_ui(
             let tag_w = fonts.measure_heading(&lvl_tag, 9.0).width + 3.0;
             draw_rectangle(sx + p_slot_s - tag_w, sy + p_slot_s - 9.0, tag_w, 9.0, Color::new(0.0, 0.0, 0.0, 0.85));
             fonts.draw_heading(&lvl_tag, sx + p_slot_s - tag_w + 1.0, sy + p_slot_s - 1.0, 9.0, GOLD);
+
+            // Значок [i] в правом верхнем углу слота пассивки
+            let btn_i_w = 11.0;
+            let btn_i_h = 10.0;
+            let btn_i_x = sx + p_slot_s - btn_i_w - 1.0;
+            let btn_i_y = sy + 1.0;
+            let is_i_hover = mx >= btn_i_x && mx <= btn_i_x + btn_i_w && my >= btn_i_y && my <= btn_i_y + btn_i_h;
+
+            draw_rectangle(btn_i_x, btn_i_y, btn_i_w, btn_i_h, if is_i_hover { Color::new(0.45, 0.15, 0.55, 0.95) } else { Color::new(0.15, 0.10, 0.22, 0.90) });
+            draw_rectangle_lines(btn_i_x, btn_i_y, btn_i_w, btn_i_h, 1.0, if is_i_hover { GOLD } else { PURPLE });
+            let iw_text = fonts.measure_heading("i", 8.0).width;
+            fonts.draw_heading("i", btn_i_x + (btn_i_w - iw_text) / 2.0, btn_i_y + 8.0, 8.0, if is_i_hover { GOLD } else { WHITE });
+
+            if is_hover && is_mouse_button_pressed(MouseButton::Left) {
+                interaction.open_item_inspection = Some(crate::render::item_dossier::ItemInspectionTarget::Passive(p.kind, p.level));
+            }
 
             if is_hover {
                 hovered_tooltip = Some(HoverTooltip::Passive(p.clone(), sx, sy));
@@ -1116,7 +1149,7 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
         (format!("Эволюция (Ур. 8 + {}): -> {}", req_passive, evo_weapon), YELLOW)
     };
     fonts.draw_text(&evo_str, card_x + 12.0, card_y + 92.0, 11.5, evo_col);
-    fonts.draw_text("Совет: Босс выбирает апгрейды адаптивно в зависимости от угроз", card_x + 12.0, card_y + 114.0, 10.5, GRAY);
+    fonts.draw_text("💡 Кликните на слот или значок [i] для детального Древа Синтеза!", card_x + 12.0, card_y + 114.0, 10.5, GOLD);
 }
 
 /// Всплывающая подсказка для пассивного предмета Босса
@@ -1162,6 +1195,7 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::UkuleleResonance => format!("Текущий бонус: {}% шанс электро-цепочки на 4 цели", p.level * 25),
         PassiveType::FateWeaver => "Текущий бонус: Все шансы эффектов проверяются дважды в пользу босса".to_string(),
         PassiveType::SiegeMortar => "Текущий бонус: Взрывы 55px при каждом попадании снаряда (50% урона)".to_string(),
+        PassiveType::SporeMushroom => format!("Текущий бонус: +{:.0} HP/сек (+{:.1}% макс HP) при остановке", p.level as f32 * 18.0, p.level as f32 * 1.5),
     };
     fonts.draw_text(&bonus_text, card_x + 12.0, card_y + 44.0, 12.0, GREEN);
 
@@ -1196,6 +1230,7 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::UkuleleResonance => "Связка для синергии: Электро-цепи при любом ударе",
         PassiveType::FateWeaver => "Связка для синергии: Удваивает удачу для всех критов и проков",
         PassiveType::SiegeMortar => "Связка для синергии: Добавляет взрывы по площади ко всем атакам",
+        PassiveType::SporeMushroom => "Связка для выживания: Безусловная регенерация даже под градом ударов",
     };
     fonts.draw_text(evo_synergy, card_x + 12.0, card_y + 92.0, 11.5, YELLOW);
 }
