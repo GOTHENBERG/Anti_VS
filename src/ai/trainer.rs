@@ -48,6 +48,8 @@ struct DirectorEval {
     avg_damage_dealt: f32,
     avg_altars_built: usize,
     avg_altars_destroyed: usize,
+    avg_altar_uptime_rate: f32,
+    avg_altar_uptime_total: f32,
     avg_boss_level: u32,
     avg_boss_meditation: f32,
     avg_boss_distance_walked: f32,
@@ -296,6 +298,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                 let mut total_damage_dealt = 0.0;
                 let mut total_altars_built = 0;
                 let mut total_altars_destroyed = 0;
+                let mut total_altar_uptime = 0.0f32;
                 let mut total_boss_level = 0;
                 let mut total_boss_meditation = 0.0;
                 let mut total_boss_distance_walked = 0.0;
@@ -340,7 +343,11 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
 
                     // Урон ограничен (потолок 500), чтобы исключить гринд регенерации босса
                     let damage_reward = (res.damage_dealt_to_boss * 0.04).min(500.0);
-                    let altar_reward = (res.altars_built as f32 * 20.0).min(200.0);
+
+                    // ПРЯНИК ЗА АЛТАРИ: секунды жизни каждого алтаря, деленные на прошедшие минуты матча
+                    let elapsed_minutes = (res.survival_time / 60.0).max(0.1);
+                    let altar_uptime_rate = res.total_altar_uptime_seconds / elapsed_minutes;
+                    let altar_reward = (altar_uptime_rate * 2.5).min(1000.0);
 
                     let kill_score = (speed_reward + kill_bonus + early_blitz_bonus + damage_reward + altar_reward - total_time_whip).max(10.0);
                     total_score += kill_score;
@@ -348,6 +355,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     total_damage_dealt += res.damage_dealt_to_boss;
                     total_altars_built += res.altars_built;
                     total_altars_destroyed += res.altars_destroyed;
+                    total_altar_uptime += res.total_altar_uptime_seconds;
                     total_boss_level += res.boss_level;
                     total_boss_meditation += res.total_meditation_time;
                     total_boss_distance_walked += res.distance_walked;
@@ -369,13 +377,19 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     avg_mobs[t] = ((total_mobs[t] as f32) / m_f).round() as usize;
                 }
 
+                let avg_kill = total_kill_speed / m_f;
+                let avg_uptime = total_altar_uptime / m_f;
+                let avg_rate = avg_uptime / (avg_kill / 60.0).max(0.1);
+
                 DirectorEval {
                     idx: d_idx,
                     fitness: total_score / m_f,
-                    avg_kill_speed: total_kill_speed / m_f,
+                    avg_kill_speed: avg_kill,
                     avg_damage_dealt: total_damage_dealt / m_f,
                     avg_altars_built: ((total_altars_built as f32) / m_f).round() as usize,
                     avg_altars_destroyed: ((total_altars_destroyed as f32) / m_f).round() as usize,
+                    avg_altar_uptime_rate: avg_rate,
+                    avg_altar_uptime_total: avg_uptime,
                     avg_boss_level: (total_boss_level as f32 / m_f).round() as u32,
                     avg_boss_meditation: total_boss_meditation / m_f,
                     avg_boss_distance_walked: total_boss_distance_walked / m_f,
@@ -554,14 +568,17 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             best_dir_eval.avg_kill_speed / 60.0,
             best_dir_eval.avg_kill_speed
         );
+        let dir_altar_reward = (best_dir_eval.avg_altar_uptime_rate * 2.5).min(1000.0);
         log_line!(
-            "    * Очки фитнеса: Бонус за ранний конец: +{:.0} | Штраф за затяжку: -{:.0} | Урон нанесен: {:.0} HP (+{:.0})",
+            "    * Очки фитнеса: Бонус за ранний конец: +{:.0} | Штраф за затяжку: -{:.0} | Урон нанесен: {:.0} HP (+{:.0}) | Алтари (выживаемость: {:.1}с/мин): +{:.0}",
             dir_speed_reward, dir_time_whip,
-            best_dir_eval.avg_damage_dealt, dir_dmg_reward
+            best_dir_eval.avg_damage_dealt, dir_dmg_reward,
+            best_dir_eval.avg_altar_uptime_rate, dir_altar_reward
         );
         log_line!(
-            "    * Построено алтарей: {} | Призвано мобов: {} шт | Грейды орды: [Ярость: {}, Панцирь: {}, Чумные споры: {}]",
+            "    * Построено алтарей: {} [Сумм. жизнь: {:.1} мин] | Призвано мобов: {} шт | Грейды орды: [Ярость: {}, Панцирь: {}, Чумные споры: {}]",
             best_dir_eval.avg_altars_built,
+            best_dir_eval.avg_altar_uptime_total / 60.0,
             total_mobs_spawned,
             best_dir_eval.grades.0, best_dir_eval.grades.1, best_dir_eval.grades.2
         );

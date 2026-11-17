@@ -206,7 +206,7 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     obs
 }
 
-pub const DIRECTOR_INPUT_SIZE: usize = 114;
+pub const DIRECTOR_INPUT_SIZE: usize = 116;
 
 /// Преобразует тип оружия Босса в фиксированный индекс [0..39]
 pub fn weapon_type_to_index(w: WeaponType) -> usize {
@@ -288,13 +288,13 @@ pub fn passive_type_to_index(p: PassiveType) -> usize {
     }
 }
 
-/// Извлекает 114-мерный вектор сенсорного восприятия Директора (Director Perception Vector):
-/// 1. [0..9]   Карта и кинематика Босса (позиция X/Y, дистанции до 4 стен арены, вектор скорости, скорость)
-/// 2. [9..16]  Жизненный статус и действия Босса (% HP, макс HP, уровень, рывок/неуязвимость, откат рывка, медитация, отравление)
-/// 3. [16..37] Алтари Крови (общее число, топ-4 ближайших алтаря: флаг наличия, вектор dx/dy, дистанция, % HP)
-/// 4. [37..46] Экономика и армия Директора (очки душ, темп дохода, кд алтаря, уровни Ярости, Панциря, Чумных спор, мобы на арене, потрачено душ, время матча)
-/// 5. [46..86] Арсенал Босса (40 видов оружия и эволюций: нормализованный уровень 0.0..1.0)
-/// 6. [86..114] Пассивки и реликвии Босса (28 видов предметов: нормализованный уровень 0.0..1.0)
+/// Извлекает 116-мерный вектор сенсорного восприятия Директора (Director Perception Vector):
+/// 1. [0..9]    Карта и кинематика Босса (позиция X/Y, дистанции до 4 стен арены, вектор скорости, скорость)
+/// 2. [9..18]   Жизненный статус, XP и действия Босса (% HP, макс HP, уровень, прогресс XP [0..1], требование XP, рывок (булево), откат рывка (булево), медитация (булево), отравление (булево))
+/// 3. [18..39]  Алтари Крови (общее число, топ-4 ближайших алтаря: флаг наличия, вектор dx/dy, дистанция, % HP)
+/// 4. [39..48]  Экономика и армия Директора (очки душ, темп дохода, кд алтаря, уровни Ярости, Панциря, Чумных спор, мобы на арене, потрачено душ, время матча)
+/// 5. [48..88]  Арсенал Босса (40 видов оружия и эволюций: нормализованный уровень 0.0..1.0)
+/// 6. [88..116] Пассивки и реликвии Босса (28 видов предметов: нормализованный уровень 0.0..1.0)
 pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRECTOR_INPUT_SIZE] {
     let mut obs = [0.0f32; DIRECTOR_INPUT_SIZE];
     let boss_pos = world.boss_pos;
@@ -310,17 +310,20 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     obs[7] = (world.boss_vel.y / 300.0).clamp(-1.5, 1.5);
     obs[8] = (world.boss_vel.length() / 300.0).clamp(0.0, 2.0);
 
-    // 2. [9..16] Жизненный статус и действия Босса
+    // 2. [9..18] Жизненный статус, XP и действия Босса (строго булевы индикаторы состояний)
     obs[9] = (world.boss_health.current / world.boss_health.max).clamp(0.0, 1.0);
     obs[10] = (world.boss_health.max / 2000.0).clamp(0.1, 2.5);
     obs[11] = (world.boss_inventory.level as f32 / 50.0).clamp(0.0, 2.0);
-    obs[12] = if world.boss_invulnerable_timer > 0.0 { 1.0 } else { 0.0 }; // Активный рывок (неуязвим прямо сейчас)
-    obs[13] = (world.boss_dash_cooldown / 7.0).clamp(0.0, 1.0); // Готовность рывка (0.0 = готов)
-    obs[14] = if world.boss_still_time >= 1.2 { 1.0 } else { (world.boss_still_time / 1.2).clamp(0.0, 1.0) }; // Медитация
-    obs[15] = if world.boss_poison_timer > 0.0 { (world.boss_poison_timer / 2.5).clamp(0.0, 1.0) } else { 0.0 }; // Отравление
+    let next_xp = world.boss_inventory.xp_to_next_level.max(1.0);
+    obs[12] = (world.boss_inventory.current_xp / next_xp).clamp(0.0, 1.0); // Прогресс до след. уровня (0.0..1.0)
+    obs[13] = (next_xp / 500.0).clamp(0.05, 5.0); // Необходимый XP для текущего уровня
+    obs[14] = if world.boss_invulnerable_timer > 0.0 { 1.0 } else { 0.0 }; // Булево: босс прямо сейчас в рывке (неуязвим)
+    obs[15] = if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 };     // Булево: рывок босса готов к использованию
+    obs[16] = if world.boss_still_time >= 1.2 { 1.0 } else { 0.0 };        // Булево: босс прямо сейчас медитирует
+    obs[17] = if world.boss_poison_timer > 0.0 { 1.0 } else { 0.0 };       // Булево: босс отравлен ядом
 
-    // 3. [16..37] Алтари Крови
-    obs[16] = (world.structures.len() as f32 / 10.0).clamp(0.0, 1.0);
+    // 3. [18..39] Алтари Крови
+    obs[18] = (world.structures.len() as f32 / 10.0).clamp(0.0, 1.0);
 
     // Сортировка живых алтарей по расстоянию до босса
     let mut altars_sorted: Vec<&crate::ecs::world::StructureEntity> = world
@@ -336,7 +339,7 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
 
     let map_diag = (MAP_WIDTH * MAP_WIDTH + MAP_HEIGHT * MAP_HEIGHT).sqrt();
     for i in 0..4 {
-        let base = 17 + i * 5;
+        let base = 19 + i * 5;
         if let Some(st) = altars_sorted.get(i) {
             obs[base] = 1.0; // Алтарь существует
             let diff = st.pos - boss_pos;
@@ -353,32 +356,32 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
         }
     }
 
-    // 4. [37..46] Экономика и армия Директора
+    // 4. [39..48] Экономика и армия Директора
     if let Some(dir) = world.directors.first() {
-        obs[37] = (dir.points / 1000.0).clamp(0.0, 10.0);
-        obs[38] = (dir.income_rate / 50.0).clamp(0.0, 5.0);
-        obs[39] = (dir.altar_cooldown / 60.0).clamp(0.0, 1.0);
-        obs[40] = (dir.grade_fury as f32 / 20.0).clamp(0.0, 5.0);
-        obs[41] = (dir.grade_carapace as f32 / 20.0).clamp(0.0, 5.0);
-        obs[42] = (dir.grade_pestilence as f32 / 20.0).clamp(0.0, 5.0);
-        obs[43] = (dir.total_points_spent / 50000.0).clamp(0.0, 10.0);
+        obs[39] = (dir.points / 1000.0).clamp(0.0, 10.0);
+        obs[40] = (dir.income_rate / 50.0).clamp(0.0, 5.0);
+        obs[41] = (dir.altar_cooldown / 60.0).clamp(0.0, 1.0);
+        obs[42] = (dir.grade_fury as f32 / 20.0).clamp(0.0, 5.0);
+        obs[43] = (dir.grade_carapace as f32 / 20.0).clamp(0.0, 5.0);
+        obs[44] = (dir.grade_pestilence as f32 / 20.0).clamp(0.0, 5.0);
+        obs[45] = (dir.total_points_spent / 50000.0).clamp(0.0, 10.0);
     }
-    obs[44] = (world.mobs.len() as f32 / 500.0).clamp(0.0, 2.0);
-    obs[45] = (sim_time / 1020.0).clamp(0.0, 1.5);
+    obs[46] = (world.mobs.len() as f32 / 500.0).clamp(0.0, 2.0);
+    obs[47] = (sim_time / 1020.0).clamp(0.0, 1.5);
 
-    // 5. [46..86] Оружия и скиллы Босса (40 слотов)
+    // 5. [48..88] Оружия и скиллы Босса (40 слотов)
     for w in &world.boss_inventory.weapons {
         let idx = weapon_type_to_index(w.kind);
         if idx < 40 {
-            obs[46 + idx] = (w.level as f32 / 5.0).clamp(0.2, 1.6);
+            obs[48 + idx] = (w.level as f32 / 5.0).clamp(0.2, 1.6);
         }
     }
 
-    // 6. [86..114] Пассивки и реликвии Босса (28 слотов)
+    // 6. [88..116] Пассивки и реликвии Босса (28 слотов)
     for p in &world.boss_inventory.passives {
         let idx = passive_type_to_index(p.kind);
         if idx < 28 {
-            obs[86 + idx] = (p.level as f32 / 5.0).clamp(0.2, 1.6);
+            obs[88 + idx] = (p.level as f32 / 5.0).clamp(0.2, 1.6);
         }
     }
 

@@ -21,6 +21,7 @@ pub struct MatchResult {
     pub damage_dealt_to_boss: f32,
     pub altars_built: usize,
     pub altars_destroyed: usize,
+    pub total_altar_uptime_seconds: f32,
     pub mobs_spawned_by_tier: [usize; 16],
     pub director_grades: (u32, u32, u32),
     pub total_meditation_time: f32,
@@ -44,6 +45,7 @@ pub fn run_headless_simulation(
     let mut sim_time = 0.0f32;
     let mut director_decision_timer = 0.0f32;
     let mut altars_built = 1;
+    let mut total_altar_uptime_seconds = 0.0f32;
     let mut total_meditation_time = 0.0f32;
     let mut total_distance_walked = 0.0f32;
     let mut total_dashes = 0usize;
@@ -166,6 +168,13 @@ pub fn run_headless_simulation(
         update_skills(&mut world, dt);
         update_movement(&mut world, dt);
         update_combat(&mut world, dt);
+
+        // Суммируем каждую секунду жизни каждого живого алтаря
+        for st in &world.structures {
+            if st.health.is_alive() {
+                total_altar_uptime_seconds += dt;
+            }
+        }
     }
 
     let boss_won = world.boss_health.is_alive() && sim_time >= max_duration_seconds;
@@ -184,6 +193,7 @@ pub fn run_headless_simulation(
         damage_dealt_to_boss: dmg_to_boss,
         altars_built,
         altars_destroyed: altars_built.saturating_sub(world.structures.len()),
+        total_altar_uptime_seconds,
         mobs_spawned_by_tier,
         director_grades,
         total_meditation_time,
