@@ -33,9 +33,9 @@ pub fn update_meditation(world: &mut World, dt: f32) {
         world.boss_still_time += dt;
 
         // Если стоит более 2 секунды подряд -> медитация активирована!
-        if world.boss_still_time >= 2 {
-            if prev_still < 2 {
-                world.add_floating_text(boss_pos + Vec2::new(0.0, -35.0), "МЕДИТАЦИЯ (+HP, +XP)".to_string(), GREEN, 2);
+        if world.boss_still_time >= 2.0 {
+            if prev_still < 2.0 {
+                world.add_floating_text(boss_pos + Vec2::new(0.0, -35.0), "МЕДИТАЦИЯ (+HP, +XP)".to_string(), GREEN, 2.0);
             }
             // Восстановление 2% от максимального здоровья в секунду
             let heal_amount = world.boss_health.max * 0.02 * dt;
