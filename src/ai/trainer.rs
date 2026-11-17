@@ -246,13 +246,14 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
                     }
 
                     // 1. Фитнес Босса (Чистый Reinforcement Learning):
-                    // Время выживания + победа + прокачка (сбор душ) + разрушение алтарей
+                    // Время выживания + победа + прокачка (сбор душ) + разрушение алтарей + медитация (сбалансированная)
                     let time_reward = res.survival_time * 3.5;
                     let win_bonus = if res.boss_won { 2000.0 } else { 0.0 };
                     let level_reward = (res.boss_level as f32) * 20.0;
                     let altar_reward = (res.altars_destroyed as f32) * 40.0;
+                    let meditation_reward = res.total_meditation_time * 0.5625; // 0.75 - 25% = 0.5625
 
-                    let score = (time_reward + win_bonus + level_reward + altar_reward).max(10.0);
+                    let score = (time_reward + win_bonus + level_reward + altar_reward + meditation_reward).max(10.0);
                     total_score += score;
                 }
 
@@ -442,6 +443,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         let boss_time_reward = best_boss_eval.avg_survival * 3.5;
         let boss_level_reward = (best_boss_eval.avg_level as f32) * 20.0;
         let boss_altar_reward = (best_boss_eval.avg_altars_destroyed as f32) * 40.0;
+        let boss_meditation_reward = best_boss_eval.avg_meditation_time * 0.5625;
         let dir_speed_reward = (1020.0 - best_dir_eval.avg_kill_speed).max(0.0) * 5.0;
         let dir_time_whip = if best_dir_eval.avg_kill_speed > 300.0 {
             (best_dir_eval.avg_kill_speed - 300.0) * 4.0
@@ -505,12 +507,14 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             boss_speed
         );
         log_line!(
-            "    * Очки фитнеса: Выживание: +{:.0} | Уровень (x{}): +{:.0} | Алтари (x{}): +{:.0}",
+            "    * Очки фитнеса: Выживание: +{:.0} | Уровень (x{}): +{:.0} | Алтари (x{}): +{:.0} | Медитация: {:.1} мин (+{:.0})",
             boss_time_reward,
             best_boss_eval.avg_level,
             boss_level_reward,
             best_boss_eval.avg_altars_destroyed,
-            boss_altar_reward
+            boss_altar_reward,
+            best_boss_eval.avg_meditation_time / 60.0,
+            boss_meditation_reward
         );
         log_line!(
             "    * Получено урона: {:.0} HP [Ближний: {:.0}, Дальний: {:.0}, Окружение: {:.0}] | Разрушено алтарей: {}",
