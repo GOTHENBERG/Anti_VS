@@ -209,7 +209,7 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) -> (f32, bo
     let boss_pos = world.boss_pos;
     let mut total_force = Vec2::ZERO;
 
-    let (nn_bias, repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp, neural_dash, nn_stand_still) =
+    let (nn_bias, repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp, neural_dash) =
         if let Some(ref net) = model.neural_net {
             let obs = crate::ai::sensors::extract_boss_observations(world);
             let nn_out = net.forward(&obs);
@@ -221,8 +221,7 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) -> (f32, bo
                 150.0 + nn_out[5] * 400.0,
                 (8.0 + nn_out[6] * 10.0) as usize,
                 model.retreat_hp_threshold,
-                nn_out[6] > 0.70,
-                nn_out[7] > 0.60,
+                nn_out[6] > 0.60,
             )
         } else {
             (
@@ -233,7 +232,6 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) -> (f32, bo
                 model.sniper_hunt_aggression,
                 model.dash_danger_threshold,
                 model.retreat_hp_threshold,
-                false,
                 false,
             )
         };
@@ -333,10 +331,14 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) -> (f32, bo
         total_force.y -= push * factor * factor;
     }
 
-    // 6. Экстренный рывок (Dash): RL автономия
-    let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
-    let should_dash = (mobs_in_close >= dash_threshold || hp_ratio < retreat_hp || heavy_ranged_fire || neural_dash)
-        && world.boss_dash_cooldown <= 0.0;
+    // 6. Рывок (Dash): 100% автономия нейросети (Чистый Reinforcement Learning)
+    let should_dash = if model.neural_net.is_some() {
+        neural_dash && world.boss_dash_cooldown <= 0.0
+    } else {
+        let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
+        (mobs_in_close >= dash_threshold || hp_ratio < retreat_hp || heavy_ranged_fire)
+            && world.boss_dash_cooldown <= 0.0
+    };
 
     let mut walked_distance = 0.0f32;
     let mut dashed = false;
@@ -360,9 +362,7 @@ fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) -> (f32, bo
     } else {
         let prev_walk_pos = world.boss_pos;
         let max_speed = world.boss_inventory.get_movement_speed(160.0);
-        let desired = if nn_stand_still {
-            Vec2::ZERO
-        } else if total_force.length_squared() > 4.0 {
+        let desired = if total_force.length_squared() > 4.0 {
             total_force.clamp_length_max(max_speed)
         } else {
             Vec2::ZERO

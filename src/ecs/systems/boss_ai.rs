@@ -26,7 +26,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
 
     // Извлекаем сенсорный вектор (150 входов) и пропускаем через глубокую нейросеть
     let nn_steering_bias;
-    let (repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp, neural_dash_trigger, nn_stand_still) =
+    let (repel_weight, gem_pull_weight, altar_aggression, sniper_aggression, dash_threshold, retreat_hp, neural_dash_trigger) =
         if let Some(ref model) = world.boss_model {
             if let Some(ref net) = model.neural_net {
                 let obs = crate::ai::sensors::extract_boss_observations(world);
@@ -39,8 +39,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
                     150.0 + nn_out[5] * 400.0,
                     (8.0 + nn_out[6] * 10.0) as usize,
                     model.retreat_hp_threshold,
-                    nn_out[6] > 0.70,
-                    nn_out[7] > 0.60,
+                    nn_out[6] > 0.60,
                 )
             } else {
                 nn_steering_bias = Vec2::ZERO;
@@ -52,12 +51,11 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
                     model.dash_danger_threshold,
                     model.retreat_hp_threshold,
                     false,
-                    false,
                 )
             }
         } else {
             nn_steering_bias = Vec2::ZERO;
-            (440.0, 180.0, 260.0, 310.0, 13, 0.32, false, false)
+            (440.0, 180.0, 260.0, 310.0, 13, 0.32, false)
         };
 
     total_force += nn_steering_bias;
@@ -181,14 +179,17 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         total_force.y -= wall_push * factor * factor;
     }
 
-    // 4. Экстренный рывок: RL автономия и Context Steering Dash
-    // Триггер: импульс нейросети (neural_dash_trigger) ИЛИ опасность (мобы в упор, критическое HP, плотный обстрел)
-    let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
-    let should_dash = (mobs_in_close_radius >= dash_threshold
-        || is_critical_hp
-        || heavy_ranged_fire
-        || neural_dash_trigger)
-        && world.boss_dash_cooldown <= 0.0;
+    // 4. Рывок: RL автономия (100% нейросеть при наличии обученной модели)
+    let is_nn = world.boss_model.as_ref().and_then(|m| m.neural_net.as_ref()).is_some();
+    let should_dash = if is_nn {
+        neural_dash_trigger && world.boss_dash_cooldown <= 0.0
+    } else {
+        let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
+        (mobs_in_close_radius >= dash_threshold
+            || is_critical_hp
+            || heavy_ranged_fire)
+            && world.boss_dash_cooldown <= 0.0
+    };
 
     if should_dash {
         // Опрос по 8 радиальным лучам (шаг 45 градусов / PI / 4.0)
@@ -273,11 +274,9 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
             }
         }
     } else {
-        // Обычное передвижение по вектору сил (или осознанная остановка для медитации по желанию нейросети)
+        // Обычное передвижение по вектору сил
         let max_speed = world.boss_inventory.get_movement_speed(160.0);
-        let desired_vel = if nn_stand_still {
-            Vec2::ZERO
-        } else if total_force.length_squared() > 4.0 {
+        let desired_vel = if total_force.length_squared() > 4.0 {
             total_force.clamp_length_max(max_speed)
         } else {
             Vec2::ZERO
