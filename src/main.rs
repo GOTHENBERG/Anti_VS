@@ -14,7 +14,7 @@ mod render;
 use crate::audio::AudioManager;
 
 use crate::content::mobs::{get_squad_config, spawn_squad_perimeter};
-use crate::content::structures::{spawn_blood_altar, BLOOD_ALTAR_COST};
+use crate::content::structures::{can_place_blood_altar, spawn_blood_altar, try_spawn_blood_altar, BLOOD_ALTAR_COST};
 use crate::core::time::GameClock;
 use crate::core::{MAP_HEIGHT, MAP_WIDTH};
 use crate::ecs::systems::{
@@ -58,7 +58,10 @@ async fn main() {
         return;
     }
 
+    let boss_model = crate::ai::load_trained_boss_model();
     let mut world = World::new();
+    // Модель загружается один раз за сессию, а не на каждом создании мира.
+    world.boss_model = boss_model.clone();
     let mut clock = GameClock::new();
     let mut net_driver = LocalDriver::new();
     let fonts = GameFonts::load();
@@ -234,6 +237,7 @@ async fn main() {
 
         if is_key_pressed(KeyCode::R) {
             world = World::new();
+            world.boss_model = boss_model.clone();
             clock = GameClock::new();
             cam_pos = world.boss_pos;
             follow_boss = true;
@@ -397,6 +401,7 @@ async fn main() {
                 }
                 crate::render::settings::SettingsAction::Restart => {
                     world = World::new();
+                    world.boss_model = boss_model.clone();
                     clock = GameClock::new();
                     cam_pos = world.boss_pos;
                     follow_boss = true;
@@ -591,6 +596,9 @@ fn execute_command(world: &mut World, cmd: Command) {
             };
             if can_spawn {
                 spawn_squad_perimeter(world, tier);
+                if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
+                    director.time_since_last_spawn = 0.0;
+                }
                 world.push_audio(crate::audio::AudioEvent::SummonMob);
             }
         }
@@ -609,6 +617,9 @@ fn execute_command(world: &mut World, cmd: Command) {
                 spawn_squad_perimeter(world, tier);
             }
             if count > 0 {
+                if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
+                    director.time_since_last_spawn = 0.0;
+                }
                 world.push_audio(crate::audio::AudioEvent::SummonMob);
                 world.add_floating_text(
                     world.boss_pos,
@@ -707,19 +718,25 @@ fn execute_command(world: &mut World, cmd: Command) {
             }
         }
         Command::PlaceStructure { director_id, pos, .. } => {
-            if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
-                if director.altar_cooldown <= 0.0
-                    && director.spend_points(BLOOD_ALTAR_COST)
-                {
-                    director.altar_cooldown = director.altar_max_cooldown;
-                    let margin = 35.0;
-                    let clamped_pos = Vec2::new(
-                        pos.x.clamp(margin, MAP_WIDTH - margin),
-                        pos.y.clamp(margin, MAP_HEIGHT - margin),
-                    );
-                    spawn_blood_altar(world, clamped_pos);
-                    world.push_audio(crate::audio::AudioEvent::AltarBuild);
+            let margin = 45.0;
+            let clamped_pos = Vec2::new(
+                pos.x.clamp(margin, MAP_WIDTH - margin),
+                pos.y.clamp(margin, MAP_HEIGHT - margin),
+            );
+            let mut can_build = false;
+            if can_place_blood_altar(world, clamped_pos) {
+                if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
+                    if director.altar_cooldown <= 0.0
+                        && director.spend_points(BLOOD_ALTAR_COST)
+                    {
+                        director.altar_cooldown = director.altar_max_cooldown;
+                        can_build = true;
+                    }
                 }
+            }
+            if can_build {
+                try_spawn_blood_altar(world, clamped_pos);
+                world.push_audio(crate::audio::AudioEvent::AltarBuild);
             }
         }
         Command::SetMobPage { director_id, page } => {

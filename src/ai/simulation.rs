@@ -1,9 +1,16 @@
 use macroquad::prelude::*;
 use crate::core::rand;
 use crate::ai::models::{BossModel, DirectorModel};
-use crate::content::mobs::{get_squad_config, spawn_squad_perimeter};
-use crate::content::structures::{spawn_blood_altar, BLOOD_ALTAR_COST};
+use crate::ai::neural_net::{
+    DirectorActionContext, INPUT_SIZE, OUT_DASH, OUT_DASH_X, OUT_DASH_Y, OUT_MOVE_MAG, OUT_MOVE_X,
+    OUT_MOVE_Y, OUT_REST,
+};
+use crate::content::mobs::{get_squad_config, spawn_squad_in_sector};
+use crate::content::structures::{
+    can_place_blood_altar, spawn_blood_altar, try_spawn_blood_altar, BLOOD_ALTAR_COST,
+};
 use crate::core::{MAP_HEIGHT, MAP_WIDTH};
+use crate::ecs::components::combat::Faction;
 use crate::ecs::systems::{
     combat::update_combat,
     director::update_director,
@@ -13,15 +20,31 @@ use crate::ecs::systems::{
 };
 use crate::ecs::world::World;
 
+/// Решение Босса, закэшированное между «мыслями» (5 Гц: раз в 0.2 сек).
+/// Это ускоряет обучение примерно в 4 раза относительно 20 Гц и не меняет физику мира.
+#[derive(Clone, Copy, Debug)]
+struct BossAction {
+    move_dir: Vec2,
+    move_mag: f32,
+    dash: bool,
+    dash_dir: Vec2,
+    rest: bool,
+}
+
+const BOSS_THINK_INTERVAL: f32 = 0.2;
+
 #[derive(Clone, Debug)]
 pub struct MatchResult {
     pub survival_time: f32,
     pub boss_level: u32,
     pub boss_won: bool,
     pub damage_dealt_to_boss: f32,
+    pub boss_max_health: f32,
     pub altars_built: usize,
     pub altars_destroyed: usize,
     pub total_altar_uptime_seconds: f32,
+    pub director_points_spent: f32,
+    pub director_points_unspent: f32,
     pub mobs_spawned_by_tier: [usize; 16],
     pub director_grades: (u32, u32, u32),
     pub total_meditation_time: f32,
@@ -30,20 +53,31 @@ pub struct MatchResult {
     pub boss_damage_stats: crate::ecs::components::inventory::BossDamageStats,
     pub final_weapons: Vec<(crate::ecs::components::inventory::WeaponType, u8)>,
     pub final_passives: Vec<(crate::ecs::components::inventory::PassiveType, u8)>,
+    /// Лимит длительности матча (для нормализации фитнеса между поколениями).
+    pub match_cap: f32,
+    /// Seed матча: позволяет воспроизвести любой результат.
+    pub seed: u64,
 }
 
-/// Выполняет один раунд автономной ускоренной симуляции сражения без рендеринга
+/// Выполняет один раунд автономной ускоренной симуляции сражения без рендеринга.
+///
+/// `seed` детерминирует весь матч: одинаковые модели + одинаковый seed дают
+/// идентичный результат при любом количестве потоков Rayon.
 pub fn run_headless_simulation(
     boss_model: &BossModel,
     director_model: &DirectorModel,
+    seed: u64,
     max_duration_seconds: f32,
 ) -> MatchResult {
+    rand::seed(seed);
+
     let mut world = World::new();
     world.is_headless = true;
     world.boss_model = Some(boss_model.clone());
+
     let dt = 0.05f32; // 20 тиков на каждую виртуальную секунду
     let mut sim_time = 0.0f32;
-    let mut director_decision_timer = 0.0f32;
+    let mut director_decision_timer = 0.4; // решение в первом же тике
     let mut altars_built = 1;
     let mut total_altar_uptime_seconds = 0.0f32;
     let mut total_meditation_time = 0.0f32;
@@ -54,188 +88,55 @@ pub fn run_headless_simulation(
     // Начальный алтарь
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
 
+    let mut cached_action: Option<BossAction> = None;
+    let mut boss_think_timer = BOSS_THINK_INTERVAL;
+
     while world.boss_health.is_alive() && sim_time < max_duration_seconds {
         sim_time += dt;
         director_decision_timer += dt;
 
-        // 1. Принятие тактических решений Директором (чистый End-to-End RL через DirectorBrainNet)
+        // 1. Тактические решения Директора (каждые 0.4 сек)
         if director_decision_timer >= 0.4 {
-            director_decision_timer = 0.0;
-            let dir_obs = crate::ai::sensors::extract_director_observations(&world, sim_time);
-
-            if let Some(ref net) = director_model.neural_net {
-                let total_spent = world.directors.first().map(|d| d.total_points_spent).unwrap_or(0.0);
-                let decision = net.forward(&dir_obs, total_spent);
-
-                // 1.1 Постройка Алтаря Крови (Голова В)
-                if decision.should_build_altar {
-                    let can_build = if let Some(director) = world.directors.first() {
-                        director.altar_cooldown <= 0.0 && director.points >= BLOOD_ALTAR_COST
-                    } else {
-                        false
-                    };
-
-                    if can_build {
-                        if let Some(director) = world.directors.first_mut() {
-                            director.spend_points(BLOOD_ALTAR_COST);
-                            director.altar_cooldown = director.altar_max_cooldown;
-                        }
-                        spawn_blood_altar(&mut world, decision.altar_target_pos);
-                        altars_built += 1;
-                    }
-                }
-
-                // 1.2 Единая Голова Экономики (Unified Economic Head: 0 = Пас/Копить, 1..16 = Отряды, 17..19 = Грейды)
-                match decision.target_action {
-                    0 => {
-                        // Пас / Накопление душ (saving souls for high-cost squads or upgrades)
-                    }
-                    1..=16 => {
-                        let tier = decision.target_action as u8;
-                        let config = get_squad_config(tier);
-                        let can_spawn = if let Some(director) = world.directors.first() {
-                            let is_unlocked = director.total_points_spent >= config.unlock_spent_threshold;
-                            is_unlocked && director.points >= config.cost
-                        } else {
-                            false
-                        };
-
-                        if can_spawn {
-                            if let Some(director) = world.directors.first_mut() {
-                                if director.spend_points(config.cost) {
-                                    spawn_squad_perimeter(&mut world, tier);
-                                    mobs_spawned_by_tier[(tier - 1) as usize] += config.count;
-                                }
-                            }
-                        }
-                    }
-                    17 => {
-                        // Улучшение Ярости (Fury: +15% к урону мобов)
-                        if let Some(director) = world.directors.first_mut() {
-                            let fury_cost = 100.0 * (director.grade_fury as f32 + 1.0);
-                            if director.spend_points(fury_cost) {
-                                director.grade_fury += 1;
-                            }
-                        }
-                    }
-                    18 => {
-                        // Улучшение Панциря (Carapace: +20% к здоровью мобов)
-                        if let Some(director) = world.directors.first_mut() {
-                            let carapace_cost = 120.0 * (director.grade_carapace as f32 + 1.0);
-                            if director.spend_points(carapace_cost) {
-                                director.grade_carapace += 1;
-                            }
-                        }
-                    }
-                    19 => {
-                        // Улучшение Чумных спор (Pestilence: ядовитый урон от атак и миазмов алтарей)
-                        if let Some(director) = world.directors.first_mut() {
-                            let pestilence_cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
-                            if director.spend_points(pestilence_cost) {
-                                director.grade_pestilence += 1;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            } else {
-                // Fallback (если у модели нет обученной нейросети)
-                let mut should_spawn_altar = false;
-                let mut altar_pos = Vec2::ZERO;
-                let mut tier_to_spawn = None;
-
-                if let Some(director) = world.directors.first() {
-                    let cooldown = director.altar_cooldown;
-                    let points = director.points;
-                    let spent = director.total_points_spent;
-
-                    if cooldown <= 0.0 && points >= BLOOD_ALTAR_COST {
-                        let build_roll = rand::gen_range(0.0, 1.0);
-                        if build_roll < director_model.altar_build_priority {
-                            should_spawn_altar = true;
-                            let altar_angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
-                            let altar_dist = rand::gen_range(350.0, 750.0);
-                            altar_pos = (world.boss_pos + Vec2::new(altar_angle.cos() * altar_dist, altar_angle.sin() * altar_dist))
-                                .clamp(Vec2::new(35.0, 35.0), Vec2::new(MAP_WIDTH - 35.0, MAP_HEIGHT - 35.0));
-                        }
-                    }
-
-                    let remaining_points = if should_spawn_altar { points - BLOOD_ALTAR_COST } else { points };
-                    let mut eligible_squads = Vec::with_capacity(8);
-                    let mut total_weight = 0.0f32;
-
-                    for (tier_idx, &w) in director_model.squad_spawn_weights.iter().enumerate() {
-                        let tier = (tier_idx + 1) as u8;
-                        let config = get_squad_config(tier);
-                        let is_unlocked = spent >= config.unlock_spent_threshold;
-                        if is_unlocked && remaining_points >= config.cost && w > 0.0 {
-                            eligible_squads.push((tier, config.cost, w));
-                            total_weight += w;
-                        }
-                    }
-
-                    if !eligible_squads.is_empty() && total_weight > 0.0 {
-                        let mut roll = rand::gen_range(0.0, total_weight);
-                        for (tier, cost, w) in eligible_squads {
-                            if roll <= w {
-                                tier_to_spawn = Some((tier, cost));
-                                break;
-                            }
-                            roll -= w;
-                        }
-                    }
-                }
-
-                if should_spawn_altar {
-                    if let Some(director) = world.directors.first_mut() {
-                        director.spend_points(BLOOD_ALTAR_COST);
-                        director.altar_cooldown = director.altar_max_cooldown;
-                    }
-                    spawn_blood_altar(&mut world, altar_pos);
-                    altars_built += 1;
-                }
-
-                if let Some((tier, cost)) = tier_to_spawn {
-                    if let Some(director) = world.directors.first_mut() {
-                        if director.spend_points(cost) {
-                            spawn_squad_perimeter(&mut world, tier);
-                            if tier >= 1 && tier <= 16 {
-                                let count = get_squad_config(tier).count;
-                                mobs_spawned_by_tier[(tier - 1) as usize] += count;
-                            }
-                        }
-                    }
-                }
-
-                if let Some(director) = world.directors.first_mut() {
-                    let fury_cost = 100.0 * (director.grade_fury as f32 + 1.0);
-                    let carapace_cost = 120.0 * (director.grade_carapace as f32 + 1.0);
-                    let pestilence_cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
-
-                    if director.points >= pestilence_cost && director.grade_pestilence <= director.grade_fury {
-                        if director.spend_points(pestilence_cost) {
-                            director.grade_pestilence += 1;
-                        }
-                    } else if director.points >= carapace_cost && director.grade_carapace <= director.grade_fury {
-                        if director.spend_points(carapace_cost) {
-                            director.grade_carapace += 1;
-                        }
-                    } else if director.points >= fury_cost {
-                        if director.spend_points(fury_cost) {
-                            director.grade_fury += 1;
-                        }
-                    }
-                }
-            }
+            director_decision_timer -= 0.4;
+            run_director_decision(
+                &mut world,
+                sim_time,
+                director_model,
+                &mut altars_built,
+                &mut mobs_spawned_by_tier,
+            );
         }
 
-        // 2. Системные обновления игрового мира
+        // 2. Системные обновления мира
         update_director(&mut world, dt);
-        let (walk_dist, dashed) = update_boss_ai_sim(&mut world, dt, boss_model);
+
+        if world.boss_dash_cooldown > 0.0 {
+            world.boss_dash_cooldown = (world.boss_dash_cooldown - dt).max(0.0);
+        }
+        if world.boss_invulnerable_timer > 0.0 {
+            world.boss_invulnerable_timer = (world.boss_invulnerable_timer - dt).max(0.0);
+        }
+        world.boss_inventory.update_damage_decay(dt);
+
+        // 3. Мышление Босса (20 Гц) и применение закэшированного действия
+        boss_think_timer += dt;
+        if cached_action.is_none() || boss_think_timer >= BOSS_THINK_INTERVAL {
+            boss_think_timer = 0.0;
+            cached_action = Some(think_boss(&world, boss_model));
+        }
+        let action = cached_action.unwrap_or(BossAction {
+            move_dir: Vec2::ZERO,
+            move_mag: 0.0,
+            dash: false,
+            dash_dir: Vec2::X,
+            rest: false,
+        });
+        let (walk_dist, dashed) = apply_boss_action(&mut world, action, dt);
         total_distance_walked += walk_dist;
         if dashed {
             total_dashes += 1;
         }
+
         update_meditation(&mut world, dt);
         if world.boss_still_time >= 1.2 {
             total_meditation_time += dt;
@@ -252,23 +153,35 @@ pub fn run_headless_simulation(
         }
     }
 
-    let boss_won = world.boss_health.is_alive() && sim_time >= max_duration_seconds;
+    let boss_won = world.boss_health.is_alive();
     let final_level = world.boss_inventory.level;
     let dmg_to_boss = world.total_damage_dealt_to_boss;
-    let director_grades = world.directors.first()
-        .map(|d| (d.grade_fury, d.grade_carapace, d.grade_pestilence))
-        .unwrap_or((0, 0, 0));
+    let (director_grades, points_spent, points_unspent) = world
+        .directors
+        .first()
+        .map(|d| {
+            (
+                (d.grade_fury, d.grade_carapace, d.grade_pestilence),
+                d.total_points_spent,
+                d.points,
+            )
+        })
+        .unwrap_or(((0, 0, 0), 0.0, 0.0));
     let final_weapons = world.boss_inventory.weapons.iter().map(|w| (w.kind, w.level)).collect();
     let final_passives = world.boss_inventory.passives.iter().map(|p| (p.kind, p.level)).collect();
+    let alive_altars = world.structures.iter().filter(|s| s.health.is_alive()).count();
 
     MatchResult {
         survival_time: sim_time,
         boss_level: final_level,
         boss_won,
         damage_dealt_to_boss: dmg_to_boss,
+        boss_max_health: world.boss_health.max,
         altars_built,
-        altars_destroyed: altars_built.saturating_sub(world.structures.len()),
+        altars_destroyed: altars_built.saturating_sub(alive_altars),
         total_altar_uptime_seconds,
+        director_points_spent: points_spent,
+        director_points_unspent: points_unspent,
         mobs_spawned_by_tier,
         director_grades,
         total_meditation_time,
@@ -277,125 +190,378 @@ pub fn run_headless_simulation(
         boss_damage_stats: world.boss_inventory.damage_stats.clone(),
         final_weapons,
         final_passives,
+        match_cap: max_duration_seconds,
+        seed,
     }
 }
 
-/// Симуляция ИИ Босса с использованием параметров обученной модели и нейросети
-fn update_boss_ai_sim(world: &mut World, dt: f32, model: &BossModel) -> (f32, bool) {
-    if world.boss_dash_cooldown > 0.0 {
-        world.boss_dash_cooldown = (world.boss_dash_cooldown - dt).max(0.0);
-    }
-    if world.boss_invulnerable_timer > 0.0 {
-        world.boss_invulnerable_timer = (world.boss_invulnerable_timer - dt).max(0.0);
-    }
+/// Прямой проход сети Босса с новой семантикой 7 выходов.
+fn think_boss(world: &World, model: &BossModel) -> BossAction {
+    if let Some(ref net) = model.neural_net {
+        let obs: [f32; INPUT_SIZE] = crate::ai::sensors::extract_boss_observations(world);
+        let out = net.forward(&obs);
 
-    // Затухание недавнего урона и обновление внутренней телеметрии
-    world.boss_inventory.update_damage_decay(dt);
+        let intent = Vec2::new(out[OUT_MOVE_X], out[OUT_MOVE_Y]);
+        let len_sq = intent.length_squared();
+        let move_dir = if len_sq > 0.0025 { intent / len_sq.sqrt() } else { Vec2::ZERO };
+        let move_mag = out[OUT_MOVE_MAG].clamp(0.0, 1.0);
+        let rest = out[OUT_REST] > 0.5;
 
-    let boss_pos = world.boss_pos;
+        let dash_raw = Vec2::new(out[OUT_DASH_X], out[OUT_DASH_Y]);
+        let dash_dir = if dash_raw.length_squared() > 0.04 {
+            dash_raw.normalize()
+        } else if move_dir.length_squared() > 0.5 {
+            move_dir
+        } else {
+            Vec2::X
+        };
+
+        BossAction {
+            move_dir,
+            move_mag,
+            dash: out[OUT_DASH] > 0.5,
+            dash_dir,
+            rest,
+        }
+    } else {
+        // Fallback: простая эвристика выживания для моделей без нейросети.
+        let boss_pos = world.boss_pos;
+        let mut dir = Vec2::ZERO;
+        let mut buf: Vec<usize> = Vec::with_capacity(64);
+        world.spatial_grid.query_nearby_into(boss_pos, 220.0, &mut buf);
+        for idx in buf.iter().copied() {
+            if let Some(mob) = world.mobs.get(idx) {
+                if !mob.health.is_alive() {
+                    continue;
+                }
+                let diff = boss_pos - mob.pos;
+                let dist = diff.length().max(1.0);
+                if dist < 220.0 {
+                    dir += diff / dist * (1.0 - dist / 220.0) * 3.0;
+                }
+            }
+        }
+        let center = Vec2::new(MAP_WIDTH * 0.5, MAP_HEIGHT * 0.5);
+        let to_center = center - boss_pos;
+        if to_center.length_squared() > 1.0 {
+            dir += to_center.normalize() * 0.4;
+        }
+        let move_dir = if dir.length_squared() > 0.01 { dir.normalize() } else { Vec2::ZERO };
+        BossAction {
+            move_dir,
+            move_mag: 1.0,
+            dash: false,
+            dash_dir: move_dir,
+            rest: false,
+        }
+    }
+}
+
+/// Применяет действие Босса к миру. Полностью совпадает с рантаймом boss_ai.rs.
+fn apply_boss_action(world: &mut World, action: BossAction, dt: f32) -> (f32, bool) {
     let map_w = MAP_WIDTH;
     let map_h = MAP_HEIGHT;
 
-    let (desired_vel, should_dash, dash_dir) = if let Some(ref net) = model.neural_net {
-        // --- 100% ЧИСТЫЙ END-TO-END REINFORCEMENT LEARNING ---
-        // Никаких вспомогательных сил, потенциальных полей или эвристических триггеров!
-        // Вся кинематика движения и триггер рывка определяются исключительно прямым проходом через синапсы нейросети.
-        let obs = crate::ai::sensors::extract_boss_observations(world);
-        let nn_out = net.forward(&obs);
-        let move_intent = Vec2::new(nn_out[0], nn_out[1]);
-        let max_speed = world.boss_inventory.get_movement_speed(160.0);
-
-        // Бинарная кинематика (Bang-Bang): строго 100% максимальной скорости либо полный стоп (0%)!
-        let (vel, d_dir) = if move_intent.length_squared() > 0.04 {
-            let dir = move_intent.normalize();
-            (dir * max_speed, dir)
-        } else {
-            (Vec2::ZERO, Vec2::X)
-        };
-
-        let dash = (nn_out[6] > 0.60) && world.boss_dash_cooldown <= 0.0;
-        (vel, dash, d_dir)
-    } else {
-        // Эвристический Context Steering (только как fallback, если у модели нет обученной нейросети)
-        let mut total_force = Vec2::ZERO;
-        let mobs_in_close = world.spatial_grid.query_nearby(boss_pos, 90.0).len();
-        let hp_ratio = world.boss_health.current / world.boss_health.max;
-
-        let nearby = world.spatial_grid.query_nearby(boss_pos, 180.0);
-        for idx in nearby {
-            if let Some(mob) = world.mobs.get(idx) {
-                let repel = crate::core::math::calculate_repel_force(boss_pos, mob.pos, 180.0, model.mob_repulsion_weight);
-                total_force += repel;
-            }
-        }
-
-        let mut closest_gem_dist_sq = 280.0 * 280.0;
-        let mut gem_pull = Vec2::ZERO;
-        for gem in &world.gems {
-            let dist_sq = gem.pos.distance_squared(boss_pos);
-            if dist_sq < closest_gem_dist_sq {
-                closest_gem_dist_sq = dist_sq;
-                gem_pull = crate::core::math::calculate_attract_force(boss_pos, gem.pos, 280.0, model.gem_attraction_weight);
-            }
-        }
-        total_force += gem_pull;
-
-        let wall_margin = 220.0;
-        let push = model.wall_repel_weight;
-        if boss_pos.x < wall_margin {
-            let factor = 1.0 - (boss_pos.x / wall_margin).clamp(0.0, 1.0);
-            total_force.x += push * factor * factor;
-        } else if boss_pos.x > map_w - wall_margin {
-            let factor = 1.0 - ((map_w - boss_pos.x) / wall_margin).clamp(0.0, 1.0);
-            total_force.x -= push * factor * factor;
-        }
-        if boss_pos.y < wall_margin {
-            let factor = 1.0 - (boss_pos.y / wall_margin).clamp(0.0, 1.0);
-            total_force.y += push * factor * factor;
-        } else if boss_pos.y > map_h - wall_margin {
-            let factor = 1.0 - ((map_h - boss_pos.y) / wall_margin).clamp(0.0, 1.0);
-            total_force.y -= push * factor * factor;
-        }
-
-        let heavy_ranged_fire = world.boss_inventory.ranged_damage_recent > 40.0;
-        let dash = (mobs_in_close >= model.dash_danger_threshold || hp_ratio < model.retreat_hp_threshold || heavy_ranged_fire)
-            && world.boss_dash_cooldown <= 0.0;
-        let d_dir = if total_force.length_squared() > 1.0 { total_force.normalize() } else { Vec2::X };
-
-        let max_speed = world.boss_inventory.get_movement_speed(160.0);
-        let vel = if total_force.length_squared() > 4.0 {
-            total_force.clamp_length_max(max_speed)
-        } else {
-            Vec2::ZERO
-        };
-        (vel, dash, d_dir)
-    };
-
-    let mut walked_distance = 0.0f32;
-    let mut dashed = false;
-
-    if should_dash {
-        let dash_target = (boss_pos + dash_dir * 180.0)
-            .clamp(Vec2::new(40.0, 40.0), Vec2::new(map_w - 40.0, map_h - 40.0));
+    if action.dash && world.boss_dash_cooldown <= 0.0 {
+        let dash_target = (world.boss_pos + action.dash_dir * 180.0)
+            .clamp(Vec2::new(60.0, 60.0), Vec2::new(map_w - 60.0, map_h - 60.0));
 
         world.boss_pos = dash_target;
         world.boss_invulnerable_timer = 0.25;
         world.boss_dash_cooldown = 7.0;
-        dashed = true;
+
+        // Рывок уничтожает вражеские снаряды на пути
+        for proj in &mut world.projectiles {
+            if proj.faction == Faction::Director
+                && proj.pos.distance_squared(dash_target) < 130.0 * 130.0
+            {
+                proj.lifetime = 0.0;
+            }
+        }
+
+        // Рассекающий урон в точке рывка
+        let mut dash_hits: Vec<usize> = Vec::with_capacity(64);
+        world.spatial_grid.query_nearby_into(dash_target, 90.0, &mut dash_hits);
+        for idx in dash_hits {
+            if let Some(mob) = world.mobs.get_mut(idx) {
+                if mob.health.is_alive() && mob.pos.distance_squared(dash_target) < 90.0 * 90.0 {
+                    mob.health.take_damage(80.0);
+                    if !mob.knockback_immune {
+                        mob.knockback_vel += action.dash_dir * 240.0;
+                    }
+                }
+            }
+        }
+
+        (0.0, true)
     } else {
-        let prev_walk_pos = world.boss_pos;
-        // Мгновенная реакция без искусственной инерции
+        let desired_vel = if action.rest {
+            Vec2::ZERO
+        } else {
+            action.move_dir
+                * world.boss_inventory.get_movement_speed(160.0)
+                * action.move_mag.clamp(0.0, 1.0)
+        };
+
+        let prev_pos = world.boss_pos;
         world.boss_vel = desired_vel;
-        world.boss_pos += world.boss_vel * dt;
+        world.boss_pos += desired_vel * dt;
         world.boss_pos.x = world.boss_pos.x.clamp(35.0, map_w - 35.0);
         world.boss_pos.y = world.boss_pos.y.clamp(35.0, map_h - 35.0);
-        walked_distance = prev_walk_pos.distance(world.boss_pos);
+
+        (prev_pos.distance(world.boss_pos), false)
+    }
+}
+
+/// Один такт решений Директора. Возвращает всё через `world` и счётчики.
+fn run_director_decision(
+    world: &mut World,
+    sim_time: f32,
+    model: &DirectorModel,
+    altars_built: &mut usize,
+    mobs_spawned_by_tier: &mut [usize; 16],
+) {
+    let obs = crate::ai::sensors::extract_director_observations(world, sim_time);
+
+    if let Some(ref net) = model.neural_net {
+        let ctx = build_director_context(world);
+        let decision = net.forward(&obs, &ctx);
+
+        // 1. Постройка Алтаря Крови: сначала проверяем валидность места,
+        //    чтобы не списывать души и кулдаун за неудачную постройку.
+        if decision.should_build_altar
+            && can_place_blood_altar(world, decision.altar_target_pos)
+        {
+            let spent = world
+                .directors
+                .first_mut()
+                .map(|d| {
+                    if d.altar_cooldown <= 0.0 && d.spend_points(BLOOD_ALTAR_COST) {
+                        d.altar_cooldown = d.altar_max_cooldown;
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+
+            if spent && try_spawn_blood_altar(world, decision.altar_target_pos) {
+                *altars_built += 1;
+            }
+        }
+
+        // 2. Единая экономическая голова
+        match decision.target_action {
+            0 => {}
+            1..=16 => {
+                let tier = decision.target_action as u8;
+                let config = get_squad_config(tier);
+                let can_spawn = world.directors.first().map_or(false, |d| {
+                    d.total_points_spent >= config.unlock_spent_threshold
+                        && d.points >= config.cost
+                });
+                if can_spawn {
+                    let paid = world
+                        .directors
+                        .first_mut()
+                        .map(|d| {
+                            if d.spend_points(config.cost) {
+                                d.time_since_last_spawn = 0.0;
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                        .unwrap_or(false);
+                    if paid {
+                        spawn_squad_in_sector(world, tier, decision.spawn_sector);
+                        mobs_spawned_by_tier[(tier - 1) as usize] += config.count;
+                    }
+                }
+            }
+            17 => {
+                if let Some(director) = world.directors.first_mut() {
+                    let cost = 100.0 * (director.grade_fury as f32 + 1.0);
+                    if director.spend_points(cost) {
+                        director.grade_fury += 1;
+                    }
+                }
+            }
+            18 => {
+                if let Some(director) = world.directors.first_mut() {
+                    let cost = 120.0 * (director.grade_carapace as f32 + 1.0);
+                    if director.spend_points(cost) {
+                        director.grade_carapace += 1;
+                    }
+                }
+            }
+            19 => {
+                if let Some(director) = world.directors.first_mut() {
+                    let cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+                    if director.spend_points(cost) {
+                        director.grade_pestilence += 1;
+                    }
+                }
+            }
+            _ => {}
+        }
+    } else {
+        run_director_fallback(world, model, altars_built, mobs_spawned_by_tier);
+    }
+}
+
+fn build_director_context(world: &World) -> DirectorActionContext {
+    let director = world.directors.first();
+    DirectorActionContext {
+        points: director.map_or(0.0, |d| d.points),
+        total_points_spent: director.map_or(0.0, |d| d.total_points_spent),
+        altar_cooldown: director.map_or(0.0, |d| d.altar_cooldown),
+        altar_cost: BLOOD_ALTAR_COST,
+        grade_fury: director.map_or(0, |d| d.grade_fury),
+        grade_carapace: director.map_or(0, |d| d.grade_carapace),
+        grade_pestilence: director.map_or(0, |d| d.grade_pestilence),
+        squad_cooldowns: director.map_or([0.0; 16], |d| d.squad_cooldowns),
+    }
+}
+
+/// Старое весовое поведение Директора для моделей без нейросети.
+fn run_director_fallback(
+    world: &mut World,
+    model: &DirectorModel,
+    altars_built: &mut usize,
+    mobs_spawned_by_tier: &mut [usize; 16],
+) {
+    let (points, spent, cooldown) = world
+        .directors
+        .first()
+        .map(|d| (d.points, d.total_points_spent, d.altar_cooldown))
+        .unwrap_or((0.0, 0.0, 0.0));
+
+    // 1. Алтарь
+    if cooldown <= 0.0
+        && points >= BLOOD_ALTAR_COST
+        && rand::gen_range(0.0, 1.0) < model.altar_build_priority
+    {
+        let mut placed = false;
+        for _ in 0..8 {
+            let angle = rand::gen_range(0.0, std::f32::consts::TAU);
+            let dist = rand::gen_range(350.0, 750.0);
+            let candidate = (world.boss_pos
+                + Vec2::new(angle.cos() * dist, angle.sin() * dist))
+            .clamp(Vec2::new(60.0, 60.0), Vec2::new(MAP_WIDTH - 60.0, MAP_HEIGHT - 60.0));
+            if can_place_blood_altar(world, candidate) {
+                if let Some(director) = world.directors.first_mut() {
+                    if director.spend_points(BLOOD_ALTAR_COST) {
+                        director.altar_cooldown = director.altar_max_cooldown;
+                        spawn_blood_altar(world, candidate);
+                        placed = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if placed {
+            *altars_built += 1;
+        }
     }
 
-    if dashed {
-        world.boss_pos.x = world.boss_pos.x.clamp(35.0, map_w - 35.0);
-        world.boss_pos.y = world.boss_pos.y.clamp(35.0, map_h - 35.0);
+    // 2. Отряд по весам
+    let remaining = world.directors.first().map_or(0.0, |d| d.points);
+    let mut eligible = Vec::with_capacity(16);
+    let mut total_weight = 0.0f32;
+    for (tier_idx, &w) in model.squad_spawn_weights.iter().enumerate() {
+        if tier_idx >= 16 {
+            break;
+        }
+        let config = get_squad_config((tier_idx + 1) as u8);
+        if spent >= config.unlock_spent_threshold && remaining >= config.cost && w > 0.0 {
+            eligible.push((tier_idx + 1, config.cost, config.count, w));
+            total_weight += w;
+        }
     }
 
-    (walked_distance, dashed)
+    if total_weight > 0.0 {
+        let mut roll = rand::gen_range(0.0, total_weight);
+        let chosen = eligible
+            .iter()
+            .copied()
+            .find(|(_, _, _, w)| {
+                if roll <= *w {
+                    true
+                } else {
+                    roll -= *w;
+                    false
+                }
+            });
+
+        if let Some((tier, cost, count, _)) = chosen {
+            let paid = world
+                .directors
+                .first_mut()
+                .map(|d| {
+                    if d.spend_points(cost) {
+                        d.time_since_last_spawn = 0.0;
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            if paid {
+                let sector = rand::gen_range(0usize, 8);
+                spawn_squad_in_sector(world, tier as u8, sector);
+                mobs_spawned_by_tier[tier - 1] += count;
+            }
+        }
+    }
+
+    // 3. Грейды: выравниваем отстающие
+    if let Some(director) = world.directors.first_mut() {
+        let fury_cost = 100.0 * (director.grade_fury as f32 + 1.0);
+        let carapace_cost = 120.0 * (director.grade_carapace as f32 + 1.0);
+        let pestilence_cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+
+        if director.points >= pestilence_cost
+            && director.grade_pestilence <= director.grade_fury
+        {
+            if director.spend_points(pestilence_cost) {
+                director.grade_pestilence += 1;
+            }
+        } else if director.points >= carapace_cost
+            && director.grade_carapace <= director.grade_fury
+        {
+            if director.spend_points(carapace_cost) {
+                director.grade_carapace += 1;
+            }
+        } else if director.points >= fury_cost && director.spend_points(fury_cost) {
+            director.grade_fury += 1;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deterministic_seed_reproducible() {
+        let boss = BossModel::default();
+        let director = DirectorModel::default();
+
+        let a = run_headless_simulation(&boss, &director, 42, 30.0);
+        let b = run_headless_simulation(&boss, &director, 42, 30.0);
+
+        assert_eq!(a.survival_time.to_bits(), b.survival_time.to_bits());
+        assert_eq!(
+            a.damage_dealt_to_boss.to_bits(),
+            b.damage_dealt_to_boss.to_bits()
+        );
+        assert_eq!(a.boss_level, b.boss_level);
+        assert_eq!(
+            a.director_points_spent.to_bits(),
+            b.director_points_spent.to_bits()
+        );
+        assert_eq!(a.altars_built, b.altars_built);
+        assert_eq!(a.mobs_spawned_by_tier, b.mobs_spawned_by_tier);
+    }
 }

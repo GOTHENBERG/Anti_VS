@@ -1,14 +1,30 @@
 use crate::core::rand;
 use serde::{Deserialize, Serialize};
 
+// ============================================================================
+// БОСС: 150 сенсоров -> 64 -> 48 -> 7 действий
+// ============================================================================
 pub const INPUT_SIZE: usize = 150;
-pub const HIDDEN1_SIZE: usize = 32;
-pub const HIDDEN2_SIZE: usize = 24;
-pub const OUTPUT_SIZE: usize = 8;
+pub const HIDDEN1_SIZE: usize = 64;
+pub const HIDDEN2_SIZE: usize = 48;
+pub const OUTPUT_SIZE: usize = 7;
+
+// Семантика выходов Босса:
+// [0..2]  направление движения (tanh)
+// [2]     интенсивность движения 0..1 (sigmoid) — непрерывная скорость
+// [3]     триггер рывка (sigmoid > 0.5)
+// [4..6]  направление рывка (tanh), при нулевом векторе используется направление движения
+// [6]     намерение замереть / медитировать (sigmoid > 0.5)
+pub const OUT_MOVE_X: usize = 0;
+pub const OUT_MOVE_Y: usize = 1;
+pub const OUT_MOVE_MAG: usize = 2;
+pub const OUT_DASH: usize = 3;
+pub const OUT_DASH_X: usize = 4;
+pub const OUT_DASH_Y: usize = 5;
+pub const OUT_REST: usize = 6;
 
 /// Полносвязная глубокая нейронная сеть (Deep MLP)
-/// Архитектура: 150 сенсорных входов -> Скрытый слой 32 (ReLU) -> Скрытый слой 24 (ReLU) -> 8 выходов (Tanh/Sigmoid)
-/// Всего синапсов (весов и смещений): 150*32 + 32 + 32*24 + 24 + 24*8 + 8 = 5,824 параметров!
+/// Архитектура: 150 сенсорных входов -> 64 (Leaky ReLU) -> 48 (Leaky ReLU) -> 7 выходов.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NeuralNet {
     pub input_size: usize,
@@ -16,15 +32,15 @@ pub struct NeuralNet {
     pub hidden2_size: usize,
     pub output_size: usize,
 
-    // Слой 1: 150 -> 32
+    // Слой 1: 150 -> 64
     pub w1: Vec<Vec<f32>>,
     pub b1: Vec<f32>,
 
-    // Слой 2: 32 -> 24
+    // Слой 2: 64 -> 48
     pub w2: Vec<Vec<f32>>,
     pub b2: Vec<f32>,
 
-    // Слой 3: 24 -> 8
+    // Слой 3: 48 -> 7
     pub w3: Vec<Vec<f32>>,
     pub b3: Vec<f32>,
 }
@@ -65,10 +81,37 @@ impl NeuralNet {
         }
     }
 
-    /// Прямой проход нейросети (Forward inference pass)
-    /// Выполняется за микросекунды без аллокаций памяти!
+    /// Проверяет, что размеры матриц соответствуют текущей архитектуре.
+    /// Нужно для безопасной загрузки старых/битых JSON-моделей.
+    pub fn is_compatible(&self) -> bool {
+        self.input_size == INPUT_SIZE
+            && self.hidden1_size == HIDDEN1_SIZE
+            && self.hidden2_size == HIDDEN2_SIZE
+            && self.output_size == OUTPUT_SIZE
+            && self.w1.len() == HIDDEN1_SIZE
+            && self.w1.iter().all(|r| r.len() == INPUT_SIZE)
+            && self.b1.len() == HIDDEN1_SIZE
+            && self.w2.len() == HIDDEN2_SIZE
+            && self.w2.iter().all(|r| r.len() == HIDDEN1_SIZE)
+            && self.b2.len() == HIDDEN2_SIZE
+            && self.w3.len() == OUTPUT_SIZE
+            && self.w3.iter().all(|r| r.len() == HIDDEN2_SIZE)
+            && self.b3.len() == OUTPUT_SIZE
+            && self.w1.iter().chain(&self.w2).chain(&self.w3).all(|row| {
+                row.iter().all(|w| w.is_finite())
+            })
+            && self
+                .b1
+                .iter()
+                .chain(&self.b2)
+                .chain(&self.b3)
+                .all(|b| b.is_finite())
+    }
+
+    /// Прямой проход нейросети (Forward inference pass).
+    /// Выполняется за микросекунды без аллокаций памяти.
     pub fn forward(&self, inputs: &[f32; INPUT_SIZE]) -> [f32; OUTPUT_SIZE] {
-        // 1. Скрытый слой 1 (Linear + ReLU)
+        // 1. Скрытый слой 1 (Linear + Leaky ReLU)
         let mut h1 = [0.0f32; HIDDEN1_SIZE];
         for i in 0..HIDDEN1_SIZE {
             let mut sum = self.b1[i];
@@ -76,10 +119,10 @@ impl NeuralNet {
             for j in 0..INPUT_SIZE {
                 sum += row[j] * inputs[j];
             }
-            h1[i] = if sum > 0.0 { sum } else { 0.01 * sum }; // Leaky ReLU
+            h1[i] = if sum > 0.0 { sum } else { 0.01 * sum };
         }
 
-        // 2. Скрытый слой 2 (Linear + ReLU)
+        // 2. Скрытый слой 2 (Linear + Leaky ReLU)
         let mut h2 = [0.0f32; HIDDEN2_SIZE];
         for i in 0..HIDDEN2_SIZE {
             let mut sum = self.b2[i];
@@ -90,7 +133,7 @@ impl NeuralNet {
             h2[i] = if sum > 0.0 { sum } else { 0.01 * sum };
         }
 
-        // 3. Выходной слой (Linear + Non-linearities)
+        // 3. Выходной слой
         let mut out = [0.0f32; OUTPUT_SIZE];
         for i in 0..OUTPUT_SIZE {
             let mut sum = self.b3[i];
@@ -98,13 +141,10 @@ impl NeuralNet {
             for j in 0..HIDDEN2_SIZE {
                 sum += row[j] * h2[j];
             }
-            // Выходы 0 и 1: Направление движения (-1.0 .. 1.0 через Tanh)
-            if i < 2 {
-                out[i] = sum.tanh();
-            } else {
-                // Выходы 2..7: Множители поведения (Sigmoid 0.0 .. 1.0)
-                out[i] = 1.0 / (1.0 + (-sum).exp());
-            }
+            out[i] = match i {
+                OUT_MOVE_X | OUT_MOVE_Y | OUT_DASH_X | OUT_DASH_Y => sum.tanh(),
+                _ => 1.0 / (1.0 + (-sum).exp()),
+            };
         }
 
         out
@@ -148,6 +188,27 @@ impl NeuralNet {
         for b in self.b3.iter_mut() {
             if rand::gen_range(0.0, 1.0) < rate {
                 *b += rand::gen_range(-sigma, sigma);
+            }
+        }
+    }
+
+    /// L2 weight decay: тормозит «раздувание» весов и насыщение tanh/sigmoid.
+    /// Смещения не трогаем — они не создают осцилляций.
+    pub fn decay(&mut self, factor: f32) {
+        let k = (1.0 - factor).clamp(0.0, 1.0);
+        for row in self.w1.iter_mut() {
+            for w in row.iter_mut() {
+                *w *= k;
+            }
+        }
+        for row in self.w2.iter_mut() {
+            for w in row.iter_mut() {
+                *w *= k;
+            }
+        }
+        for row in self.w3.iter_mut() {
+            for w in row.iter_mut() {
+                *w *= k;
             }
         }
     }
@@ -200,24 +261,39 @@ impl NeuralNet {
     }
 }
 
+// ============================================================================
+// ДИРЕКТОР: 132 сенсора -> 64 -> 48 -> три головы
+// ============================================================================
 pub const DIRECTOR_INPUT_SIZE: usize = 132;
 pub const DIRECTOR_HIDDEN1_SIZE: usize = 64;
 pub const DIRECTOR_HIDDEN2_SIZE: usize = 48;
-pub const DIRECTOR_ECONOMY_HEAD_SIZE: usize = 20; // 0: Пас/Копить, 1..16: Тиры 1..16, 17: Ярость, 18: Панцирь, 19: Чумные споры
-pub const DIRECTOR_ALTAR_HEAD_SIZE: usize = 3;   // [0]: Триггер постройки, [1]: X, [2]: Y
+pub const DIRECTOR_ECONOMY_HEAD_SIZE: usize = 20; // 0: Пас, 1..16: Тиры, 17: Ярость, 18: Панцирь, 19: Чумные споры
+pub const DIRECTOR_ALTAR_HEAD_SIZE: usize = 3; // [0]: триггер, [1]: X-слот, [2]: Y-слот
+pub const DIRECTOR_SPAWN_HEAD_SIZE: usize = 8; // 8 секторов спавна вокруг Босса
+
+/// Контекст, без которого argmax по экономической голове нечестен:
+/// маска доступности должна учитывать не только tech-tree, но и цену/кулдауны.
+#[derive(Clone, Copy, Debug)]
+pub struct DirectorActionContext {
+    pub points: f32,
+    pub total_points_spent: f32,
+    pub altar_cooldown: f32,
+    pub altar_cost: f32,
+    pub grade_fury: u32,
+    pub grade_carapace: u32,
+    pub grade_pestilence: u32,
+    pub squad_cooldowns: [f32; 16],
+}
 
 #[derive(Clone, Debug)]
 pub struct DirectorDecision {
-    pub target_action: usize,     // 0: Пас, 1..16: Отряд 1..16, 17: Ярость, 18: Панцирь, 19: Чумные споры
+    pub target_action: usize, // 0: Пас, 1..16: Отряд, 17: Ярость, 18: Панцирь, 19: Чумные споры
     pub should_build_altar: bool,
     pub altar_target_pos: macroquad::prelude::Vec2,
+    pub spawn_sector: usize, // 0..7 — сектор появления отряда вокруг Босса
 }
 
-/// Двухголовая глубокая нейросеть Директора (Dual-Head RTS Commander Brain)
-/// Архитектура: 132 сенсорных входа -> 64 (ReLU) -> 48 (ReLU) -> 2 головы решений:
-/// 1. Голова Экономики (20 выходов): Единая цель бюджета (Пас / 16 Тиров мобов / 3 Грейда армии)
-/// 2. Голова Алтаря (3 выхода): Постройка и пространственные координаты (X, Y) Алтаря Крови
-/// Всего синапсов: 12,759 параметров!
+/// Двухголовая + спавн-голова нейросеть Директора.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DirectorBrainNet {
     pub input_size: usize,
@@ -239,6 +315,10 @@ pub struct DirectorBrainNet {
     // Голова 2: Алтарь Крови (48 -> 3)
     pub w_altar: Vec<Vec<f32>>,
     pub b_altar: Vec<f32>,
+
+    // Голова 3: Сектор спавна армии (48 -> 8)
+    pub w_spawn: Vec<Vec<f32>>,
+    pub b_spawn: Vec<f32>,
 }
 
 impl DirectorBrainNet {
@@ -247,6 +327,7 @@ impl DirectorBrainNet {
         let scale2 = (2.0 / DIRECTOR_HIDDEN1_SIZE as f32).sqrt();
         let scale_econ = (2.0 / DIRECTOR_HIDDEN2_SIZE as f32).sqrt();
         let scale_altar = (2.0 / DIRECTOR_HIDDEN2_SIZE as f32).sqrt();
+        let scale_spawn = (2.0 / DIRECTOR_HIDDEN2_SIZE as f32).sqrt();
 
         let w1 = (0..DIRECTOR_HIDDEN1_SIZE)
             .map(|_| (0..DIRECTOR_INPUT_SIZE).map(|_| rand::gen_range(-scale1, scale1)).collect())
@@ -268,6 +349,11 @@ impl DirectorBrainNet {
             .collect();
         let b_altar = vec![0.0; DIRECTOR_ALTAR_HEAD_SIZE];
 
+        let w_spawn = (0..DIRECTOR_SPAWN_HEAD_SIZE)
+            .map(|_| (0..DIRECTOR_HIDDEN2_SIZE).map(|_| rand::gen_range(-scale_spawn, scale_spawn)).collect())
+            .collect();
+        let b_spawn = vec![0.0; DIRECTOR_SPAWN_HEAD_SIZE];
+
         Self {
             input_size: DIRECTOR_INPUT_SIZE,
             hidden1_size: DIRECTOR_HIDDEN1_SIZE,
@@ -280,12 +366,55 @@ impl DirectorBrainNet {
             b_econ,
             w_altar,
             b_altar,
+            w_spawn,
+            b_spawn,
         }
     }
 
-    /// Прямой проход нейросети Директора (Forward Pass с Action Masking)
-    pub fn forward(&self, inputs: &[f32; DIRECTOR_INPUT_SIZE], total_points_spent: f32) -> DirectorDecision {
-        // 1. Скрытый слой 1 (Linear + Leaky ReLU)
+    pub fn is_compatible(&self) -> bool {
+        self.input_size == DIRECTOR_INPUT_SIZE
+            && self.hidden1_size == DIRECTOR_HIDDEN1_SIZE
+            && self.hidden2_size == DIRECTOR_HIDDEN2_SIZE
+            && self.w1.len() == DIRECTOR_HIDDEN1_SIZE
+            && self.w1.iter().all(|r| r.len() == DIRECTOR_INPUT_SIZE)
+            && self.b1.len() == DIRECTOR_HIDDEN1_SIZE
+            && self.w2.len() == DIRECTOR_HIDDEN2_SIZE
+            && self.w2.iter().all(|r| r.len() == DIRECTOR_HIDDEN1_SIZE)
+            && self.b2.len() == DIRECTOR_HIDDEN2_SIZE
+            && self.w_econ.len() == DIRECTOR_ECONOMY_HEAD_SIZE
+            && self.w_econ.iter().all(|r| r.len() == DIRECTOR_HIDDEN2_SIZE)
+            && self.b_econ.len() == DIRECTOR_ECONOMY_HEAD_SIZE
+            && self.w_altar.len() == DIRECTOR_ALTAR_HEAD_SIZE
+            && self.w_altar.iter().all(|r| r.len() == DIRECTOR_HIDDEN2_SIZE)
+            && self.b_altar.len() == DIRECTOR_ALTAR_HEAD_SIZE
+            && self.w_spawn.len() == DIRECTOR_SPAWN_HEAD_SIZE
+            && self.w_spawn.iter().all(|r| r.len() == DIRECTOR_HIDDEN2_SIZE)
+            && self.b_spawn.len() == DIRECTOR_SPAWN_HEAD_SIZE
+            && self
+                .w1
+                .iter()
+                .chain(&self.w2)
+                .chain(&self.w_econ)
+                .chain(&self.w_altar)
+                .chain(&self.w_spawn)
+                .all(|row| row.iter().all(|w| w.is_finite()))
+            && self
+                .b1
+                .iter()
+                .chain(&self.b2)
+                .chain(&self.b_econ)
+                .chain(&self.b_altar)
+                .chain(&self.b_spawn)
+                .all(|b| b.is_finite())
+    }
+
+    /// Прямой проход с честным action masking по цене и кулдаунам.
+    pub fn forward(
+        &self,
+        inputs: &[f32; DIRECTOR_INPUT_SIZE],
+        ctx: &DirectorActionContext,
+    ) -> DirectorDecision {
+        // 1. Скрытый слой 1
         let mut h1 = [0.0f32; DIRECTOR_HIDDEN1_SIZE];
         for i in 0..DIRECTOR_HIDDEN1_SIZE {
             let mut sum = self.b1[i];
@@ -296,7 +425,7 @@ impl DirectorBrainNet {
             h1[i] = if sum > 0.0 { sum } else { 0.01 * sum };
         }
 
-        // 2. Скрытый слой 2 (Linear + Leaky ReLU)
+        // 2. Скрытый слой 2
         let mut h2 = [0.0f32; DIRECTOR_HIDDEN2_SIZE];
         for i in 0..DIRECTOR_HIDDEN2_SIZE {
             let mut sum = self.b2[i];
@@ -307,17 +436,27 @@ impl DirectorBrainNet {
             h2[i] = if sum > 0.0 { sum } else { 0.01 * sum };
         }
 
-        // 3. Голова 1: Единая Экономика (20 логитов -> argmax с Action Masking)
-        // Заблокированные тиры отрядов не могут быть выбраны целью (Action Masking)
-        let mut best_action = 0;
+        // 3. Голова экономики: argmax только по реально доступным действиям.
+        let mut best_action = 0usize;
         let mut max_econ_logit = f32::NEG_INFINITY;
+
         for i in 0..DIRECTOR_ECONOMY_HEAD_SIZE {
-            if (1..=16).contains(&i) {
-                let tier = i as u8;
-                let threshold = crate::content::mobs::get_squad_config(tier).unlock_spent_threshold;
-                if total_points_spent < threshold {
-                    continue; // Заблокировано в дереве технологий
+            let allowed = match i {
+                0 => true, // Пас доступен всегда
+                1..=16 => {
+                    let tier = i as u8;
+                    let config = crate::content::mobs::get_squad_config(tier);
+                    ctx.total_points_spent >= config.unlock_spent_threshold
+                        && ctx.points >= config.cost
+                        && ctx.squad_cooldowns[i - 1] <= 0.0
                 }
+                17 => ctx.points >= 100.0 * (ctx.grade_fury as f32 + 1.0),
+                18 => ctx.points >= 120.0 * (ctx.grade_carapace as f32 + 1.0),
+                19 => ctx.points >= 150.0 * (ctx.grade_pestilence as f32 + 1.0),
+                _ => false,
+            };
+            if !allowed {
+                continue;
             }
 
             let mut sum = self.b_econ[i];
@@ -331,10 +470,7 @@ impl DirectorBrainNet {
             }
         }
 
-        // 4. Голова 2: Алтарь Крови (3 выхода)
-        // [0]: Триггер (Sigmoid > 0.5)
-        // [1]: X координата (Sigmoid -> [35.0, MAP_WIDTH - 35.0])
-        // [2]: Y координата (Sigmoid -> [35.0, MAP_HEIGHT - 35.0])
+        // 4. Голова алтаря: триггер + позиция, дискретизированная в сетку 5x5.
         let mut altar_raw = [0.0f32; DIRECTOR_ALTAR_HEAD_SIZE];
         for i in 0..DIRECTOR_ALTAR_HEAD_SIZE {
             let mut sum = self.b_altar[i];
@@ -345,20 +481,43 @@ impl DirectorBrainNet {
             altar_raw[i] = 1.0 / (1.0 + (-sum).exp());
         }
 
-        let should_build_altar = altar_raw[0] > 0.5;
-        let altar_x = 35.0 + altar_raw[1] * (crate::core::MAP_WIDTH - 70.0);
-        let altar_y = 35.0 + altar_raw[2] * (crate::core::MAP_HEIGHT - 70.0);
+        let altar_ready = ctx.altar_cooldown <= 0.0 && ctx.points >= ctx.altar_cost;
+        let should_build_altar = altar_raw[0] > 0.5 && altar_ready;
+
+        const ALTAR_SLOTS: f32 = 5.0;
+        const ALTAR_MARGIN: f32 = 60.0;
+        let slot_w = (crate::core::MAP_WIDTH - ALTAR_MARGIN * 2.0) / ALTAR_SLOTS;
+        let slot_h = (crate::core::MAP_HEIGHT - ALTAR_MARGIN * 2.0) / ALTAR_SLOTS;
+        let sx = (altar_raw[1] * ALTAR_SLOTS).floor().clamp(0.0, ALTAR_SLOTS - 1.0);
+        let sy = (altar_raw[2] * ALTAR_SLOTS).floor().clamp(0.0, ALTAR_SLOTS - 1.0);
+        let altar_x = ALTAR_MARGIN + (sx + 0.5) * slot_w;
+        let altar_y = ALTAR_MARGIN + (sy + 0.5) * slot_h;
+
+        // 5. Голова спавна: 8 секторов вокруг Босса.
+        let mut spawn_sector = 0usize;
+        let mut best_spawn_logit = f32::NEG_INFINITY;
+        for i in 0..DIRECTOR_SPAWN_HEAD_SIZE {
+            let mut sum = self.b_spawn[i];
+            let row = &self.w_spawn[i];
+            for j in 0..DIRECTOR_HIDDEN2_SIZE {
+                sum += row[j] * h2[j];
+            }
+            if sum > best_spawn_logit {
+                best_spawn_logit = sum;
+                spawn_sector = i;
+            }
+        }
 
         DirectorDecision {
             target_action: best_action,
             should_build_altar,
             altar_target_pos: macroquad::prelude::Vec2::new(altar_x, altar_y),
+            spawn_sector,
         }
     }
 
-    /// Мутация синаптических весов для эволюции Директора
     pub fn mutate(&mut self, rate: f32, sigma: f32) {
-        fn mutate_layer(weights: &mut Vec<Vec<f32>>, biases: &mut Vec<f32>, rate: f32, sigma: f32) {
+        fn mutate_layer(weights: &mut [Vec<f32>], biases: &mut [f32], rate: f32, sigma: f32) {
             for row in weights.iter_mut() {
                 for w in row.iter_mut() {
                     if rand::gen_range(0.0, 1.0) < rate {
@@ -377,15 +536,32 @@ impl DirectorBrainNet {
         mutate_layer(&mut self.w2, &mut self.b2, rate, sigma);
         mutate_layer(&mut self.w_econ, &mut self.b_econ, rate, sigma);
         mutate_layer(&mut self.w_altar, &mut self.b_altar, rate, sigma);
+        mutate_layer(&mut self.w_spawn, &mut self.b_spawn, rate, sigma);
     }
 
-    /// Генетический кроссовер весовых матриц двух нейросетей Директора
+    pub fn decay(&mut self, factor: f32) {
+        let k = (1.0 - factor).clamp(0.0, 1.0);
+        for layer in [
+            &mut self.w1,
+            &mut self.w2,
+            &mut self.w_econ,
+            &mut self.w_altar,
+            &mut self.w_spawn,
+        ] {
+            for row in layer.iter_mut() {
+                for w in row.iter_mut() {
+                    *w *= k;
+                }
+            }
+        }
+    }
+
     pub fn crossover(&self, other: &Self) -> Self {
         fn crossover_layer(
-            w_out: &mut Vec<Vec<f32>>,
-            b_out: &mut Vec<f32>,
-            w_other: &Vec<Vec<f32>>,
-            b_other: &Vec<f32>,
+            w_out: &mut [Vec<f32>],
+            b_out: &mut [f32],
+            w_other: &[Vec<f32>],
+            b_other: &[f32],
         ) {
             for i in 0..w_out.len() {
                 for j in 0..w_out[i].len() {
@@ -404,14 +580,15 @@ impl DirectorBrainNet {
         crossover_layer(&mut child.w2, &mut child.b2, &other.w2, &other.b2);
         crossover_layer(&mut child.w_econ, &mut child.b_econ, &other.w_econ, &other.b_econ);
         crossover_layer(&mut child.w_altar, &mut child.b_altar, &other.w_altar, &other.b_altar);
+        crossover_layer(&mut child.w_spawn, &mut child.b_spawn, &other.w_spawn, &other.b_spawn);
         child
     }
 
-    /// Общее число параметров (синапсов) в мозге Директора
     pub fn total_synapses(&self) -> usize {
         (DIRECTOR_INPUT_SIZE * DIRECTOR_HIDDEN1_SIZE + DIRECTOR_HIDDEN1_SIZE)
             + (DIRECTOR_HIDDEN1_SIZE * DIRECTOR_HIDDEN2_SIZE + DIRECTOR_HIDDEN2_SIZE)
             + (DIRECTOR_HIDDEN2_SIZE * DIRECTOR_ECONOMY_HEAD_SIZE + DIRECTOR_ECONOMY_HEAD_SIZE)
             + (DIRECTOR_HIDDEN2_SIZE * DIRECTOR_ALTAR_HEAD_SIZE + DIRECTOR_ALTAR_HEAD_SIZE)
+            + (DIRECTOR_HIDDEN2_SIZE * DIRECTOR_SPAWN_HEAD_SIZE + DIRECTOR_SPAWN_HEAD_SIZE)
     }
 }

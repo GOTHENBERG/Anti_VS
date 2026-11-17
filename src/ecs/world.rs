@@ -99,6 +99,8 @@ pub struct DirectorState {
     pub squad_cooldowns: [f32; 16],
     pub altar_cooldown: f32,
     pub altar_max_cooldown: f32,
+    /// Время с момента последнего призыва отряда. Даёт Директору сенсор темпа.
+    pub time_since_last_spawn: f32,
     pub total_mobs_spawned: usize,
     pub mob_page: u8,           // 0 = Тиры 1-8 (Базовая Орда), 1 = Тиры 9-16 (Высший Легион)
     pub grade_fury: u32,        // [F] Ярость: +12% урон, +6% скорость (u32: никогда не переполняется при 255+)
@@ -117,6 +119,7 @@ impl DirectorState {
             squad_cooldowns: [0.0; 16],
             altar_cooldown: 0.0,
             altar_max_cooldown: 60.0, // 60 секунд (1 минута) кулдаун на постройку Алтаря (без искусственного лимита)
+            time_since_last_spawn: 10.0,
             total_mobs_spawned: 0,
             mob_page: 0,
             grade_fury: 0,
@@ -226,7 +229,8 @@ impl World {
             next_entity_id: 1,
             total_damage_dealt_to_boss: 0.0,
             screen_shake: 0.0,
-            boss_model: crate::ai::load_trained_boss_model(),
+            // Модель загружается один раз в main.rs / симуляции, а не на каждом World::new().
+            boss_model: None,
             audio_events: Vec::new(),
             is_headless: false,
         }
@@ -238,7 +242,19 @@ impl World {
         id
     }
 
+    /// Перестраивает пространственную сетку по текущему списку мобов.
+    /// Индексы в сетке валидны только до следующего удаления мобов.
+    pub fn rebuild_spatial_grid(&mut self) {
+        self.spatial_grid.clear();
+        for (idx, mob) in self.mobs.iter().enumerate() {
+            self.spatial_grid.insert(idx, mob.pos);
+        }
+    }
+
     pub fn add_floating_text(&mut self, pos: Vec2, text: String, color: Color, scale: f32) {
+        if self.is_headless {
+            return;
+        }
         if self.floating_texts.len() < 300 {
             self.floating_texts.push(FloatingTextEntity {
                 pos: pos + Vec2::new(rand::gen_range(-10.0, 10.0), rand::gen_range(-10.0, 5.0)),
@@ -252,6 +268,9 @@ impl World {
     }
 
     pub fn spawn_particles(&mut self, pos: Vec2, count: usize, color: Color, speed_range: f32) {
+        if self.is_headless {
+            return;
+        }
         if self.particles.len() + count < 1500 {
             for _ in 0..count {
                 let angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);

@@ -65,9 +65,11 @@ impl SpatialGrid {
         }
     }
 
-    /// Запрос всех сущностей в радиусе (проверяет соседние ячейки сетки)
-    pub fn query_nearby(&self, pos: Vec2, radius: f32) -> Vec<usize> {
-        let mut result = Vec::with_capacity(32);
+    /// Запрос всех сущностей в радиусе с переиспользованием внешнего буфера.
+    /// Не выполняет ни одной аллокации, если ёмкости `out` достаточно.
+    #[inline]
+    pub fn query_nearby_into(&self, pos: Vec2, radius: f32, out: &mut Vec<usize>) {
+        out.clear();
         let offset_x = pos.x + CELL_SIZE * 2.0;
         let offset_y = pos.y + CELL_SIZE * 2.0;
 
@@ -82,11 +84,40 @@ impl SpatialGrid {
             for cx in min_cx..=max_cx {
                 let cell_idx = row_offset + cx;
                 if cell_idx < self.buckets.len() {
-                    result.extend_from_slice(&self.buckets[cell_idx]);
+                    out.extend_from_slice(&self.buckets[cell_idx]);
                 }
             }
         }
+    }
 
+    /// Запрос всех сущностей в радиусе (проверяет соседние ячейки сетки)
+    pub fn query_nearby(&self, pos: Vec2, radius: f32) -> Vec<usize> {
+        let mut result = Vec::with_capacity(32);
+        self.query_nearby_into(pos, radius, &mut result);
         result
+    }
+
+    /// Количество сущностей в радиусе без построения списка.
+    pub fn count_nearby(&self, pos: Vec2, radius: f32) -> usize {
+        let offset_x = pos.x + CELL_SIZE * 2.0;
+        let offset_y = pos.y + CELL_SIZE * 2.0;
+
+        let min_cx = ((offset_x - radius).max(0.0) / self.cell_size) as usize;
+        let max_cx = (((offset_x + radius).max(0.0) / self.cell_size) as usize).min(self.cols.saturating_sub(1));
+
+        let min_cy = ((offset_y - radius).max(0.0) / self.cell_size) as usize;
+        let max_cy = (((offset_y + radius).max(0.0) / self.cell_size) as usize).min(self.rows.saturating_sub(1));
+
+        let mut count = 0usize;
+        for cy in min_cy..=max_cy {
+            let row_offset = cy * self.cols;
+            for cx in min_cx..=max_cx {
+                let cell_idx = row_offset + cx;
+                if cell_idx < self.buckets.len() {
+                    count += self.buckets[cell_idx].len();
+                }
+            }
+        }
+        count
     }
 }

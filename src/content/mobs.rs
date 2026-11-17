@@ -168,19 +168,39 @@ pub fn spawn_squad_perimeter(world: &mut World, tier: u8) {
 }
 
 pub fn spawn_squad_at_dist(world: &mut World, tier: u8, ring_radius: f32) {
+    // Случайный сдвиг угла, чтобы отряды распределялись органично по кольцу
+    let base_angle = rand::gen_range(0.0, std::f32::consts::TAU);
+    spawn_squad_arc(world, tier, ring_radius, base_angle, std::f32::consts::TAU);
+}
+
+/// Спавн отряда в одном из 8 секторов вокруг Босса (0..7).
+/// Даёт Директору управление направлением атаки: окружение, отсечение путей, загон в угол.
+pub fn spawn_squad_in_sector(world: &mut World, tier: u8, sector: usize) {
+    let sector_idx = sector % 8;
+    let center_angle = (sector_idx as f32) * std::f32::consts::TAU / 8.0
+        + rand::gen_range(-0.12, 0.12);
+    spawn_squad_arc(world, tier, 820.0, center_angle, std::f32::consts::TAU / 8.0);
+}
+
+/// Спавн отряда дугой `arc_width` с центром в `center_angle`.
+fn spawn_squad_arc(
+    world: &mut World,
+    tier: u8,
+    ring_radius: f32,
+    center_angle: f32,
+    arc_width: f32,
+) {
     let config = get_squad_config(tier);
     let boss_pos = world.boss_pos;
     let map_w = crate::core::MAP_WIDTH;
     let map_h = crate::core::MAP_HEIGHT;
 
-    // Случайный сдвиг угла, чтобы отряды распределялись органично по кольцу
-    let base_angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
-
     for i in 0..config.count {
         let id = world.alloc_id();
 
-        // Спавн кольцом вокруг босса
-        let angle = base_angle + (i as f32) * std::f32::consts::PI * 2.0 / (config.count as f32);
+        // Равномерно распределяем отряд внутри дуги (для полного круга — по всему кольцу)
+        let t = (i as f32 + 0.5) / config.count as f32;
+        let angle = center_angle + (t - 0.5) * arc_width;
         let offset = Vec2::new(angle.cos() * ring_radius, angle.sin() * ring_radius);
         let raw_spawn_pos = boss_pos + offset;
 

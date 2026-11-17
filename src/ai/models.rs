@@ -1,14 +1,23 @@
 use serde::{Deserialize, Serialize};
 
+/// Версия формата фитнеса/архитектуры. Старые модели нельзя сравнивать с новыми:
+/// их fitness измерялся другой формулой, поэтому при загрузке он инвалидируется.
+pub const MODEL_FORMAT_VERSION: u32 = 3;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BossModel {
     pub version: String,
+    #[serde(default)]
+    pub model_version: u32,
+    #[serde(default)]
+    pub fitness_version: u32,
     pub generation: u32,
     pub fitness: f32,
     pub avg_survival_time: f32,
     pub total_synapses: usize,
 
-    // Полносвязная глубокая нейросеть (36 сенсоров -> 32 -> 24 -> 8 выходов)
+    // Полносвязная глубокая нейросеть (150 сенсоров -> 64 -> 48 -> 7 выходов)
+    #[serde(default)]
     pub neural_net: Option<crate::ai::neural_net::NeuralNet>,
 
     // Поведенческие веса потенциальных полей
@@ -80,9 +89,11 @@ impl Default for BossModel {
         let net = crate::ai::neural_net::NeuralNet::new();
         let synapses = net.total_synapses();
         Self {
-            version: "v2.0-neural".to_string(),
+            version: "v3.0-end-to-end".to_string(),
+            model_version: MODEL_FORMAT_VERSION,
+            fitness_version: MODEL_FORMAT_VERSION,
             generation: 0,
-            fitness: 0.0,
+            fitness: f32::NEG_INFINITY,
             avg_survival_time: 0.0,
             total_synapses: synapses,
             neural_net: Some(net),
@@ -105,11 +116,15 @@ impl Default for BossModel {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DirectorModel {
     pub version: String,
+    #[serde(default)]
+    pub model_version: u32,
+    #[serde(default)]
+    pub fitness_version: u32,
     pub generation: u32,
     pub fitness: f32,
     pub avg_boss_kill_time: f32,
 
-    // Глубокая многоголовая нейросеть Директора (132 сенсора -> 12,808 синапсов)
+    // Глубокая многоголовая нейросеть Директора (132 -> 64 -> 48, 3 головы)
     #[serde(default)]
     pub neural_net: Option<crate::ai::neural_net::DirectorBrainNet>,
     #[serde(default)]
@@ -129,9 +144,11 @@ impl Default for DirectorModel {
         let net = crate::ai::neural_net::DirectorBrainNet::new();
         let synapses = net.total_synapses();
         Self {
-            version: "v2.0-neural-rl".to_string(),
+            version: "v3.0-end-to-end".to_string(),
+            model_version: MODEL_FORMAT_VERSION,
+            fitness_version: MODEL_FORMAT_VERSION,
             generation: 0,
-            fitness: 0.0,
+            fitness: f32::NEG_INFINITY,
             avg_boss_kill_time: 0.0,
             neural_net: Some(net),
             total_synapses: synapses,
@@ -150,4 +167,6 @@ pub struct TrainingStats {
     pub best_boss_level: u32,
     pub best_director_kill_time: f32,
     pub timestamp: String,
+    #[serde(default)]
+    pub fitness_formula: String,
 }

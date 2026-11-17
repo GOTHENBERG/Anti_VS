@@ -115,10 +115,7 @@ pub fn update_movement(world: &mut World, dt: f32) {
     }
 
     // 2. Перестроение Пространственной Сетки (Spatial Grid) для мгновенных запросов O(1)
-    world.spatial_grid.clear();
-    for (idx, mob) in world.mobs.iter().enumerate() {
-        world.spatial_grid.insert(idx, mob.pos);
-    }
+    world.rebuild_spatial_grid();
 
     // 3. Обновление снарядов (включая активное самонаведение в полете)
     for proj in &mut world.projectiles {

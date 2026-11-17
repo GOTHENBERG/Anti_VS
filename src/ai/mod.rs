@@ -33,11 +33,20 @@ pub fn load_trained_boss_model() -> Option<BossModel> {
                     model.synergy_seeking_weight = crate::ai::models::default_synergy_seeking_weight();
                 }
                 if let Some(net) = &model.neural_net {
-                    if net.input_size != crate::ai::neural_net::INPUT_SIZE {
+                    if !net.is_compatible() {
                         model.neural_net = Some(crate::ai::neural_net::NeuralNet::new());
+                        model.fitness = f32::NEG_INFINITY;
                     }
                 } else {
                     model.neural_net = Some(crate::ai::neural_net::NeuralNet::new());
+                    model.fitness = f32::NEG_INFINITY;
+                }
+                if let Some(net) = &model.neural_net {
+                    model.total_synapses = net.total_synapses();
+                }
+                // Фитнес старого формата несравним с новым — инвалидируем.
+                if model.fitness_version != crate::ai::models::MODEL_FORMAT_VERSION {
+                    model.fitness = f32::NEG_INFINITY;
                 }
                 return Some(model);
             }
@@ -56,6 +65,21 @@ pub fn load_trained_director_model() -> Option<DirectorModel> {
                 while model.squad_spawn_weights.len() < default_s.len() {
                     let idx = model.squad_spawn_weights.len();
                     model.squad_spawn_weights.push(default_s[idx]);
+                }
+                if let Some(net) = &model.neural_net {
+                    if !net.is_compatible() {
+                        model.neural_net = Some(crate::ai::neural_net::DirectorBrainNet::new());
+                        model.fitness = f32::NEG_INFINITY;
+                    }
+                } else {
+                    model.neural_net = Some(crate::ai::neural_net::DirectorBrainNet::new());
+                    model.fitness = f32::NEG_INFINITY;
+                }
+                if let Some(net) = &model.neural_net {
+                    model.total_synapses = net.total_synapses();
+                }
+                if model.fitness_version != crate::ai::models::MODEL_FORMAT_VERSION {
+                    model.fitness = f32::NEG_INFINITY;
                 }
                 return Some(model);
             }

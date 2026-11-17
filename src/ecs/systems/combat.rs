@@ -194,6 +194,20 @@ pub fn update_combat(world: &mut World, dt: f32) {
     // 2. Обработка очереди урона (из skills, кислотных луж и т.д.)
     let queue = std::mem::take(&mut world.damage_queue);
     let mut structure_texts = Vec::new();
+
+    // O(1) поиск моба по id вместо O(N) на каждый пакет урона.
+    let mob_index: std::collections::HashMap<usize, usize> =
+        if queue.iter().any(|p| p.target_id != 0) {
+            world
+                .mobs
+                .iter()
+                .enumerate()
+                .map(|(i, m)| (m.id, i))
+                .collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+
     for packet in queue {
         if packet.target_id == 0 {
             if !is_boss_invulnerable {
@@ -207,9 +221,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, source_kind);
                 world.total_damage_dealt_to_boss += actual_dmg;
             }
-        } else if let Some(mob) = world.mobs.iter_mut().find(|m| m.id == packet.target_id) {
-            let actual_dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
-            mob.health.take_damage(actual_dmg);
+        } else if let Some(&mob_idx) = mob_index.get(&packet.target_id) {
+            if let Some(mob) = world.mobs.get_mut(mob_idx) {
+                let actual_dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
+                mob.health.take_damage(actual_dmg);
+            }
         } else if let Some(st) = world.structures.iter_mut().find(|s| s.id == packet.target_id) {
             let actual_dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(actual_dmg);
@@ -224,6 +240,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let mut boss_hits = Vec::new();
     let mut hit_particles = Vec::new();
     let mut structure_proj_hits = Vec::new();
+    // Переиспользуемый буфер: ноль аллокаций на каждый снаряд.
+    let mut nearby_scratch: Vec<usize> = Vec::with_capacity(64);
 
     for proj in &mut world.projectiles {
         if proj.lifetime <= 0.0 || proj.pierce == 0 {
@@ -232,8 +250,10 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
         if proj.faction == Faction::Boss {
             // Снаряды босса поражают мобов
-            let nearby = world.spatial_grid.query_nearby(proj.pos, proj.radius + 30.0);
-            for idx in nearby {
+            world
+                .spatial_grid
+                .query_nearby_into(proj.pos, proj.radius + 30.0, &mut nearby_scratch);
+            for &idx in &nearby_scratch {
                 if proj.pierce == 0 {
                     break;
                 }
@@ -377,6 +397,9 @@ pub fn update_combat(world: &mut World, dt: f32) {
         world.spawn_particles(boss_pos, 8, RED, 70.0);
     }
     for (pos, hit_color) in hit_particles {
+        if world.is_headless {
+            break;
+        }
         world.particles.push(crate::ecs::world::ParticleEntity {
             pos,
             vel: Vec2::new(rand::gen_range(-30.0, 30.0), rand::gen_range(-30.0, 30.0)),
@@ -569,6 +592,10 @@ pub fn update_combat(world: &mut World, dt: f32) {
             }
         }
     }
+
+    // 7. После удаления погибших мобов индексы в сетке устарели.
+    // Перестраиваем её, чтобы сенсоры и скиллы следующего тика видели корректные записи.
+    world.rebuild_spatial_grid();
 }
 
 /// Слияние избыточных кристаллов душ (Gem Merging):
@@ -579,10 +606,15 @@ fn merge_excess_gems(gems: &mut Vec<SoulGemEntity>, target_max: usize, boss_pos:
     }
 
     let boss_dist_min_sq = 150.0 * 150.0;
-    let merge_dist_sq = 70.0 * 70.0;
+    let merge_dist: f32 = 70.0;
     let len = gems.len();
+    // 1. O(N) слияние близких кристаллов через пространственную сетку 70x70 px.
+    // Опыт не теряется: XP поглощённого кристалла переходит представителю ячейки.
+    let cell = merge_dist.max(1.0);
+    let cols = (crate::core::MAP_WIDTH / cell).ceil() as usize + 1;
+    let rows = (crate::core::MAP_HEIGHT / cell).ceil() as usize + 1;
+    let mut cell_representative: Vec<Option<usize>> = vec![None; cols * rows];
 
-    // 1. Локальное слияние близко лежащих кристаллов вне зоны подбора босса
     for i in 0..len {
         if gems[i].is_magnet || gems[i].xp_value <= 0.0 {
             continue;
@@ -591,14 +623,15 @@ fn merge_excess_gems(gems: &mut Vec<SoulGemEntity>, target_max: usize, boss_pos:
             continue;
         }
 
-        for j in (i + 1)..len {
-            if gems[j].is_magnet || gems[j].xp_value <= 0.0 {
-                continue;
-            }
-            if gems[i].pos.distance_squared(gems[j].pos) < merge_dist_sq {
-                gems[i].xp_value += gems[j].xp_value;
-                gems[j].xp_value = 0.0;
-            }
+        let cx = (gems[i].pos.x.max(0.0) / cell).floor() as usize;
+        let cy = (gems[i].pos.y.max(0.0) / cell).floor() as usize;
+        let key = cy.min(rows - 1) * cols + cx.min(cols - 1);
+
+        if let Some(rep) = cell_representative[key] {
+            gems[rep].xp_value += gems[i].xp_value;
+            gems[i].xp_value = 0.0;
+        } else {
+            cell_representative[key] = Some(i);
         }
     }
 

@@ -4,6 +4,43 @@ use crate::ecs::world::{StructureEntity, World};
 
 pub const BLOOD_ALTAR_COST: f32 = 50.0;
 
+/// Минимальная дистанция между центрами алтарей.
+pub const ALTAR_MIN_SPACING: f32 = 120.0;
+
+/// Проверяет, можно ли поставить алтарь в запрошенной точке.
+pub fn can_place_blood_altar(world: &World, requested: Vec2) -> bool {
+    let margin = 45.0;
+    if requested.x < margin
+        || requested.x > crate::core::MAP_WIDTH - margin
+        || requested.y < margin
+        || requested.y > crate::core::MAP_HEIGHT - margin
+    {
+        return false;
+    }
+    let min_spacing_sq = ALTAR_MIN_SPACING * ALTAR_MIN_SPACING;
+    !world
+        .structures
+        .iter()
+        .any(|s| s.health.is_alive() && s.pos.distance_squared(requested) < min_spacing_sq)
+}
+
+/// Пытается построить алтарь в запрошенной точке.
+/// Возвращает false, если точка невалидна (вне арены или слишком близко к живому алтарю),
+/// чтобы Директор не тратил души и кулдаун на заведомо бесполезную постройку.
+pub fn try_spawn_blood_altar(world: &mut World, requested: Vec2) -> bool {
+    if !can_place_blood_altar(world, requested) {
+        return false;
+    }
+
+    let margin = 45.0;
+    let pos = Vec2::new(
+        requested.x.clamp(margin, crate::core::MAP_WIDTH - margin),
+        requested.y.clamp(margin, crate::core::MAP_HEIGHT - margin),
+    );
+    spawn_blood_altar(world, pos);
+    true
+}
+
 pub fn spawn_blood_altar(world: &mut World, pos: Vec2) {
     let id = world.alloc_id();
     world.structures.push(StructureEntity {

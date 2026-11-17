@@ -2,6 +2,9 @@ use crate::ecs::world::World;
 
 pub fn update_director(world: &mut World, dt: f32) {
     for director in &mut world.directors {
+        // Темп призыва: сколько секунд прошло с последнего отряда
+        director.time_since_last_spawn += dt;
+
         // Уменьшение кулдаунов призыва отрядов
         for cd in &mut director.squad_cooldowns {
             if *cd > 0.0 {

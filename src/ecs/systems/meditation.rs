@@ -42,7 +42,7 @@ pub fn update_meditation(world: &mut World, dt: f32) {
             }
 
             // Визуальные частицы медитации (зеленые и золотые искры вокруг босса)
-            if rand::gen_range(0.0, 1.0) < 0.40 {
+            if !world.is_headless && rand::gen_range(0.0, 1.0) < 0.40 {
                 world.particles.push(crate::ecs::world::ParticleEntity {
                     pos: boss_pos + Vec2::new(rand::gen_range(-25.0, 25.0), rand::gen_range(-25.0, 25.0)),
                     vel: Vec2::new(rand::gen_range(-10.0, 10.0), -40.0),

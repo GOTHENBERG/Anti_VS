@@ -62,3 +62,11 @@ impl RangeVal for u32 {
 pub fn gen_range<T: RangeVal>(low: T, high: T) -> T {
     T::generate(low, high)
 }
+
+/// Детерминированно инициализирует потоковый RNG.
+/// Вызывается в начале каждого headless-матча, чтобы фиксированный seed
+/// давал воспроизводимый результат независимо от потока Rayon.
+#[inline]
+pub fn seed(value: u64) {
+    fastrand::seed(value);
+}

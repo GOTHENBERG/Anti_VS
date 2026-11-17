@@ -1,6 +1,9 @@
 use macroquad::prelude::*;
 use crate::core::rand;
 use crate::core::math::{calculate_attract_force, calculate_repel_force};
+use crate::ai::neural_net::{
+    OUT_DASH, OUT_DASH_X, OUT_DASH_Y, OUT_MOVE_MAG, OUT_MOVE_X, OUT_MOVE_Y, OUT_REST,
+};
 use crate::ecs::components::inventory::{
     BossInventory, PassiveType, PerkChoice, WeaponType, MAX_PASSIVE_LEVEL, MAX_PASSIVE_SLOTS,
     MAX_WEAPON_LEVEL, MAX_WEAPON_SLOTS,
@@ -32,19 +35,30 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
             // Вся кинематика движения и триггер рывка определяются исключительно прямым проходом через синапсы нейросети.
             let obs = crate::ai::sensors::extract_boss_observations(world);
             let nn_out = net.forward(&obs);
-            let move_intent = Vec2::new(nn_out[0], nn_out[1]);
+            let move_intent = Vec2::new(nn_out[OUT_MOVE_X], nn_out[OUT_MOVE_Y]);
+            let move_mag = nn_out[OUT_MOVE_MAG].clamp(0.0, 1.0);
+            let rest = nn_out[OUT_REST] > 0.5;
             let max_speed = world.boss_inventory.get_movement_speed(160.0);
 
-            // Бинарная кинематика (Bang-Bang): строго 100% максимальной скорости либо полный стоп (0%)!
-            let (vel, d_dir) = if move_intent.length_squared() > 0.04 {
+            // Непрерывная скорость: направление задаёт вектор, темп — отдельный выход.
+            // Канал REST позволяет осознанно замереть (медитация/позиционирование).
+            let (vel, d_dir) = if !rest && move_intent.length_squared() > 0.0025 {
                 let dir = move_intent.normalize();
-                (dir * max_speed, dir)
+                (dir * max_speed * move_mag, dir)
             } else {
                 (Vec2::ZERO, Vec2::X)
             };
 
-            let dash = (nn_out[6] > 0.60) && world.boss_dash_cooldown <= 0.0;
-            (vel, dash, d_dir)
+            let dash = nn_out[OUT_DASH] > 0.5 && world.boss_dash_cooldown <= 0.0;
+            let dash_raw = Vec2::new(nn_out[OUT_DASH_X], nn_out[OUT_DASH_Y]);
+            let dash_dir = if dash_raw.length_squared() > 0.04 {
+                dash_raw.normalize()
+            } else if vel.length_squared() > 1.0 {
+                d_dir
+            } else {
+                Vec2::X
+            };
+            (vel, dash, dash_dir)
         } else {
             compute_heuristic_movement(world, boss_pos, map_w, map_h, model)
         }
@@ -58,7 +72,6 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
         let old_pos = world.boss_pos;
         let dash_target = (boss_pos + dash_dir * 180.0)
             .clamp(Vec2::new(60.0, 60.0), Vec2::new(map_w - 60.0, map_h - 60.0));
-
         world.boss_pos = dash_target;
         world.boss_invulnerable_timer = 0.25;
         world.boss_dash_cooldown = 7.0;
