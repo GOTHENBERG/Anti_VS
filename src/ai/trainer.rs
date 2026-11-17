@@ -119,15 +119,20 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             loaded_boss.total_synapses = net.total_synapses();
             loaded_boss.neural_net = Some(net);
         }
-        let loaded_director = crate::ai::load_trained_director_model().unwrap_or_default();
+        let mut loaded_director = crate::ai::load_trained_director_model().unwrap_or_default();
+        if loaded_director.neural_net.is_none() || loaded_director.total_synapses != crate::ai::neural_net::DirectorBrainNet::new().total_synapses() {
+            let net = crate::ai::neural_net::DirectorBrainNet::new();
+            loaded_director.total_synapses = net.total_synapses();
+            loaded_director.neural_net = Some(net);
+        }
         let base_gen_val = loaded_boss.generation;
         (loaded_boss, loaded_director, base_gen_val)
     };
 
     if base_gen > 0 {
-        println!("[ПРОДОЛЖЕНИЕ] Дообучение: с Поколения {} (Фитнес Босса: {:.0}, Синапсов: {})", base_gen, seed_boss.fitness, seed_boss.total_synapses);
+        println!("[ПРОДОЛЖЕНИЕ] Дообучение: с Поколения {} (Фитнес Босса: {:.0}, Синапсов Босса: {}, Синапсов Директора: {})", base_gen, seed_boss.fitness, seed_boss.total_synapses, seed_director.total_synapses);
     } else {
-        println!("[СТАРТ] Начало нового цикла обучения: инициализирована нейросеть ({} синапсов, 150 входов).", seed_boss.total_synapses);
+        println!("[СТАРТ] Начало нового цикла: инициализированы нейросети (Босс: {} син., Директор: {} син.).", seed_boss.total_synapses, seed_director.total_synapses);
     }
 
     let start_msg = format!(
@@ -173,6 +178,9 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         .map(|i| {
             let mut d = seed_director.clone();
             if i > 0 {
+                if let Some(ref mut net) = d.neural_net {
+                    net.mutate(0.12, 0.20);
+                }
                 d.altar_build_priority = (d.altar_build_priority + rand::gen_range(-0.10, 0.10)).clamp(0.1, 1.0);
                 for w in d.squad_spawn_weights.iter_mut() {
                     *w = (*w + rand::gen_range(-0.15, 0.15)).max(0.1);
@@ -687,6 +695,17 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             let p2 = &director_pop[rand::gen_range(0, population_size / 2)];
             let mut child = p1.clone();
 
+            // Кроссовер и мутация нейросети Директора
+            if let (Some(net1), Some(net2)) = (&p1.neural_net, &p2.neural_net) {
+                let mut crossed_net = net1.crossover(net2);
+                crossed_net.mutate(0.08, 0.18);
+                child.neural_net = Some(crossed_net);
+            } else {
+                let mut net = crate::ai::neural_net::DirectorBrainNet::new();
+                net.mutate(0.10, 0.20);
+                child.neural_net = Some(net);
+            }
+
             child.altar_build_priority = ((p1.altar_build_priority + p2.altar_build_priority) * 0.5 + rand::gen_range(-0.08, 0.08)).clamp(0.1, 1.0);
             for i in 0..child.squad_spawn_weights.len() {
                 let p1_w = p1.squad_spawn_weights.get(i).copied().unwrap_or(1.0);
@@ -752,7 +771,14 @@ fn save_models(boss: &BossModel, director: &DirectorModel, generations: usize, i
 
     if let Ok(dir_json) = serde_json::to_string_pretty(director) {
         if let Ok(_) = std::fs::write("models/director_policy.json", dir_json) {
-            println!("  [OK] Модель Директора (Поколение #{}) -> models/director_policy.json", director.generation);
+            println!("  [OK] Модель Директора ({} синапсов, Поколение #{}) -> models/director_policy.json", director.total_synapses, director.generation);
+        }
+    }
+
+    if let Some(ref net) = director.neural_net {
+        if let Ok(dir_brain_json) = serde_json::to_string_pretty(net) {
+            let _ = std::fs::write("models/director_brain_neural.json", dir_brain_json);
+            println!("  [OK] Матрица синапсов Директора (132 сенсора, 3 головы решений) -> models/director_brain_neural.json");
         }
     }
 

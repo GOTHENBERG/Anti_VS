@@ -109,22 +109,32 @@ pub struct DirectorModel {
     pub fitness: f32,
     pub avg_boss_kill_time: f32,
 
-    // Веса предпочтения призыва отрядов (Тиры 1 - 8)
+    // Глубокая многоголовая нейросеть Директора (132 сенсора -> 12,808 синапсов)
+    #[serde(default)]
+    pub neural_net: Option<crate::ai::neural_net::DirectorBrainNet>,
+    #[serde(default)]
+    pub total_synapses: usize,
+
+    // Веса предпочтения призыва отрядов (сохранены для обратной совместимости)
     #[serde(default = "default_squad_weights")]
     pub squad_spawn_weights: Vec<f32>,
 
-    // Вес постройки Алтарей Крови
-    pub altar_build_priority: f32,       // Шанс построить алтарь сразу при откате (0.0 - 1.0)
-    pub soul_reserve_threshold: f32,     // Запас душ перед тратой на дорогие тиры (0.0 - 200.0)
+    // Вес постройки Алтарей Крови (для обратной совместимости)
+    pub altar_build_priority: f32,
+    pub soul_reserve_threshold: f32,
 }
 
 impl Default for DirectorModel {
     fn default() -> Self {
+        let net = crate::ai::neural_net::DirectorBrainNet::new();
+        let synapses = net.total_synapses();
         Self {
-            version: "v1.0-coev".to_string(),
+            version: "v2.0-neural-rl".to_string(),
             generation: 0,
             fitness: 0.0,
             avg_boss_kill_time: 0.0,
+            neural_net: Some(net),
+            total_synapses: synapses,
             squad_spawn_weights: default_squad_weights(),
             altar_build_priority: 0.85,
             soul_reserve_threshold: 40.0,

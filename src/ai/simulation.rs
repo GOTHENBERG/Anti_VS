@@ -58,97 +58,165 @@ pub fn run_headless_simulation(
         sim_time += dt;
         director_decision_timer += dt;
 
-        // 1. Принятие тактических решений Директором-ботом (каждые 0.4 сек)
+        // 1. Принятие тактических решений Директором (чистый End-to-End RL через DirectorBrainNet)
         if director_decision_timer >= 0.4 {
             director_decision_timer = 0.0;
-            let _dir_obs = crate::ai::sensors::extract_director_observations(&world, sim_time);
+            let dir_obs = crate::ai::sensors::extract_director_observations(&world, sim_time);
 
-            let mut should_spawn_altar = false;
-            let mut altar_pos = Vec2::ZERO;
-            let mut tier_to_spawn = None;
+            if let Some(ref net) = director_model.neural_net {
+                let decision = net.forward(&dir_obs);
 
-            if let Some(director) = world.directors.first() {
-                let cooldown = director.altar_cooldown;
-                let points = director.points;
-                let spent = director.total_points_spent;
+                // 1.1 Постройка Алтаря Крови (Голова В)
+                if decision.should_build_altar {
+                    let can_build = if let Some(director) = world.directors.first() {
+                        director.altar_cooldown <= 0.0 && director.points >= BLOOD_ALTAR_COST
+                    } else {
+                        false
+                    };
 
-                // 1.1 Постройка Алтаря Крови (Кулдаун 60 сек, без искусственного лимита)
-                if cooldown <= 0.0 && points >= BLOOD_ALTAR_COST {
-                    let build_roll = rand::gen_range(0.0, 1.0);
-                    if build_roll < director_model.altar_build_priority {
-                        should_spawn_altar = true;
-                        let altar_angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
-                        let altar_dist = rand::gen_range(350.0, 750.0);
-                        altar_pos = (world.boss_pos + Vec2::new(altar_angle.cos() * altar_dist, altar_angle.sin() * altar_dist))
-                            .clamp(Vec2::new(35.0, 35.0), Vec2::new(MAP_WIDTH - 35.0, MAP_HEIGHT - 35.0));
+                    if can_build {
+                        if let Some(director) = world.directors.first_mut() {
+                            director.spend_points(BLOOD_ALTAR_COST);
+                            director.altar_cooldown = director.altar_max_cooldown;
+                        }
+                        spawn_blood_altar(&mut world, decision.altar_target_pos);
+                        altars_built += 1;
                     }
                 }
 
-                // 1.2 Призыв отрядов монстров (Тиры 1 - 8) на основе вероятностных весов (Рулетка)
-                let remaining_points = if should_spawn_altar { points - BLOOD_ALTAR_COST } else { points };
-                let mut eligible_squads = Vec::with_capacity(8);
-                let mut total_weight = 0.0f32;
-
-                for (tier_idx, &w) in director_model.squad_spawn_weights.iter().enumerate() {
-                    let tier = (tier_idx + 1) as u8;
+                // 1.2 Целевой призыв отрядов монстров (Голова А - Target Intent с накоплением)
+                if decision.target_squad > 0 && decision.target_squad <= 16 {
+                    let tier = decision.target_squad as u8;
                     let config = get_squad_config(tier);
-                    let is_unlocked = spent >= config.unlock_spent_threshold;
-                    if is_unlocked && remaining_points >= config.cost && w > 0.0 {
-                        eligible_squads.push((tier, config.cost, w));
-                        total_weight += w;
-                    }
-                }
+                    let can_spawn = if let Some(director) = world.directors.first() {
+                        let is_unlocked = director.total_points_spent >= config.unlock_spent_threshold;
+                        is_unlocked && director.points >= config.cost
+                    } else {
+                        false
+                    };
 
-                if !eligible_squads.is_empty() && total_weight > 0.0 {
-                    let mut roll = rand::gen_range(0.0, total_weight);
-                    for (tier, cost, w) in eligible_squads {
-                        if roll <= w {
-                            tier_to_spawn = Some((tier, cost));
-                            break;
-                        }
-                        roll -= w;
-                    }
-                }
-            }
-
-            if should_spawn_altar {
-                if let Some(director) = world.directors.first_mut() {
-                    director.spend_points(BLOOD_ALTAR_COST);
-                    director.altar_cooldown = director.altar_max_cooldown;
-                }
-                spawn_blood_altar(&mut world, altar_pos);
-                altars_built += 1;
-            }
-
-            if let Some((tier, cost)) = tier_to_spawn {
-                if let Some(director) = world.directors.first_mut() {
-                    if director.spend_points(cost) {
-                        spawn_squad_perimeter(&mut world, tier);
-                        if tier >= 1 && tier <= 16 {
-                            let count = get_squad_config(tier).count;
-                            mobs_spawned_by_tier[(tier - 1) as usize] += count;
+                    if can_spawn {
+                        if let Some(director) = world.directors.first_mut() {
+                            if director.spend_points(config.cost) {
+                                spawn_squad_perimeter(&mut world, tier);
+                                mobs_spawned_by_tier[(tier - 1) as usize] += config.count;
+                            }
                         }
                     }
                 }
-            }
 
-            // 1.3 Улучшение грейдов армии Режиссера (Ярость, Панцирь, Чумные споры)
-            if let Some(director) = world.directors.first_mut() {
-                let fury_cost = 100.0 * (director.grade_fury as f32 + 1.0);
-                let carapace_cost = 120.0 * (director.grade_carapace as f32 + 1.0);
-                let pestilence_cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+                // 1.3 Улучшение грейдов армии (Голова Б - Target Upgrade)
+                if decision.target_upgrade > 0 {
+                    if let Some(director) = world.directors.first_mut() {
+                        match decision.target_upgrade {
+                            1 => {
+                                let fury_cost = 100.0 * (director.grade_fury as f32 + 1.0);
+                                if director.spend_points(fury_cost) {
+                                    director.grade_fury += 1;
+                                }
+                            }
+                            2 => {
+                                let carapace_cost = 120.0 * (director.grade_carapace as f32 + 1.0);
+                                if director.spend_points(carapace_cost) {
+                                    director.grade_carapace += 1;
+                                }
+                            }
+                            3 => {
+                                let pestilence_cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+                                if director.spend_points(pestilence_cost) {
+                                    director.grade_pestilence += 1;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            } else {
+                // Fallback (если у модели нет обученной нейросети)
+                let mut should_spawn_altar = false;
+                let mut altar_pos = Vec2::ZERO;
+                let mut tier_to_spawn = None;
 
-                if director.points >= pestilence_cost && director.grade_pestilence <= director.grade_fury {
-                    if director.spend_points(pestilence_cost) {
-                        director.grade_pestilence += 1;
+                if let Some(director) = world.directors.first() {
+                    let cooldown = director.altar_cooldown;
+                    let points = director.points;
+                    let spent = director.total_points_spent;
+
+                    if cooldown <= 0.0 && points >= BLOOD_ALTAR_COST {
+                        let build_roll = rand::gen_range(0.0, 1.0);
+                        if build_roll < director_model.altar_build_priority {
+                            should_spawn_altar = true;
+                            let altar_angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
+                            let altar_dist = rand::gen_range(350.0, 750.0);
+                            altar_pos = (world.boss_pos + Vec2::new(altar_angle.cos() * altar_dist, altar_angle.sin() * altar_dist))
+                                .clamp(Vec2::new(35.0, 35.0), Vec2::new(MAP_WIDTH - 35.0, MAP_HEIGHT - 35.0));
+                        }
                     }
-                } else if director.points >= carapace_cost && director.grade_carapace <= director.grade_fury {
-                    if director.spend_points(carapace_cost) {
-                        director.grade_carapace += 1;
+
+                    let remaining_points = if should_spawn_altar { points - BLOOD_ALTAR_COST } else { points };
+                    let mut eligible_squads = Vec::with_capacity(8);
+                    let mut total_weight = 0.0f32;
+
+                    for (tier_idx, &w) in director_model.squad_spawn_weights.iter().enumerate() {
+                        let tier = (tier_idx + 1) as u8;
+                        let config = get_squad_config(tier);
+                        let is_unlocked = spent >= config.unlock_spent_threshold;
+                        if is_unlocked && remaining_points >= config.cost && w > 0.0 {
+                            eligible_squads.push((tier, config.cost, w));
+                            total_weight += w;
+                        }
                     }
-                } else if director.points >= fury_cost {
-                    if director.spend_points(fury_cost) {
-                        director.grade_fury += 1;
+
+                    if !eligible_squads.is_empty() && total_weight > 0.0 {
+                        let mut roll = rand::gen_range(0.0, total_weight);
+                        for (tier, cost, w) in eligible_squads {
+                            if roll <= w {
+                                tier_to_spawn = Some((tier, cost));
+                                break;
+                            }
+                            roll -= w;
+                        }
+                    }
+                }
+
+                if should_spawn_altar {
+                    if let Some(director) = world.directors.first_mut() {
+                        director.spend_points(BLOOD_ALTAR_COST);
+                        director.altar_cooldown = director.altar_max_cooldown;
+                    }
+                    spawn_blood_altar(&mut world, altar_pos);
+                    altars_built += 1;
+                }
+
+                if let Some((tier, cost)) = tier_to_spawn {
+                    if let Some(director) = world.directors.first_mut() {
+                        if director.spend_points(cost) {
+                            spawn_squad_perimeter(&mut world, tier);
+                            if tier >= 1 && tier <= 16 {
+                                let count = get_squad_config(tier).count;
+                                mobs_spawned_by_tier[(tier - 1) as usize] += count;
+                            }
+                        }
+                    }
+                }
+
+                if let Some(director) = world.directors.first_mut() {
+                    let fury_cost = 100.0 * (director.grade_fury as f32 + 1.0);
+                    let carapace_cost = 120.0 * (director.grade_carapace as f32 + 1.0);
+                    let pestilence_cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+
+                    if director.points >= pestilence_cost && director.grade_pestilence <= director.grade_fury {
+                        if director.spend_points(pestilence_cost) {
+                            director.grade_pestilence += 1;
+                        }
+                    } else if director.points >= carapace_cost && director.grade_carapace <= director.grade_fury {
+                        if director.spend_points(carapace_cost) {
+                            director.grade_carapace += 1;
+                        }
+                    } else if director.points >= fury_cost {
+                        if director.spend_points(fury_cost) {
+                            director.grade_fury += 1;
+                        }
                     }
                 }
             }

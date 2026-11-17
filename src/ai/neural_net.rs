@@ -199,3 +199,244 @@ impl NeuralNet {
             + (HIDDEN2_SIZE * OUTPUT_SIZE + OUTPUT_SIZE)
     }
 }
+
+pub const DIRECTOR_INPUT_SIZE: usize = 132;
+pub const DIRECTOR_HIDDEN1_SIZE: usize = 64;
+pub const DIRECTOR_HIDDEN2_SIZE: usize = 48;
+pub const DIRECTOR_SPAWN_HEAD_SIZE: usize = 17;   // 0: Копить души, 1..16: Тиры 1..16
+pub const DIRECTOR_UPGRADE_HEAD_SIZE: usize = 4;  // 0: Копить души, 1: Ярость, 2: Панцирь, 3: Чумные споры
+pub const DIRECTOR_ALTAR_HEAD_SIZE: usize = 3;    // [0]: Триггер постройки, [1]: X, [2]: Y
+
+#[derive(Clone, Debug)]
+pub struct DirectorDecision {
+    pub target_squad: usize,      // 0..16
+    pub target_upgrade: usize,    // 0..3
+    pub should_build_altar: bool,
+    pub altar_target_pos: macroquad::prelude::Vec2,
+}
+
+/// Многоголовая глубокая нейросеть Директора (Multi-Head RTS Commander Brain)
+/// Архитектура: 132 сенсорных входа -> 64 (ReLU) -> 48 (ReLU) -> 3 головы решений:
+/// 1. Голова А (17 выходов): Целевой призыв мобов (Target Intent)
+/// 2. Голова Б (4 выхода): Целевой апгрейд грейда армии
+/// 3. Голова В (3 выхода): Постройка и координаты размещения Алтаря Крови
+/// Всего синапсов: 12,808 параметров!
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DirectorBrainNet {
+    pub input_size: usize,
+    pub hidden1_size: usize,
+    pub hidden2_size: usize,
+
+    // Слой 1: 132 -> 64
+    pub w1: Vec<Vec<f32>>,
+    pub b1: Vec<f32>,
+
+    // Слой 2: 64 -> 48
+    pub w2: Vec<Vec<f32>>,
+    pub b2: Vec<f32>,
+
+    // Голова А: Призыв мобов (48 -> 17)
+    pub w_spawn: Vec<Vec<f32>>,
+    pub b_spawn: Vec<f32>,
+
+    // Голова Б: Апгрейды грейдов (48 -> 4)
+    pub w_upgrade: Vec<Vec<f32>>,
+    pub b_upgrade: Vec<f32>,
+
+    // Голова В: Алтарь Крови (48 -> 3)
+    pub w_altar: Vec<Vec<f32>>,
+    pub b_altar: Vec<f32>,
+}
+
+impl DirectorBrainNet {
+    pub fn new() -> Self {
+        let scale1 = (2.0 / DIRECTOR_INPUT_SIZE as f32).sqrt();
+        let scale2 = (2.0 / DIRECTOR_HIDDEN1_SIZE as f32).sqrt();
+        let scale_spawn = (2.0 / DIRECTOR_HIDDEN2_SIZE as f32).sqrt();
+        let scale_upgrade = (2.0 / DIRECTOR_HIDDEN2_SIZE as f32).sqrt();
+        let scale_altar = (2.0 / DIRECTOR_HIDDEN2_SIZE as f32).sqrt();
+
+        let w1 = (0..DIRECTOR_HIDDEN1_SIZE)
+            .map(|_| (0..DIRECTOR_INPUT_SIZE).map(|_| rand::gen_range(-scale1, scale1)).collect())
+            .collect();
+        let b1 = vec![0.0; DIRECTOR_HIDDEN1_SIZE];
+
+        let w2 = (0..DIRECTOR_HIDDEN2_SIZE)
+            .map(|_| (0..DIRECTOR_HIDDEN1_SIZE).map(|_| rand::gen_range(-scale2, scale2)).collect())
+            .collect();
+        let b2 = vec![0.0; DIRECTOR_HIDDEN2_SIZE];
+
+        let w_spawn = (0..DIRECTOR_SPAWN_HEAD_SIZE)
+            .map(|_| (0..DIRECTOR_HIDDEN2_SIZE).map(|_| rand::gen_range(-scale_spawn, scale_spawn)).collect())
+            .collect();
+        let b_spawn = vec![0.0; DIRECTOR_SPAWN_HEAD_SIZE];
+
+        let w_upgrade = (0..DIRECTOR_UPGRADE_HEAD_SIZE)
+            .map(|_| (0..DIRECTOR_HIDDEN2_SIZE).map(|_| rand::gen_range(-scale_upgrade, scale_upgrade)).collect())
+            .collect();
+        let b_upgrade = vec![0.0; DIRECTOR_UPGRADE_HEAD_SIZE];
+
+        let w_altar = (0..DIRECTOR_ALTAR_HEAD_SIZE)
+            .map(|_| (0..DIRECTOR_HIDDEN2_SIZE).map(|_| rand::gen_range(-scale_altar, scale_altar)).collect())
+            .collect();
+        let b_altar = vec![0.0; DIRECTOR_ALTAR_HEAD_SIZE];
+
+        Self {
+            input_size: DIRECTOR_INPUT_SIZE,
+            hidden1_size: DIRECTOR_HIDDEN1_SIZE,
+            hidden2_size: DIRECTOR_HIDDEN2_SIZE,
+            w1,
+            b1,
+            w2,
+            b2,
+            w_spawn,
+            b_spawn,
+            w_upgrade,
+            b_upgrade,
+            w_altar,
+            b_altar,
+        }
+    }
+
+    /// Прямой проход нейросети Директора (Forward Pass)
+    pub fn forward(&self, inputs: &[f32; DIRECTOR_INPUT_SIZE]) -> DirectorDecision {
+        // 1. Скрытый слой 1 (Linear + Leaky ReLU)
+        let mut h1 = [0.0f32; DIRECTOR_HIDDEN1_SIZE];
+        for i in 0..DIRECTOR_HIDDEN1_SIZE {
+            let mut sum = self.b1[i];
+            let row = &self.w1[i];
+            for j in 0..DIRECTOR_INPUT_SIZE {
+                sum += row[j] * inputs[j];
+            }
+            h1[i] = if sum > 0.0 { sum } else { 0.01 * sum };
+        }
+
+        // 2. Скрытый слой 2 (Linear + Leaky ReLU)
+        let mut h2 = [0.0f32; DIRECTOR_HIDDEN2_SIZE];
+        for i in 0..DIRECTOR_HIDDEN2_SIZE {
+            let mut sum = self.b2[i];
+            let row = &self.w2[i];
+            for j in 0..DIRECTOR_HIDDEN1_SIZE {
+                sum += row[j] * h1[j];
+            }
+            h2[i] = if sum > 0.0 { sum } else { 0.01 * sum };
+        }
+
+        // 3. Голова А: Призыв мобов (17 логитов -> argmax)
+        let mut best_spawn = 0;
+        let mut max_spawn_logit = f32::NEG_INFINITY;
+        for i in 0..DIRECTOR_SPAWN_HEAD_SIZE {
+            let mut sum = self.b_spawn[i];
+            let row = &self.w_spawn[i];
+            for j in 0..DIRECTOR_HIDDEN2_SIZE {
+                sum += row[j] * h2[j];
+            }
+            if sum > max_spawn_logit {
+                max_spawn_logit = sum;
+                best_spawn = i;
+            }
+        }
+
+        // 4. Голова Б: Апгрейды грейдов (4 логита -> argmax)
+        let mut best_upgrade = 0;
+        let mut max_upgrade_logit = f32::NEG_INFINITY;
+        for i in 0..DIRECTOR_UPGRADE_HEAD_SIZE {
+            let mut sum = self.b_upgrade[i];
+            let row = &self.w_upgrade[i];
+            for j in 0..DIRECTOR_HIDDEN2_SIZE {
+                sum += row[j] * h2[j];
+            }
+            if sum > max_upgrade_logit {
+                max_upgrade_logit = sum;
+                best_upgrade = i;
+            }
+        }
+
+        // 5. Голова В: Алтарь Крови (3 выхода)
+        // [0]: Триггер (Sigmoid > 0.5)
+        // [1]: X координата (Sigmoid -> [35.0, MAP_WIDTH - 35.0])
+        // [2]: Y координата (Sigmoid -> [35.0, MAP_HEIGHT - 35.0])
+        let mut altar_raw = [0.0f32; DIRECTOR_ALTAR_HEAD_SIZE];
+        for i in 0..DIRECTOR_ALTAR_HEAD_SIZE {
+            let mut sum = self.b_altar[i];
+            let row = &self.w_altar[i];
+            for j in 0..DIRECTOR_HIDDEN2_SIZE {
+                sum += row[j] * h2[j];
+            }
+            altar_raw[i] = 1.0 / (1.0 + (-sum).exp());
+        }
+
+        let should_build_altar = altar_raw[0] > 0.5;
+        let altar_x = 35.0 + altar_raw[1] * (crate::core::MAP_WIDTH - 70.0);
+        let altar_y = 35.0 + altar_raw[2] * (crate::core::MAP_HEIGHT - 70.0);
+
+        DirectorDecision {
+            target_squad: best_spawn,
+            target_upgrade: best_upgrade,
+            should_build_altar,
+            altar_target_pos: macroquad::prelude::Vec2::new(altar_x, altar_y),
+        }
+    }
+
+    /// Мутация синаптических весов для эволюции Директора
+    pub fn mutate(&mut self, rate: f32, sigma: f32) {
+        fn mutate_layer(weights: &mut Vec<Vec<f32>>, biases: &mut Vec<f32>, rate: f32, sigma: f32) {
+            for row in weights.iter_mut() {
+                for w in row.iter_mut() {
+                    if rand::gen_range(0.0, 1.0) < rate {
+                        *w += rand::gen_range(-sigma, sigma);
+                    }
+                }
+            }
+            for b in biases.iter_mut() {
+                if rand::gen_range(0.0, 1.0) < rate {
+                    *b += rand::gen_range(-sigma, sigma);
+                }
+            }
+        }
+
+        mutate_layer(&mut self.w1, &mut self.b1, rate, sigma);
+        mutate_layer(&mut self.w2, &mut self.b2, rate, sigma);
+        mutate_layer(&mut self.w_spawn, &mut self.b_spawn, rate, sigma);
+        mutate_layer(&mut self.w_upgrade, &mut self.b_upgrade, rate, sigma);
+        mutate_layer(&mut self.w_altar, &mut self.b_altar, rate, sigma);
+    }
+
+    /// Генетический кроссовер весовых матриц двух нейросетей Директора
+    pub fn crossover(&self, other: &Self) -> Self {
+        fn crossover_layer(
+            w_out: &mut Vec<Vec<f32>>,
+            b_out: &mut Vec<f32>,
+            w_other: &Vec<Vec<f32>>,
+            b_other: &Vec<f32>,
+        ) {
+            for i in 0..w_out.len() {
+                for j in 0..w_out[i].len() {
+                    if rand::gen_range(0.0, 1.0) < 0.5 {
+                        w_out[i][j] = w_other[i][j];
+                    }
+                }
+                if rand::gen_range(0.0, 1.0) < 0.5 {
+                    b_out[i] = b_other[i];
+                }
+            }
+        }
+
+        let mut child = self.clone();
+        crossover_layer(&mut child.w1, &mut child.b1, &other.w1, &other.b1);
+        crossover_layer(&mut child.w2, &mut child.b2, &other.w2, &other.b2);
+        crossover_layer(&mut child.w_spawn, &mut child.b_spawn, &other.w_spawn, &other.b_spawn);
+        crossover_layer(&mut child.w_upgrade, &mut child.b_upgrade, &other.w_upgrade, &other.b_upgrade);
+        crossover_layer(&mut child.w_altar, &mut child.b_altar, &other.w_altar, &other.b_altar);
+        child
+    }
+
+    /// Общее число параметров (синапсов) в мозге Директора
+    pub fn total_synapses(&self) -> usize {
+        (DIRECTOR_INPUT_SIZE * DIRECTOR_HIDDEN1_SIZE + DIRECTOR_HIDDEN1_SIZE)
+            + (DIRECTOR_HIDDEN1_SIZE * DIRECTOR_HIDDEN2_SIZE + DIRECTOR_HIDDEN2_SIZE)
+            + (DIRECTOR_HIDDEN2_SIZE * DIRECTOR_SPAWN_HEAD_SIZE + DIRECTOR_SPAWN_HEAD_SIZE)
+            + (DIRECTOR_HIDDEN2_SIZE * DIRECTOR_UPGRADE_HEAD_SIZE + DIRECTOR_UPGRADE_HEAD_SIZE)
+            + (DIRECTOR_HIDDEN2_SIZE * DIRECTOR_ALTAR_HEAD_SIZE + DIRECTOR_ALTAR_HEAD_SIZE)
+    }
+}
