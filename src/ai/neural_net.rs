@@ -448,7 +448,6 @@ impl DirectorBrainNet {
                     let config = crate::content::mobs::get_squad_config(tier);
                     ctx.total_points_spent >= config.unlock_spent_threshold
                         && ctx.points >= config.cost
-                        && ctx.squad_cooldowns[i - 1] <= 0.0
                 }
                 17 => ctx.points >= 100.0 * (ctx.grade_fury as f32 + 1.0),
                 18 => ctx.points >= 120.0 * (ctx.grade_carapace as f32 + 1.0),

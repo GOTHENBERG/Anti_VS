@@ -48,13 +48,26 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     // Режим автономного со-эволюционного обучения ботов (Self-Play Training)
-    // Поддерживает аргументы: cargo run --release -- --train [поколений] [размер популяции] [--clean / --reset]
+    // Поддерживает аргументы: cargo run --release -- --train [поколений] [размер популяции] [300 / 1020] [--cap 300|1020] [--clean / --reset]
     let args: Vec<String> = std::env::args().collect();
     if let Some(pos) = args.iter().position(|a| a == "--train") {
         let generations = args.get(pos + 1).and_then(|s| s.parse().ok()).unwrap_or(8);
         let population = args.get(pos + 2).and_then(|s| s.parse().ok()).unwrap_or(8);
         let reset = args.iter().any(|a| a == "--clean" || a == "--reset");
-        crate::ai::trainer::run_co_evolutionary_training(generations, population, reset);
+
+        // Выбор длительности раунда матчей (300 сек, 1020 сек или произвольный)
+        let round_duration = if let Some(cap_pos) = args.iter().position(|a| a == "--cap" || a == "--duration") {
+            args.get(cap_pos + 1).and_then(|s| s.parse::<f32>().ok())
+        } else if args.iter().any(|a| a == "--300" || a == "--fast") {
+            Some(300.0)
+        } else if args.iter().any(|a| a == "--1020" || a == "--full") {
+            Some(1020.0)
+        } else {
+            // Позиционный 3-й аргумент: cargo run --release -- --train 20 16 300
+            args.get(pos + 3).and_then(|s| s.parse::<f32>().ok())
+        };
+
+        crate::ai::trainer::run_co_evolutionary_training(generations, population, reset, round_duration);
         return;
     }
 

@@ -118,6 +118,7 @@ pub fn update_movement(world: &mut World, dt: f32) {
     world.rebuild_spatial_grid();
 
     // 3. Обновление снарядов (включая активное самонаведение в полете)
+    let mut homing_buf: Vec<usize> = Vec::with_capacity(64);
     for proj in &mut world.projectiles {
         if proj.homing_strength > 0.0 {
             let search_radius = 450.0f32;
@@ -125,9 +126,9 @@ pub fn update_movement(world: &mut World, dt: f32) {
             let mut min_dist_sq = search_radius * search_radius;
 
             if proj.faction == Faction::Boss {
-                // Ищем ближайшего живого моба через Spatial Grid
-                let nearby = world.spatial_grid.query_nearby(proj.pos, search_radius);
-                for idx in nearby {
+                // Ищем ближайшего живого моба через Spatial Grid без аллокаций
+                world.spatial_grid.query_nearby_into(proj.pos, search_radius, &mut homing_buf);
+                for &idx in &homing_buf {
                     if let Some(mob) = world.mobs.get(idx) {
                         if mob.health.is_alive() {
                             let dist_sq = mob.pos.distance_squared(proj.pos);
@@ -212,6 +213,10 @@ pub fn update_movement(world: &mut World, dt: f32) {
         world.boss_inventory.record_damage_taken(poison_dmg, DamageType::Poison, DamageSourceKind::Hazard);
         world.total_damage_dealt_to_boss += poison_dmg;
 
+        if world.boss_poison_timer <= 0.0 {
+            world.boss_poison_dps = 0.0;
+        }
+
         if !world.is_headless && macroquad::prelude::rand::gen_range(0.0, 1.0) < 0.25 {
             world.particles.push(crate::ecs::world::ParticleEntity {
                 pos: world.boss_pos + Vec2::new(macroquad::prelude::rand::gen_range(-14.0, 14.0), macroquad::prelude::rand::gen_range(-14.0, 14.0)),
@@ -222,6 +227,8 @@ pub fn update_movement(world: &mut World, dt: f32) {
                 max_lifetime: 0.35,
             });
         }
+    } else {
+        world.boss_poison_dps = 0.0;
     }
 
     // 4.2 Чумные Споры Директора: защитные миазмы вокруг Алтарей Крови

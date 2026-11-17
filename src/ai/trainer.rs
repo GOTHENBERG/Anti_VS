@@ -347,13 +347,24 @@ fn tournament_index(fitness: &[f32], k: usize) -> usize {
     best_idx
 }
 
-pub fn run_co_evolutionary_training(generations: usize, population_size: usize, reset: bool) {
+pub fn run_co_evolutionary_training(
+    generations: usize,
+    population_size: usize,
+    reset: bool,
+    round_duration: Option<f32>,
+) {
     let generations = generations.max(1);
     let population_size = population_size.max(2);
+    let duration_info = match round_duration {
+        Some(d) => format!("ФИКСИРОВАННЫЙ ({:.0} сек / {:.1} мин)", d, d / 60.0),
+        None => format!("Curriculum (300с -> 1020с)"),
+    };
+
     println!("============================================================");
     println!(">>> ЗАПУСК ТУРНИРА СО-ЭВОЛЮЦИИ ИИ (LEAGUE SELF-PLAY)");
     println!("  Движок: {} потоков Rayon (ноль-суммарные матчи с фиксированными seed)", rayon::current_num_threads());
     println!("  Поколений: {} | Размер популяции каждого агента: {}", generations, population_size);
+    println!("  Длительность матчей: {}", duration_info);
     println!("  Формат: v{} (старый фитнес инвалидируется при загрузке)", MODEL_FORMAT_VERSION);
     println!("  Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
     if reset {
@@ -371,6 +382,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             .map_or(false, |n| n.is_compatible());
         if !boss_net_ok {
             boss.neural_net = Some(crate::ai::neural_net::NeuralNet::new());
+            boss.generation = 0;
         }
         if let Some(ref net) = boss.neural_net {
             boss.total_synapses = net.total_synapses();
@@ -388,6 +400,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
             .map_or(false, |n| n.is_compatible());
         if !director_net_ok {
             director.neural_net = Some(crate::ai::neural_net::DirectorBrainNet::new());
+            director.generation = 0;
         }
         if let Some(ref net) = director.neural_net {
             director.total_synapses = net.total_synapses();
@@ -398,7 +411,7 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
         director.model_version = MODEL_FORMAT_VERSION;
         director.fitness_version = MODEL_FORMAT_VERSION;
 
-        let base = boss.generation;
+        let base = if boss_net_ok && director_net_ok { boss.generation } else { 0 };
         (boss, director, base)
     };
 
@@ -484,18 +497,18 @@ pub fn run_co_evolutionary_training(generations: usize, population_size: usize, 
     for gen_idx in 1..=generations {
         let current_gen_num = base_gen + gen_idx as u32;
 
-        // Curriculum: ранние поколения короткие, поздние — полные 17 минут.
-        let progress = if generations > 1 {
-            (gen_idx - 1) as f32 / (generations - 1) as f32
+        // Выбор длительности матча: фиксированная (300с / 1020с) либо Curriculum
+        let match_cap = if let Some(fixed_duration) = round_duration {
+            fixed_duration.max(30.0)
         } else {
-            1.0
+            let progress = if generations > 1 {
+                (gen_idx - 1) as f32 / (generations - 1) as f32
+            } else {
+                1.0
+            };
+            let curriculum_start = if base_gen > 0 { FULL_MATCH_CAP } else { START_MATCH_CAP };
+            ((curriculum_start + (FULL_MATCH_CAP - curriculum_start) * progress) / 30.0).round() * 30.0
         };
-        let curriculum_start = if base_gen > 0 { FULL_MATCH_CAP } else { START_MATCH_CAP };
-        let match_cap = ((curriculum_start
-            + (FULL_MATCH_CAP - curriculum_start) * progress)
-            / 30.0)
-            .round()
-            * 30.0;
 
         // 3.1 Формируем общую матрицу матчей: каждый агент играет ровно
         // MATCHES_PER_AGENT матчей в лиге + один матч против чемпиона Зала Славы.
@@ -966,13 +979,6 @@ fn save_models(
         }
     }
 
-    if let Some(ref net) = boss_out.neural_net {
-        if let Ok(brain_json) = serde_json::to_string_pretty(net) {
-            let _ = std::fs::write("models/boss_brain_neural.json", brain_json);
-            println!("  [OK] Матрица синапсов Босса (150 -> 64 -> 48 -> 7) -> models/boss_brain_neural.json");
-        }
-    }
-
     let archetype_names = [
         "Инфернальный Пиромант (Огонь, Пламя, Сердце Пироманта)",
         "Сверхпроводящий Громовержец (Молния, Тесла, Лира, Клевер)",
@@ -1002,13 +1008,6 @@ fn save_models(
                 "  [OK] Модель Директора ({} синапсов, Поколение #{}) -> models/director_policy.json",
                 director_out.total_synapses, director_out.generation
             );
-        }
-    }
-
-    if let Some(ref net) = director_out.neural_net {
-        if let Ok(dir_brain_json) = serde_json::to_string_pretty(net) {
-            let _ = std::fs::write("models/director_brain_neural.json", dir_brain_json);
-            println!("  [OK] Матрица синапсов Директора (132 -> 64 -> 48; 20+3+8) -> models/director_brain_neural.json");
         }
     }
 

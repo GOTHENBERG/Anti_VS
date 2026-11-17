@@ -637,28 +637,32 @@ fn merge_excess_gems(gems: &mut Vec<SoulGemEntity>, target_max: usize, boss_pos:
 
     gems.retain(|g| g.is_magnet || g.xp_value > 0.0);
 
-    // 2. Если кристаллов всё ещё больше целевого капа, объединяем дальние кристаллы в кластеры
+    // 2. Если кристаллов всё ещё больше целевого капа, укрупняем сетку до 140x140 px
+    // Это сохраняет 100% пространственную локальность (сливаются ТОЛЬКО соседние кристаллы, без телепортации!)
     if gems.len() > target_max {
-        let mut non_magnets: Vec<(usize, f32)> = gems
-            .iter()
-            .enumerate()
-            .filter(|(_, g)| !g.is_magnet)
-            .map(|(idx, g)| (idx, g.pos.distance_squared(boss_pos)))
-            .collect();
+        let cell_large = 140.0f32;
+        let cols_l = (crate::core::MAP_WIDTH / cell_large).ceil() as usize + 1;
+        let rows_l = (crate::core::MAP_HEIGHT / cell_large).ceil() as usize + 1;
+        let mut large_rep: Vec<Option<usize>> = vec![None; cols_l * rows_l];
+        let len_l = gems.len();
 
-        // Сортируем: самые дальние от босса в начале
-        non_magnets.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        for i in 0..len_l {
+            if gems[i].is_magnet || gems[i].xp_value <= 0.0 {
+                continue;
+            }
+            if gems[i].pos.distance_squared(boss_pos) < boss_dist_min_sq {
+                continue;
+            }
+            let cx = (gems[i].pos.x.max(0.0) / cell_large).floor() as usize;
+            let cy = (gems[i].pos.y.max(0.0) / cell_large).floor() as usize;
+            let key = cy.min(rows_l - 1) * cols_l + cx.min(cols_l - 1);
 
-        let to_remove = gems.len().saturating_sub(target_max);
-        let mut removed = 0;
-        let mut i = 0;
-        while i + 1 < non_magnets.len() && removed < to_remove {
-            let idx_a = non_magnets[i].0;
-            let idx_b = non_magnets[i + 1].0;
-            gems[idx_a].xp_value += gems[idx_b].xp_value;
-            gems[idx_b].xp_value = 0.0;
-            removed += 1;
-            i += 2;
+            if let Some(rep) = large_rep[key] {
+                gems[rep].xp_value += gems[i].xp_value;
+                gems[i].xp_value = 0.0;
+            } else {
+                large_rep[key] = Some(i);
+            }
         }
         gems.retain(|g| g.is_magnet || g.xp_value > 0.0);
     }

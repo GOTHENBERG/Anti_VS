@@ -293,6 +293,11 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
         obs[136] = (diff.y / MAP_HEIGHT).clamp(-1.0, 1.0);
         obs[137] = closest_altar_hp;
         obs[138] = (diff.length() / max_speed / 20.0).clamp(0.0, 1.0);
+    } else {
+        obs[135] = 0.0;
+        obs[136] = 0.0;
+        obs[137] = 0.0;
+        obs[138] = 1.0; // Максимальная задержка / недостижимо (как и для магнита)
     }
 
     let mut closest_gem: Option<Vec2> = None;
