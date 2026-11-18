@@ -310,6 +310,7 @@ pub struct World {
     pub acid_pools: Vec<AcidPoolEntity>,
     pub floating_texts: Vec<FloatingTextEntity>,
     pub particles: Vec<ParticleEntity>,
+    pub lightning_arcs: Vec<(Vec2, Vec2, f32)>, // (start, end, timer)
 
     // Директор
     pub directors: Vec<DirectorState>,
@@ -506,6 +507,7 @@ impl World {
             acid_pools: Vec::new(),
             floating_texts: Vec::with_capacity(500),
             particles: Vec::with_capacity(2000),
+            lightning_arcs: Vec::new(),
             directors: vec![DirectorState::new(1)],
             damage_queue: Vec::new(),
             next_entity_id: 1,

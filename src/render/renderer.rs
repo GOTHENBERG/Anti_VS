@@ -275,6 +275,13 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         draw_line(start.x, start.y, end.x, end.y, 8.0, core_color);
     }
 
+    // 7.1 Дуги цепных молний (TeslaCoil, StaticCore, UkuleleResonance, ChainLightning, StormGodWrath)
+    for &(start, end, timer) in &world.lightning_arcs {
+        let alpha = (timer / 0.22).clamp(0.0, 1.0);
+        draw_line(start.x, start.y, end.x, end.y, 4.5, Color::new(0.3, 0.8, 1.0, alpha * 0.75));
+        draw_line(start.x, start.y, end.x, end.y, 2.0, Color::new(1.0, 1.0, 1.0, alpha));
+    }
+
     // 8. Отрисовка Босса (Соло-героя)
     let bx = world.boss_pos.x;
     let by = world.boss_pos.y;

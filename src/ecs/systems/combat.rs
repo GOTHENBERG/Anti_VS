@@ -65,6 +65,13 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let has_pyromaniac = world.boss_inventory.has_passive(PassiveType::Pyromaniac);
     let has_immortal_aegis = world.boss_inventory.has_passive(PassiveType::ImmortalAegis);
     let has_soul_feast = world.boss_inventory.has_weapon(WeaponType::SoulFeast);
+    let has_static_core = world.boss_inventory.has_passive(PassiveType::StaticCore);
+    let has_ukulele = world.boss_inventory.has_passive(PassiveType::UkuleleResonance);
+    let has_siege_mortar = world.boss_inventory.has_passive(PassiveType::SiegeMortar);
+    let has_soul_harvester = world.boss_inventory.has_passive(PassiveType::SoulHarvester);
+    let tesla_chance = world.boss_inventory.get_tesla_chain_chance();
+    let crit_chance = world.boss_inventory.get_crit_chance();
+    let dmg_mult = world.boss_inventory.get_damage_multiplier();
     let curse_xp_mult = world.boss_inventory.get_curse_stone_xp_multiplier();
 
     let mut kamikaze_explosions = Vec::new();
@@ -309,8 +316,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
     // 3. Коллизии снарядов
     let mut boss_hits = Vec::new();
     let mut hit_particles = Vec::new();
+    let mut crit_texts = Vec::new();
     let mut structure_proj_hits = Vec::new();
     let mut projectile_obelisk_contributions = Vec::new();
+    let mut chain_lightning_events: Vec<(Vec2, usize, usize, f32, f32, DamageType)> = Vec::new();
+    let mut mortar_explosions: Vec<(Vec2, f32, f32)> = Vec::new();
     // Переиспользуемый буфер: ноль аллокаций на каждый снаряд.
     let mut nearby_scratch: Vec<usize> = Vec::with_capacity(64);
 
@@ -330,16 +340,50 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 }
                 if let Some(mob) = world.mobs.get_mut(idx) {
                     if mob.health.is_alive() && mob.pos.distance_squared(proj.pos) < (mob.radius + proj.radius).powi(2) {
+                        let is_crit = crit_chance > 0.0 && world.boss_inventory.roll_luck(crit_chance);
+                        let base_damage = if is_crit { proj.damage * 2.0 } else { proj.damage };
+
                         let packet = DamagePacket {
                             source_id: Some(0),
                             target_id: mob.id,
-                            amount: proj.damage,
+                            amount: base_damage,
                             damage_type: proj.damage_type,
                             armor_penetration: proj.armor_penetration,
                         };
                         let actual_dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
                         mob.health.take_damage(actual_dmg);
                         proj.pierce = proj.pierce.saturating_sub(1);
+
+                        if is_crit {
+                            hit_particles.push((mob.pos, GOLD));
+                            crit_texts.push((mob.pos, format!("💥 {:.0}!", actual_dmg)));
+                        }
+
+                        // Цепные молнии от пассивок: Катушка Теслы (TeslaCoil) и Статическое Ядро (StaticCore)
+                        if tesla_chance > 0.0 && world.boss_inventory.roll_luck(tesla_chance) {
+                            let targets = if has_static_core { 6 } else { 3 };
+                            chain_lightning_events.push((mob.pos, mob.id, targets, 230.0, 38.0 * dmg_mult, DamageType::True));
+                        }
+
+                        // Резонанс Укулеле (UkuleleResonance): 25% шанс электро-цепочки на 4 цели
+                        if has_ukulele && world.boss_inventory.roll_luck(0.25) {
+                            chain_lightning_events.push((mob.pos, mob.id, 4, 190.0, 35.0 * dmg_mult, DamageType::True));
+                        }
+
+                        // Оружие: Цепная Молния (ChainLightning) — прыгает на 3 цели
+                        if proj.source_weapon == Some(WeaponType::ChainLightning) {
+                            chain_lightning_events.push((mob.pos, mob.id, 3, 200.0, actual_dmg * 0.75, DamageType::True));
+                        }
+
+                        // Оружие (Эволюция): Гнев Бури (StormGodWrath) — сокрушительный разряд на 6 целей
+                        if proj.source_weapon == Some(WeaponType::StormGodWrath) {
+                            chain_lightning_events.push((mob.pos, mob.id, 6, 260.0, actual_dmg * 1.0, DamageType::True));
+                        }
+
+                        // Осадная Мортира (SiegeMortar): взрыв 55px при прямом попадании (50% урона)
+                        if has_siege_mortar {
+                            mortar_explosions.push((mob.pos, 55.0, proj.damage * 0.5));
+                        }
 
                         // Вампиризм от Кровавой Жатвы (BloodHarvest)
                         if proj.source_weapon == Some(WeaponType::BloodHarvest) {
@@ -464,6 +508,9 @@ pub fn update_combat(world: &mut World, dt: f32) {
     for (pos, txt) in structure_proj_hits {
         world.add_floating_text(pos, txt, GOLD, 1.1);
     }
+    for (pos, txt) in crit_texts {
+        world.add_floating_text(pos, txt, GOLD, 1.25);
+    }
 
     // Применяем собранные эффекты по боссу и частицы
     for (actual_dmg, dmg_type) in boss_hits {
@@ -485,15 +532,96 @@ pub fn update_combat(world: &mut World, dt: f32) {
         });
     }
 
+    // Обработка цепочек молний от пассивок (TeslaCoil, StaticCore, UkuleleResonance) и оружия (ChainLightning, StormGodWrath)
+    if !chain_lightning_events.is_empty() {
+        world.push_audio(crate::audio::AudioEvent::LightningStrike);
+    }
+    for (start_pos, target_id, max_jumps, jump_rad, chain_dmg, chain_type) in chain_lightning_events {
+        let mut hit_ids = std::collections::HashSet::new();
+        hit_ids.insert(target_id);
+        let mut curr_pos = start_pos;
+
+        for _ in 0..max_jumps {
+            let nearby = world.spatial_grid.query_nearby(curr_pos, jump_rad);
+            let mut best_target = None;
+            let mut min_d_sq = jump_rad * jump_rad;
+
+            for idx in nearby {
+                if let Some(other) = world.mobs.get(idx) {
+                    if other.health.is_alive() && !hit_ids.contains(&other.id) {
+                        let d_sq = other.pos.distance_squared(curr_pos);
+                        if d_sq < min_d_sq {
+                            min_d_sq = d_sq;
+                            best_target = Some((other.id, other.pos, idx));
+                        }
+                    }
+                }
+            }
+
+            if let Some((t_id, t_pos, idx)) = best_target {
+                hit_ids.insert(t_id);
+                world.lightning_arcs.push((curr_pos, t_pos, 0.22));
+                if let Some(target_mob) = world.mobs.get_mut(idx) {
+                    let packet = DamagePacket {
+                        source_id: Some(0),
+                        target_id: t_id,
+                        amount: chain_dmg,
+                        damage_type: chain_type,
+                        armor_penetration: 0.8,
+                    };
+                    let dmg = target_mob.resistances.calculate_damage(&packet, target_mob.is_undead);
+                    target_mob.health.take_damage(dmg);
+                    if !target_mob.knockback_immune {
+                        let push_dir = (t_pos - curr_pos).normalize_or_zero();
+                        target_mob.knockback_vel += push_dir * 90.0;
+                    }
+                }
+                curr_pos = t_pos;
+            } else {
+                break;
+            }
+        }
+    }
+
+    // Обработка взрывов Осадной Мортиры (SiegeMortar)
+    if !mortar_explosions.is_empty() {
+        world.push_audio(crate::audio::AudioEvent::FireBlast);
+    }
+    for (exp_pos, exp_rad, exp_dmg) in mortar_explosions {
+        world.spawn_particles(exp_pos, 16, ORANGE, exp_rad);
+        let nearby = world.spatial_grid.query_nearby(exp_pos, exp_rad);
+        for idx in nearby {
+            if let Some(mob) = world.mobs.get_mut(idx) {
+                if mob.health.is_alive() && mob.pos.distance_squared(exp_pos) < exp_rad * exp_rad {
+                    let packet = DamagePacket {
+                        source_id: Some(0),
+                        target_id: mob.id,
+                        amount: exp_dmg,
+                        damage_type: DamageType::Fire,
+                        armor_penetration: 0.4,
+                    };
+                    let dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
+                    mob.health.take_damage(dmg);
+                }
+            }
+        }
+    }
+
     // Удаляем израсходованные снаряды
     world.projectiles.retain(|p| p.lifetime > 0.0 && p.pierce > 0);
 
     // 4. Смерть мобов, взрыв трупов (Hellfire) и дроп кристаллов душ
     let mut corpse_explosions = Vec::new();
     let mut dropped_gems = Vec::new();
+    let mut spawned_phantoms = Vec::new();
 
     world.mobs.retain(|mob| {
         if !mob.health.is_alive() {
+            // Пассивка "Жатва Душ": шанс призвать мстительных призраков
+            if has_soul_harvester && world.boss_inventory.roll_luck(0.20) {
+                spawned_phantoms.push(mob.pos);
+            }
+
             // Эволюция "Адское Пекло": Взрыв трупов горящих врагов!
             if has_hellfire && mob.status.burn_timer > 0.0 {
                 corpse_explosions.push((mob.pos, 55.0, 75.0));
@@ -552,6 +680,28 @@ pub fn update_combat(world: &mut World, dt: f32) {
             true
         }
     });
+
+    // Призыв призраков от пассивки "Жатва Душ" (SoulHarvester)
+    for p_pos in spawned_phantoms {
+        let angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
+        let dir = Vec2::new(angle.cos(), angle.sin());
+        let pid = world.alloc_id();
+        world.projectiles.push(crate::ecs::world::ProjectileEntity {
+            id: pid,
+            pos: p_pos,
+            vel: dir * 320.0,
+            damage: 42.0 * dmg_mult,
+            damage_type: DamageType::True,
+            armor_penetration: 0.6,
+            lifetime: 2.8,
+            radius: 14.0,
+            pierce: 3,
+            faction: Faction::Boss,
+            source_weapon: Some(WeaponType::SoulPhantoms),
+            homing_strength: 7.5,
+        });
+        world.spawn_particles(p_pos, 10, MAGENTA, 40.0);
+    }
 
     // 4.1 Разрушение структур (Алтари Крови, Стены-Баррикады, Обелиски)
     let mut destroyed_events = Vec::new();

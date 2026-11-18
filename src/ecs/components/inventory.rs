@@ -635,3 +635,71 @@ impl BossInventory {
         base_speed * mult
     }
 }
+
+impl Default for BossInventory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chain_lightning_and_crit_passives() {
+        let mut inv = BossInventory::default();
+        assert_eq!(inv.get_tesla_chain_chance(), 0.0);
+        assert_eq!(inv.get_crit_chance(), 0.0);
+
+        // Добавляем Катушку Теслы 2 уровня
+        inv.passives.push(PassiveSlot {
+            kind: PassiveType::TeslaCoil,
+            level: 2,
+        });
+        assert!((inv.get_tesla_chain_chance() - 0.24).abs() < 0.001);
+
+        // Добавляем Статическое Ядро (+25% к шансу)
+        inv.passives.push(PassiveSlot {
+            kind: PassiveType::StaticCore,
+            level: 1,
+        });
+        assert!((inv.get_tesla_chain_chance() - 0.49).abs() < 0.001);
+
+        // Добавляем Клевер Судьбы 3 уровня
+        inv.passives.push(PassiveSlot {
+            kind: PassiveType::CloverOfFate,
+            level: 3,
+        });
+        assert!((inv.get_crit_chance() - 0.36).abs() < 0.001);
+
+        // Добавляем Имперскую Печать (+10% крит, +20% урон)
+        inv.passives.push(PassiveSlot {
+            kind: PassiveType::GoldenSeal,
+            level: 1,
+        });
+        assert!((inv.get_crit_chance() - 0.46).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_evolution_recipes() {
+        let mut inv = BossInventory::default();
+        inv.weapons.push(WeaponSlot {
+            kind: WeaponType::ChainLightning,
+            level: 8,
+            damage: 50.0,
+            base_cooldown: 1.0,
+            cooldown_timer: 0.0,
+            bonus_projectiles: 0,
+            is_evolved: false,
+            limit_break_level: 0,
+        });
+        assert_eq!(inv.can_evolve(1), None);
+
+        inv.passives.push(PassiveSlot {
+            kind: PassiveType::StaticCore,
+            level: 1,
+        });
+        assert_eq!(inv.can_evolve(1), Some(WeaponType::StormGodWrath));
+    }
+}

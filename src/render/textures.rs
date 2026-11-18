@@ -566,7 +566,12 @@ impl GameTextures {
                 WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver => return self.proj_axe.as_ref(),
                 WeaponType::CelestialBow | WeaponType::StarfallBarrage => return self.proj_arrow.as_ref(),
                 WeaponType::ThunderOrb | WeaponType::ThunderstormWrath => return self.proj_lightning.as_ref(),
+                WeaponType::ChainLightning | WeaponType::StormGodWrath => return self.proj_lightning.as_ref(),
                 WeaponType::BloodDaggers | WeaponType::BloodHarvest => return self.proj_dagger.as_ref(),
+                WeaponType::FaithBoomerang | WeaponType::HeavenlyJudgment => return self.proj_wind.as_ref(),
+                WeaponType::SoulPhantoms | WeaponType::BansheeWail => return self.soul_ethereal.as_ref().or(self.proj_magic.as_ref()),
+                WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => return self.proj_fire.as_ref(),
+                WeaponType::RunicPrism | WeaponType::SpatialShatter => return self.proj_holy.as_ref(),
                 _ => {}
             }
         }

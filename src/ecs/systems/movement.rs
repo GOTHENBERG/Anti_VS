@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 use rayon::prelude::*;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction};
-use crate::ecs::components::inventory::{DamageSourceKind, WeaponType};
+use crate::ecs::components::inventory::{DamageSourceKind, PassiveType, WeaponType};
 use crate::ecs::world::World;
 
 #[inline(always)]
@@ -158,7 +158,9 @@ pub fn update_movement(world: &mut World, dt: f32) {
     world.rebuild_spatial_grid();
 
     // 3. Обновление снарядов (включая активное самонаведение в полете)
+    let has_divinity_aura = world.boss_inventory.has_passive(PassiveType::DivinityAura);
     let mut homing_buf: Vec<usize> = Vec::with_capacity(64);
+    let mut divinity_buf: Vec<usize> = Vec::with_capacity(32);
     for proj in &mut world.projectiles {
         if proj.homing_strength > 0.0 {
             let search_radius = 450.0f32;
@@ -243,10 +245,29 @@ pub fn update_movement(world: &mut World, dt: f32) {
             }
         }
 
+        // Аура Божественности (DivinityAura): святой урон вокруг летящих снарядов
+        if has_divinity_aura && proj.faction == Faction::Boss {
+            let aura_rad = 52.0;
+            world.spatial_grid.query_nearby_into(proj.pos, aura_rad, &mut divinity_buf);
+            for &idx in &divinity_buf {
+                if let Some(mob) = world.mobs.get_mut(idx) {
+                    if mob.health.is_alive() && mob.pos.distance_squared(proj.pos) < aura_rad * aura_rad {
+                        mob.health.take_damage(35.0 * dt);
+                    }
+                }
+            }
+        }
+
         proj.pos += proj.vel * dt;
         proj.lifetime -= dt;
     }
     world.projectiles.retain(|p| p.lifetime > 0.0);
+
+    // Обновление таймеров электрических дуг молний
+    world.lightning_arcs.retain_mut(|(_, _, timer)| {
+        *timer -= dt;
+        *timer > 0.0
+    });
 
     // 4. Обновление кислотных луж Босса (Чумные Сферы и Токсичный Мор)
     for pool in &mut world.acid_pools {

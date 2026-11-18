@@ -1097,6 +1097,73 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
                 draw_circle(pos.x, pos.y, radius * 0.85, WHITE);
                 return;
             }
+            // Цепная Молния и Гнев Бури: пульсирующий электрический шар с синими искрами
+            crate::ecs::components::inventory::WeaponType::ChainLightning | crate::ecs::components::inventory::WeaponType::StormGodWrath => {
+                if let Some(tex) = textures.proj_lightning.as_ref() {
+                    let size = radius * 3.2;
+                    let rot = get_time() as f32 * 10.0;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: rot,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
+                draw_circle(pos.x, pos.y, radius * 1.3, Color::new(0.3, 0.8, 1.0, 0.4));
+                draw_circle(pos.x, pos.y, radius * 0.85, Color::new(0.6, 0.95, 1.0, 0.9));
+                draw_circle(pos.x, pos.y, radius * 0.4, WHITE);
+                return;
+            }
+            // Клинок Веры и Небесный Вердикт: вращающийся священный бумеранг
+            crate::ecs::components::inventory::WeaponType::FaithBoomerang | crate::ecs::components::inventory::WeaponType::HeavenlyJudgment => {
+                let rot = get_time() as f32 * 14.0;
+                let b_dir = Vec2::new(rot.cos(), rot.sin());
+                let b_norm = Vec2::new(-b_dir.y, b_dir.x);
+                draw_line(pos.x - b_dir.x * radius * 1.6, pos.y - b_dir.y * radius * 1.6, pos.x + b_dir.x * radius * 1.6, pos.y + b_dir.y * radius * 1.6, 3.5, GOLD);
+                draw_line(pos.x - b_norm.x * radius * 1.6, pos.y - b_norm.y * radius * 1.6, pos.x + b_norm.x * radius * 1.6, pos.y + b_norm.y * radius * 1.6, 3.5, GOLD);
+                draw_circle(pos.x, pos.y, radius * 0.5, WHITE);
+                return;
+            }
+            // Руническая Призма и Искривление Пространства: многогранный кристалл
+            crate::ecs::components::inventory::WeaponType::RunicPrism | crate::ecs::components::inventory::WeaponType::SpatialShatter => {
+                let rot = get_time() as f32 * 8.0;
+                let p1 = pos + Vec2::new(rot.cos(), rot.sin()) * radius * 1.5;
+                let p2 = pos + Vec2::new((rot + 2.094).cos(), (rot + 2.094).sin()) * radius * 1.5;
+                let p3 = pos + Vec2::new((rot + 4.188).cos(), (rot + 4.188).sin()) * radius * 1.5;
+                draw_triangle(p1, p2, p3, Color::new(0.4, 0.9, 1.0, 0.85));
+                draw_triangle_lines(p1, p2, p3, 2.0, WHITE);
+                draw_circle(pos.x, pos.y, radius * 0.4, WHITE);
+                return;
+            }
+            // Голодные Призраки и Вопль Банши: эфирные духи
+            crate::ecs::components::inventory::WeaponType::SoulPhantoms | crate::ecs::components::inventory::WeaponType::BansheeWail => {
+                if let Some(tex) = textures.soul_ethereal.as_ref().or(textures.proj_magic.as_ref()) {
+                    let size = radius * 3.2;
+                    draw_texture_ex(
+                        tex,
+                        pos.x - size / 2.0,
+                        pos.y - size / 2.0,
+                        Color::new(0.8, 0.4, 1.0, 0.9),
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(size, size)),
+                            rotation: angle,
+                            pivot: Some(pos),
+                            ..Default::default()
+                        },
+                    );
+                    return;
+                }
+                draw_circle(pos.x, pos.y, radius * 1.1, Color::new(0.6, 0.2, 0.9, 0.7));
+                draw_circle(pos.x, pos.y, radius * 0.6, WHITE);
+                return;
+            }
             _ => {}
         }
     }
