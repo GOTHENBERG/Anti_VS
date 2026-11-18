@@ -74,9 +74,15 @@ pub struct DamagePacket {
 }
 
 impl Resistances {
+    /// Возвращает процент снижения входящего физ. урона от брони по формуле Blizzard/Dota:
+    /// Резист = (0.06 * Б) / (1 + 0.06 * |Б|)
+    pub fn physical_reduction_from_armor(&self) -> f32 {
+        (0.06 * self.flat_armor) / (1.0 + 0.06 * self.flat_armor.abs())
+    }
+
     /// Applies resistance, then diminishing-return armor for physical damage.
-    /// Armor uses 100 / (100 + armor), preventing flat subtraction from making
-    /// every low-damage tick deal the old 1 HP minimum.
+    /// Armor uses 1 - (0.06 * B) / (1 + 0.06 * |B|), granting a constant +6% EHP per armor point
+    /// and smoothly increasing damage on negative armor without singularities.
     pub fn calculate_damage(&self, packet: &DamagePacket, is_undead: bool) -> f32 {
         if packet.damage_type == DamageType::True {
             return packet.amount;
@@ -108,9 +114,9 @@ impl Resistances {
         let dmg_after_res = incoming_amount * (1.0 - effective_res);
 
         if packet.damage_type == DamageType::Physical {
-            let effective_armor = (self.flat_armor * (1.0 - penetration)).max(0.0);
-            let armor_multiplier = 100.0 / (100.0 + effective_armor);
-            (dmg_after_res * armor_multiplier).max(0.0)
+            let effective_armor = self.flat_armor * (1.0 - penetration);
+            let armor_multiplier = 1.0 - (0.06 * effective_armor) / (1.0 + 0.06 * effective_armor.abs());
+            (dmg_after_res * armor_multiplier.max(0.0)).max(0.0)
         } else {
             // Elemental damage ignores flat armor but uses its resistance/vulnerability.
             dmg_after_res.max(0.0)

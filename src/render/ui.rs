@@ -27,6 +27,7 @@ pub struct UiInteraction {
     pub map_click_world_pos: Option<Vec2>,
     pub start_altar_placement: bool,
     pub start_wall_placement: bool,
+    pub chosen_perk: Option<crate::ecs::components::inventory::PerkChoice>,
 }
 
 enum HoverTooltip {
@@ -985,57 +986,434 @@ pub fn render_boss_ui(
     world: &World,
     clock: &GameClock,
     fonts: &GameFonts,
+    textures: &GameTextures,
     is_muted: bool,
     current_track: &str,
 ) -> UiInteraction {
     let w = screen_width();
+    let h = screen_height();
     let (mx, my) = mouse_position();
     let mut interaction = UiInteraction::default();
-    let panel = Rect::new(18.0, 16.0, 280.0, 78.0);
-    draw_rectangle(panel.x, panel.y, panel.w, panel.h, Color::new(0.04, 0.045, 0.075, 0.94));
-    draw_rectangle_lines(panel.x, panel.y, panel.w, panel.h, 1.4, Color::new(0.45, 0.5, 0.62, 0.88));
-    fonts.draw_heading(&world.boss_name, panel.x + 12.0, panel.y + 20.0, 12.0, GOLD);
-    let health_frac = (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0);
-    draw_rectangle(panel.x + 12.0, panel.y + 30.0, 252.0, 10.0, Color::new(0.20, 0.07, 0.09, 1.0));
-    draw_rectangle(panel.x + 12.0, panel.y + 30.0, 252.0 * health_frac, 10.0, Color::new(0.78, 0.18, 0.22, 1.0));
-    fonts.draw_text(
-        &format!("HP {:.0}/{:.0}   Ур. {}", world.boss_health.current, world.boss_health.max, world.boss_inventory.level),
-        panel.x + 12.0,
-        panel.y + 56.0,
-        11.0,
-        WHITE,
-    );
-    let dash_text = if world.boss_dash_cooldown <= 0.0 { "ГОТОВ".to_string() } else { format!("{:.1}с", world.boss_dash_cooldown) };
-    fonts.draw_text(
-        &format!("Рывок: {}   Время: {}", dash_text, clock.formatted_elapsed()),
-        panel.x + 12.0,
-        panel.y + 72.0,
-        10.5,
-        Color::new(0.72, 0.75, 0.84, 1.0),
-    );
+    let mut hovered_tooltip: Option<HoverTooltip> = None;
 
-    let pause = Rect::new(w - 190.0, 16.0, 172.0, 30.0);
-    let sound = Rect::new(w - 190.0, 52.0, 172.0, 26.0);
+    // 1. Верхняя панель характеристик Босса (центрированная)
+    let panel_w = 680.0f32.min(w - 240.0);
+    let panel_x = (w - panel_w) / 2.0;
+    let panel_y = 12.0;
+    let panel_h = 108.0;
+
+    draw_rectangle(panel_x, panel_y, panel_w, panel_h, Color::new(0.04, 0.045, 0.075, 0.95));
+    draw_rectangle_lines(panel_x, panel_y, panel_w, panel_h, 1.5, Color::new(0.45, 0.50, 0.65, 0.88));
+
+    // Строка 1: Имя, Уровень, HP полоса, XP полоса
+    fonts.draw_heading(&world.boss_name, panel_x + 12.0, panel_y + 17.0, 13.0, GOLD);
+    let lvl_str = format!("Ур. {}", world.boss_inventory.level);
+    fonts.draw_heading(&lvl_str, panel_x + 190.0, panel_y + 17.0, 12.0, WHITE);
+
+    // HP полоса
+    let hp_bar_w = 200.0;
+    let hp_bar_x = panel_x + 245.0;
+    let hp_bar_y = panel_y + 6.0;
+    let hp_frac = (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0);
+    draw_rectangle(hp_bar_x, hp_bar_y, hp_bar_w, 13.0, Color::new(0.20, 0.06, 0.08, 0.95));
+    draw_rectangle(hp_bar_x, hp_bar_y, hp_bar_w * hp_frac, 13.0, Color::new(0.80, 0.18, 0.22, 1.0));
+    draw_rectangle_lines(hp_bar_x, hp_bar_y, hp_bar_w, 13.0, 1.0, Color::new(0.5, 0.2, 0.2, 0.9));
+    let hp_txt = format!("{:.0} / {:.0} HP", world.boss_health.current, world.boss_health.max);
+    let hp_tw = fonts.measure_text(&hp_txt, 10.0).width;
+    fonts.draw_text(&hp_txt, hp_bar_x + (hp_bar_w - hp_tw) / 2.0, hp_bar_y + 10.0, 10.0, WHITE);
+
+    // XP полоса
+    let xp_bar_w = 200.0;
+    let xp_bar_x = panel_x + 460.0;
+    let xp_bar_y = panel_y + 6.0;
+    let xp_frac = (world.boss_inventory.current_xp / world.boss_inventory.xp_to_next_level.max(1.0)).clamp(0.0, 1.0);
+    draw_rectangle(xp_bar_x, xp_bar_y, xp_bar_w, 13.0, Color::new(0.08, 0.12, 0.22, 0.95));
+    draw_rectangle(xp_bar_x, xp_bar_y, xp_bar_w * xp_frac, 13.0, SKYBLUE);
+    draw_rectangle_lines(xp_bar_x, xp_bar_y, xp_bar_w, 13.0, 1.0, Color::new(0.2, 0.4, 0.7, 0.9));
+    let xp_txt = format!("{:.0} / {:.0} XP", world.boss_inventory.current_xp, world.boss_inventory.xp_to_next_level);
+    let xp_tw = fonts.measure_text(&xp_txt, 10.0).width;
+    fonts.draw_text(&xp_txt, xp_bar_x + (xp_bar_w - xp_tw) / 2.0, xp_bar_y + 10.0, 10.0, WHITE);
+
+    // Строка 2: Броня с формулой физ. резиста, Рывок, Оповещение о Level-Up
+    let armor_val = world.boss_resistances.flat_armor;
+    let armor_pct = world.boss_resistances.physical_reduction_from_armor() * 100.0;
+    let armor_str = format!("🛡️ Броня: {:.1} ({:.1}% физ. защиты)", armor_val, armor_pct);
+    fonts.draw_text(&armor_str, panel_x + 12.0, panel_y + 35.0, 11.0, Color::new(0.85, 0.88, 0.95, 1.0));
+
+    let dash_ready = world.boss_dash_cooldown <= 0.0;
+    let dash_str = if dash_ready { "⚡ Рывок: ГОТОВ [Пробел]".to_string() } else { format!("⚡ Рывок: {:.1}с", world.boss_dash_cooldown) };
+    fonts.draw_text(&format!("{}   ⏱️ {}", dash_str, clock.formatted_elapsed()), panel_x + 245.0, panel_y + 35.0, 11.0, if dash_ready { GOLD } else { Color::new(0.7, 0.7, 0.8, 1.0) });
+
+    if world.boss_pending_level_ups > 0 {
+        let pulse = (get_time() as f32 * 6.0).sin().abs();
+        let lvlup_col = Color::new(1.0, 0.7 + pulse * 0.3, 0.1, 1.0);
+        fonts.draw_heading(&format!("⚡ LEVEL UP! (x{})", world.boss_pending_level_ups), panel_x + 460.0, panel_y + 35.0, 11.5, lvlup_col);
+    }
+
+    // Строка 3: Инвентарь Оружия (6 слотов) и Пассивок (6 слотов)
+    let w_slot_s = 40.0;
+    let w_slot_gap = 4.0;
+    let w_start_x = panel_x + 12.0;
+    let w_y = panel_y + 44.0;
+
+    fonts.draw_heading("ОРУЖИЕ", w_start_x, w_y + 10.0, 9.5, SKYBLUE);
+
+    let slots_offset_x = w_start_x + 52.0;
+    for i in 0..6 {
+        let sx = slots_offset_x + (i as f32) * (w_slot_s + w_slot_gap);
+        let is_hover = mx >= sx && mx <= sx + w_slot_s && my >= w_y && my <= w_y + w_slot_s;
+        if is_hover { interaction.is_mouse_over_ui = true; }
+
+        draw_rectangle(sx, w_y, w_slot_s, w_slot_s, Color::new(0.05, 0.06, 0.09, 0.95));
+
+        if let Some(w) = world.boss_inventory.weapons.get(i) {
+            let (border_col, bg_col) = if w.is_evolved {
+                (GOLD, Color::new(0.40, 0.22, 0.05, 0.9))
+            } else {
+                (Color::new(0.3, 0.6, 0.9, 0.9), Color::new(0.08, 0.18, 0.32, 0.9))
+            };
+            draw_rectangle(sx + 2.0, w_y + 2.0, w_slot_s - 4.0, w_slot_s - 4.0, bg_col);
+            draw_rectangle_lines(sx, w_y, w_slot_s, w_slot_s, if w.is_evolved { 2.0 } else { 1.5 }, border_col);
+
+            if let Some(icon) = textures.get_weapon_icon(w.kind) {
+                draw_texture_ex(
+                    icon,
+                    sx + 3.0,
+                    w_y + 3.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(w_slot_s - 6.0, w_slot_s - 6.0)),
+                        ..Default::default()
+                    },
+                );
+            }
+
+            // Маска перезарядки оружия (Cooldown sweep)
+            let cd_ratio = (w.cooldown_timer / w.base_cooldown.max(0.05)).clamp(0.0, 1.0);
+            if cd_ratio > 0.0 {
+                let mask_h = (w_slot_s - 4.0) * cd_ratio;
+                draw_rectangle(sx + 2.0, w_y + 2.0 + (w_slot_s - 4.0 - mask_h), w_slot_s - 4.0, mask_h, Color::new(0.0, 0.0, 0.0, 0.55));
+            }
+
+            // Бейдж уровня
+            let lvl_tag = if w.limit_break_level > 0 {
+                format!("+{}", w.limit_break_level)
+            } else if w.is_evolved {
+                "MAX".to_string()
+            } else {
+                format!("{}", w.level)
+            };
+            let tag_w = fonts.measure_heading(&lvl_tag, 9.5).width + 3.0;
+            draw_rectangle(sx + w_slot_s - tag_w, w_y + w_slot_s - 10.0, tag_w, 10.0, Color::new(0.0, 0.0, 0.0, 0.85));
+            fonts.draw_heading(&lvl_tag, sx + w_slot_s - tag_w + 1.0, w_y + w_slot_s - 1.5, 9.5, if w.is_evolved { GOLD } else { WHITE });
+
+            if is_hover {
+                hovered_tooltip = Some(HoverTooltip::Weapon(w.clone(), sx, w_y));
+            }
+        } else {
+            draw_rectangle_lines(sx, w_y, w_slot_s, w_slot_s, 1.0, Color::new(0.2, 0.22, 0.28, 0.6));
+            draw_line(sx + 8.0, w_y + 8.0, sx + w_slot_s - 8.0, w_y + w_slot_s - 8.0, 1.0, Color::new(0.25, 0.25, 0.35, 0.4));
+        }
+    }
+
+    // Пассивные реликвии
+    let p_start_x = slots_offset_x + 6.0 * (w_slot_s + w_slot_gap) + 12.0;
+    fonts.draw_heading("РЕЛИКВИИ", p_start_x, w_y + 10.0, 9.5, PURPLE);
+
+    let p_slots_x = p_start_x + 58.0;
+    let p_slot_s = 28.0;
+    let p_slot_gap = 4.0;
+    for i in 0..6 {
+        let sx = p_slots_x + (i as f32) * (p_slot_s + p_slot_gap);
+        let sy = w_y + 6.0;
+        let is_hover = mx >= sx && mx <= sx + p_slot_s && my >= sy && my <= sy + p_slot_s;
+        if is_hover { interaction.is_mouse_over_ui = true; }
+
+        draw_rectangle(sx, sy, p_slot_s, p_slot_s, Color::new(0.05, 0.04, 0.08, 0.95));
+
+        if let Some(p) = world.boss_inventory.passives.get(i) {
+            draw_rectangle(sx + 1.0, sy + 1.0, p_slot_s - 2.0, p_slot_s - 2.0, Color::new(0.26, 0.10, 0.34, 0.9));
+            draw_rectangle_lines(sx, sy, p_slot_s, p_slot_s, 1.5, Color::new(0.75, 0.40, 0.90, 0.95));
+
+            if let Some(icon) = textures.get_passive_icon(p.kind) {
+                draw_texture_ex(
+                    icon,
+                    sx + 2.0,
+                    sy + 2.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(p_slot_s - 4.0, p_slot_s - 4.0)),
+                        ..Default::default()
+                    },
+                );
+            }
+
+            let lvl_tag = format!("{}", p.level);
+            let tag_w = fonts.measure_heading(&lvl_tag, 9.0).width + 3.0;
+            draw_rectangle(sx + p_slot_s - tag_w, sy + p_slot_s - 9.0, tag_w, 9.0, Color::new(0.0, 0.0, 0.0, 0.85));
+            fonts.draw_heading(&lvl_tag, sx + p_slot_s - tag_w + 1.0, sy + p_slot_s - 1.0, 9.0, GOLD);
+
+            if is_hover {
+                hovered_tooltip = Some(HoverTooltip::Passive(p.clone(), sx, sy));
+            }
+        } else {
+            draw_rectangle_lines(sx, sy, p_slot_s, p_slot_s, 1.0, Color::new(0.25, 0.20, 0.30, 0.5));
+        }
+    }
+
+    // Кнопки Пауза и Звук в правом верхнем углу
+    let pause = Rect::new(w - 180.0, 12.0, 165.0, 28.0);
+    let sound = Rect::new(w - 180.0, 44.0, 165.0, 24.0);
     let pause_hover = contains_rect(pause, mx, my);
     let sound_hover = contains_rect(sound, mx, my);
     draw_rectangle(pause.x, pause.y, pause.w, pause.h, if pause_hover { Color::new(0.30, 0.19, 0.10, 1.0) } else { Color::new(0.10, 0.11, 0.16, 0.96) });
     draw_rectangle_lines(pause.x, pause.y, pause.w, pause.h, 1.0, if pause_hover { GOLD } else { GRAY });
-    fonts.draw_heading("⏸ Пауза [Esc]", pause.x + 20.0, pause.y + 20.0, 11.0, WHITE);
+    fonts.draw_heading("⏸ Пауза [Esc]", pause.x + 20.0, pause.y + 19.0, 11.0, WHITE);
+
     draw_rectangle(sound.x, sound.y, sound.w, sound.h, if sound_hover { Color::new(0.18, 0.20, 0.29, 1.0) } else { Color::new(0.08, 0.09, 0.14, 0.96) });
     draw_rectangle_lines(sound.x, sound.y, sound.w, sound.h, 1.0, if sound_hover { SKYBLUE } else { DARKGRAY });
     let sound_label = if is_muted { "Звук: ВЫКЛ [M]" } else { "Звук: ВКЛ [M]" };
-    fonts.draw_heading(sound_label, sound.x + 12.0, sound.y + 18.0, 10.0, if is_muted { RED } else { GREEN });
+    fonts.draw_heading(sound_label, sound.x + 12.0, sound.y + 17.0, 10.0, if is_muted { RED } else { GREEN });
+
     if is_mouse_button_pressed(MouseButton::Left) && pause_hover {
         interaction.clicked_pause = true;
     }
     if is_mouse_button_pressed(MouseButton::Left) && sound_hover {
         interaction.clicked_sound_toggle = true;
     }
-    interaction.is_mouse_over_ui = pause_hover || sound_hover || contains_rect(panel, mx, my);
+    interaction.is_mouse_over_ui = pause_hover || sound_hover || contains_rect(Rect::new(panel_x, panel_y, panel_w, panel_h), mx, my);
+
     if !current_track.is_empty() {
-        fonts.draw_text(current_track, 18.0, screen_height() - 16.0, 10.0, Color::new(0.68, 0.70, 0.78, 0.82));
+        fonts.draw_text(current_track, 18.0, h - 16.0, 10.0, Color::new(0.68, 0.70, 0.78, 0.82));
     }
+
+    // Тултипы при наведении
+    if let Some(tooltip) = hovered_tooltip {
+        match tooltip {
+            HoverTooltip::Weapon(w_slot, sx, sy) => draw_weapon_tooltip(&w_slot, sx, sy, w, fonts),
+            HoverTooltip::Passive(p_slot, sx, sy) => draw_passive_tooltip(&p_slot, sx, sy, w, fonts),
+            _ => {}
+        }
+    }
+
+    // 2. МОДАЛЬНОЕ ОКНО LEVEL-UP: ВЫБОР ИЗ 3 КАРТ (КОГДА БОССОМ УПРАВЛЯЕТ ИГРОК)
+    if let Some(ref options) = world.boss_level_up_options {
+        interaction.is_mouse_over_ui = true;
+
+        // Полупрозрачный фон
+        draw_rectangle(0.0, 0.0, w, h, Color::new(0.02, 0.02, 0.06, 0.88));
+
+        let title = "⚡ НОВЫЙ УРОВЕНЬ! ВЫБЕРИТЕ УЛУЧШЕНИЕ ⚡";
+        let title_y = panel_y + panel_h + 24.0;
+        let tw = fonts.measure_heading(title, 22.0).width;
+        fonts.draw_heading(title, (w - tw) / 2.0, title_y, 22.0, GOLD);
+
+        let sub = "Нажмите [ 1 ], [ 2 ], [ 3 ] на клавиатуре или выберите карту кликом мыши";
+        let sw = fonts.measure_text(sub, 12.0).width;
+        fonts.draw_text(sub, (w - sw) / 2.0, title_y + 24.0, 12.0, Color::new(0.75, 0.78, 0.88, 1.0));
+
+        let mut card_y = title_y + 54.0;
+        if world.boss_pending_level_ups > 1 {
+            let pend_str = format!("В очереди ещё уровней: {}", world.boss_pending_level_ups - 1);
+            let pw = fonts.measure_heading(&pend_str, 12.0).width;
+            fonts.draw_heading(&pend_str, (w - pw) / 2.0, title_y + 44.0, 12.0, ORANGE);
+            card_y += 18.0;
+        }
+
+        let card_w = 236.0;
+        let card_h = 320.0;
+        let card_gap = 24.0;
+        let count = options.len().min(3);
+        let total_w = (count as f32) * card_w + ((count - 1) as f32) * card_gap;
+        let start_x = (w - total_w) / 2.0;
+
+        for (idx, choice) in options.iter().take(3).enumerate() {
+            let cx = start_x + (idx as f32) * (card_w + card_gap);
+            let is_card_hover = mx >= cx && mx <= cx + card_w && my >= card_y && my <= card_y + card_h;
+            let key_shortcut = match idx {
+                0 => is_key_pressed(KeyCode::Key1),
+                1 => is_key_pressed(KeyCode::Key2),
+                2 => is_key_pressed(KeyCode::Key3),
+                _ => false,
+            };
+
+            // Распаковываем данные карты
+            let (category, title_str, desc_str, lvl_tag, is_evo, wep_kind, pas_kind) = match choice {
+                crate::ecs::components::inventory::PerkChoice::EvolveWeapon { to, .. } => {
+                    let def = get_weapon_def(*to);
+                    ("⚡ ЭВОЛЮЦИЯ СИНТЕЗА", def.name.to_string(), def.description.to_string(), "МАКСИМУМ".to_string(), true, Some(*to), None)
+                }
+                crate::ecs::components::inventory::PerkChoice::UpgradeWeapon(kind) => {
+                    let def = get_weapon_def(*kind);
+                    let existing = world.boss_inventory.weapons.iter().find(|w| w.kind == *kind);
+                    let (cat, lvl) = if let Some(w) = existing {
+                        ("⚔️ УЛУЧШЕНИЕ ОРУЖИЯ", format!("Ур. {} ➔ {}", w.level, w.level + 1))
+                    } else {
+                        ("⚔️ НОВОЕ ОРУЖИЕ", "НОВОЕ".to_string())
+                    };
+                    (cat, def.name.to_string(), def.description.to_string(), lvl, false, Some(*kind), None)
+                }
+                crate::ecs::components::inventory::PerkChoice::UpgradePassive(kind) => {
+                    let def = get_passive_def(*kind);
+                    let existing = world.boss_inventory.passives.iter().find(|p| p.kind == *kind);
+                    let (cat, lvl) = if let Some(p) = existing {
+                        ("🔮 УЛУЧШЕНИЕ РЕЛИКВИИ", format!("Ур. {} ➔ {}", p.level, p.level + 1))
+                    } else {
+                        ("🔮 НОВАЯ РЕЛИКВИЯ", "НОВАЯ".to_string())
+                    };
+                    (cat, def.name.to_string(), def.description.to_string(), lvl, false, None, Some(*kind))
+                }
+                crate::ecs::components::inventory::PerkChoice::LimitBreakDamage { name, .. } => {
+                    ("🔥 ВОЗВЫШЕНИЕ", format!("Урон: {}", name), "+12% к урону этого оружия".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                }
+                crate::ecs::components::inventory::PerkChoice::LimitBreakCooldown { name, .. } => {
+                    ("🔥 ВОЗВЫШЕНИЕ", format!("Скорость: {}", name), "-6% времени перезарядки".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                }
+                crate::ecs::components::inventory::PerkChoice::LimitBreakProjectiles { name, .. } => {
+                    ("🔥 ВОЗВЫШЕНИЕ", format!("Снаряды: {}", name), "+1 снаряд к каждому залпу".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                }
+                crate::ecs::components::inventory::PerkChoice::LimitBreakTitanVigor => {
+                    ("🔥 ВОЗВЫШЕНИЕ", "Сила Титана".to_string(), "+150 Макс HP, +25% эффективности лечения".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                }
+                crate::ecs::components::inventory::PerkChoice::LimitBreakAdaptiveArmor => {
+                    ("🔥 ВОЗВЫШЕНИЕ", "Адаптивная Броня".to_string(), "+2.0 Брони, +3% ко всем сопротивлениям".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                }
+                crate::ecs::components::inventory::PerkChoice::LimitBreakPredatorSpeed => {
+                    ("🔥 ВОЗВЫШЕНИЕ", "Скорость Хищника".to_string(), "+6% к скорости перемещения".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                }
+            };
+
+            // Фон карты
+            let card_bg = if is_card_hover {
+                Color::new(0.14, 0.12, 0.22, 0.98)
+            } else {
+                Color::new(0.07, 0.07, 0.12, 0.96)
+            };
+            let border_col = if is_card_hover {
+                GOLD
+            } else if is_evo {
+                Color::new(0.9, 0.6, 0.2, 0.9)
+            } else if wep_kind.is_some() {
+                Color::new(0.35, 0.60, 0.85, 0.85)
+            } else {
+                Color::new(0.65, 0.35, 0.85, 0.85)
+            };
+
+            draw_rectangle(cx, card_y, card_w, card_h, card_bg);
+            draw_rectangle_lines(cx, card_y, card_w, card_h, if is_card_hover { 2.5 } else { 1.5 }, border_col);
+
+            // Бейдж клавиши [ 1 / 2 / 3 ]
+            let hotkey_badge = format!("[ {} ]", idx + 1);
+            let hkw = fonts.measure_heading(&hotkey_badge, 11.0).width;
+            draw_rectangle(cx + card_w - hkw - 12.0, card_y + 8.0, hkw + 8.0, 16.0, Color::new(0.0, 0.0, 0.0, 0.7));
+            fonts.draw_heading(&hotkey_badge, cx + card_w - hkw - 8.0, card_y + 20.0, 11.0, if is_card_hover { GOLD } else { WHITE });
+
+            // Категория
+            fonts.draw_heading(category, cx + 12.0, card_y + 20.0, 10.0, if is_evo { GOLD } else if wep_kind.is_some() { SKYBLUE } else { PURPLE });
+
+            // Иконка по центру
+            let icon_box_s = 64.0;
+            let icon_box_x = cx + (card_w - icon_box_s) / 2.0;
+            let icon_box_y = card_y + 36.0;
+            draw_rectangle(icon_box_x, icon_box_y, icon_box_s, icon_box_s, Color::new(0.04, 0.04, 0.08, 0.9));
+            draw_rectangle_lines(icon_box_x, icon_box_y, icon_box_s, icon_box_s, 1.2, border_col);
+
+            if let Some(wkind) = wep_kind {
+                if let Some(tex) = textures.get_weapon_icon(wkind) {
+                    draw_texture_ex(
+                        tex,
+                        icon_box_x + 4.0,
+                        icon_box_y + 4.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(icon_box_s - 8.0, icon_box_s - 8.0)),
+                            ..Default::default()
+                        },
+                    );
+                }
+            } else if let Some(pkind) = pas_kind {
+                if let Some(tex) = textures.get_passive_icon(pkind) {
+                    draw_texture_ex(
+                        tex,
+                        icon_box_x + 4.0,
+                        icon_box_y + 4.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(icon_box_s - 8.0, icon_box_s - 8.0)),
+                            ..Default::default()
+                        },
+                    );
+                }
+            } else {
+                fonts.draw_heading("⚡", icon_box_x + 22.0, icon_box_y + 42.0, 26.0, GOLD);
+            }
+
+            // Название
+            let title_w = fonts.measure_heading(&title_str, 13.0).width;
+            fonts.draw_heading(&title_str, (cx + (card_w - title_w) / 2.0).max(cx + 8.0), icon_box_y + icon_box_s + 20.0, 13.0, WHITE);
+
+            // Бейдж уровня
+            let lw = fonts.measure_heading(&lvl_tag, 10.5).width;
+            fonts.draw_heading(&lvl_tag, cx + (card_w - lw) / 2.0, icon_box_y + icon_box_s + 38.0, 10.5, if is_evo { GOLD } else { SKYBLUE });
+
+            // Описание (многострочное)
+            let mut line_y = icon_box_y + icon_box_s + 56.0;
+            for chunk in desc_str.split('\n') {
+                for line in wrap_text_lines(chunk, card_w - 24.0, 10.0, fonts) {
+                    fonts.draw_text(&line, cx + 12.0, line_y, 10.0, Color::new(0.80, 0.82, 0.90, 0.95));
+                    line_y += 13.0;
+                }
+            }
+
+            // Кнопка ВЫБРАТЬ внизу карты
+            let btn_h = 28.0;
+            let btn_y = card_y + card_h - btn_h - 10.0;
+            let btn_x = cx + 16.0;
+            let btn_w = card_w - 32.0;
+            let btn_bg = if is_card_hover { Color::new(0.55, 0.35, 0.12, 0.95) } else { Color::new(0.16, 0.18, 0.26, 0.9) };
+            draw_rectangle(btn_x, btn_y, btn_w, btn_h, btn_bg);
+            draw_rectangle_lines(btn_x, btn_y, btn_w, btn_h, 1.2, if is_card_hover { GOLD } else { DARKGRAY });
+            let pick_txt = format!("ВЫБРАТЬ [{}]", idx + 1);
+            let ptw = fonts.measure_heading(&pick_txt, 11.0).width;
+            fonts.draw_heading(&pick_txt, btn_x + (btn_w - ptw) / 2.0, btn_y + 19.0, 11.0, if is_card_hover { GOLD } else { WHITE });
+
+            if (is_card_hover && is_mouse_button_pressed(MouseButton::Left)) || key_shortcut {
+                interaction.chosen_perk = Some(choice.clone());
+            }
+        }
+    }
+
     interaction
+}
+
+fn wrap_text_lines(text: &str, max_width: f32, font_size: f32, fonts: &GameFonts) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in text.split('\n') {
+        let words: Vec<&str> = paragraph.split_whitespace().collect();
+        if words.is_empty() {
+            continue;
+        }
+        let mut cur_line = String::new();
+        for word in words {
+            let candidate = if cur_line.is_empty() {
+                word.to_string()
+            } else {
+                format!("{} {}", cur_line, word)
+            };
+            if fonts.measure_text(&candidate, font_size).width <= max_width {
+                cur_line = candidate;
+            } else {
+                if !cur_line.is_empty() {
+                    lines.push(cur_line);
+                }
+                cur_line = word.to_string();
+            }
+        }
+        if !cur_line.is_empty() {
+            lines.push(cur_line);
+        }
+    }
+    lines
 }
 
 fn contains_rect(rect: Rect, x: f32, y: f32) -> bool {

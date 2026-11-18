@@ -281,6 +281,11 @@ async fn main() {
             continue;
         }
 
+        if std::env::args().any(|a| a == "--boss-levelup") && frame_count == 10 {
+            world.boss_pending_level_ups = 1;
+            world.boss_level_up_options = Some(crate::ecs::systems::boss_ai::generate_perk_choices(&world.boss_inventory));
+        }
+
         if auto_screenshot && frame_count == 10 {
             world.boss_inventory.weapons.push(crate::ecs::components::inventory::WeaponSlot {
                 kind: crate::ecs::components::inventory::WeaponType::Hellfire,
@@ -434,7 +439,7 @@ async fn main() {
             ..Default::default()
         };
 
-        let is_running = !is_game_over && !is_paused && !show_codex && active_dossier_tier.is_none();
+        let is_running = !is_game_over && !is_paused && !show_codex && active_dossier_tier.is_none() && world.boss_level_up_options.is_none();
 
         // 2. Сбор ввода игрока-директора -> генерация Команд
         let mut player_move_dir = Vec2::ZERO;
@@ -631,9 +636,13 @@ async fn main() {
                 render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures, audio.is_muted, audio.get_current_track_title())
             }
             crate::render::main_menu::GameRole::Boss => {
-                crate::render::ui::render_boss_ui(&world, &clock, &fonts, audio.is_muted, audio.get_current_track_title())
+                crate::render::ui::render_boss_ui(&world, &clock, &fonts, &textures, audio.is_muted, audio.get_current_track_title())
             }
         };
+
+        if let Some(perk) = ui_interaction.chosen_perk {
+            crate::ecs::systems::coop::apply_player_perk_choice(&mut world, perk);
+        }
 
         if net_driver.is_networked() {
             let (label, color) = if net_driver.is_network_host() {
@@ -911,7 +920,7 @@ async fn main() {
         }
 
         // 8. Отрисовка тематичного курсора Повелителя поверх всех окон
-        let is_hovering = ui_interaction.is_mouse_over_ui || show_codex || active_dossier_tier.is_some() || active_item_inspection.is_some() || is_paused;
+        let is_hovering = ui_interaction.is_mouse_over_ui || show_codex || active_dossier_tier.is_some() || active_item_inspection.is_some() || is_paused || world.boss_level_up_options.is_some();
         draw_overlord_cursor(
             current_mpos,
             is_mouse_button_down(MouseButton::Left),
@@ -929,6 +938,10 @@ async fn main() {
                 get_screen_data().export_png("screenshot_recipe.png");
             } else if auto_codex {
                 get_screen_data().export_png("screenshot_codex.png");
+            } else if std::env::args().any(|a| a == "--boss-levelup") {
+                get_screen_data().export_png("screenshot_boss_levelup.png");
+            } else if game_role == crate::render::main_menu::GameRole::Boss {
+                get_screen_data().export_png("screenshot_boss_ui.png");
             } else {
                 get_screen_data().export_png("screenshot.png");
             }
@@ -1052,6 +1065,7 @@ fn apply_player_profile(
         crate::render::main_menu::GameRole::Boss => settings.nickname.chars().take(32).collect(),
     };
     world.boss_skin = settings.skin % 5;
+    world.boss_human_controlled = role == crate::render::main_menu::GameRole::Boss;
 }
 
 fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, _world_cam: &Camera2D) {

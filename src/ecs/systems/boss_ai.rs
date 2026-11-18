@@ -478,7 +478,7 @@ pub fn handle_boss_level_up(world: &mut World) {
     apply_perk_choice(world, best_choice);
 }
 
-fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
+pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
     let mut available: Vec<(PerkChoice, f32)> = Vec::new();
 
     // 1. Проверяем готовые эволюции (приоритетнейшие карты)
@@ -668,7 +668,7 @@ fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
     selected
 }
 
-fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
+pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
     world.push_audio(crate::audio::AudioEvent::BossLevelUp);
     let boss_pos = world.boss_pos;
     match choice {

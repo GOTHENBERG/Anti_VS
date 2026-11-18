@@ -288,6 +288,7 @@ pub struct World {
     pub boss_input_aim_dir: Vec2,
     pub boss_input_dash_pressed: bool,
     pub boss_pending_level_ups: usize,
+    pub boss_level_up_options: Option<Vec<crate::ecs::components::inventory::PerkChoice>>,
     /// ID of the Boss state temporarily loaded into the legacy `boss_*` fields.
     pub active_boss_id: u8,
     pub blade_storm_angle: f32,
@@ -488,6 +489,7 @@ impl World {
             boss_input_aim_dir: Vec2::X,
             boss_input_dash_pressed: false,
             boss_pending_level_ups: 0,
+            boss_level_up_options: None,
             active_boss_id: 1,
             blade_storm_angle: 0.0,
             divine_shield_angle: 0.0,

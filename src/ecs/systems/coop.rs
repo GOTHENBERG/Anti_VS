@@ -9,6 +9,27 @@ const REVIVE_HEALTH_FRACTION: f32 = 0.35;
 
 /// Applies queued level-ups for the Boss currently loaded into `World`'s legacy fields.
 pub fn apply_pending_level_ups(world: &mut World) {
+    if world.boss_human_controlled {
+        // Для игрока-человека не применяем перки автоматически:
+        // генерируем 3 карты на выбор, если они ещё не открыты
+        if world.boss_pending_level_ups > 0 && world.boss_level_up_options.is_none() {
+            let options = crate::ecs::systems::boss_ai::generate_perk_choices(&world.boss_inventory);
+            if !options.is_empty() {
+                world.boss_level_up_options = Some(options);
+            } else {
+                world.boss_pending_level_ups -= 1;
+                let was_alive = world.boss_health.is_alive();
+                world.boss_health.max += 40.0;
+                if was_alive {
+                    world.boss_health.current = (world.boss_health.current + 30.0).min(world.boss_health.max);
+                }
+                world.boss_resistances.flat_armor += 0.5;
+                if !was_alive { world.boss_health.current = 0.0; }
+            }
+        }
+        return;
+    }
+
     while world.boss_pending_level_ups > 0 {
         world.boss_pending_level_ups -= 1;
         let was_alive = world.boss_health.is_alive();
@@ -20,6 +41,22 @@ pub fn apply_pending_level_ups(world: &mut World) {
         handle_boss_level_up(world);
         if !was_alive { world.boss_health.current = 0.0; }
     }
+}
+
+/// Применяет перк, выбранный игроком-Боссом из модального окна Level-Up.
+pub fn apply_player_perk_choice(world: &mut World, choice: crate::ecs::components::inventory::PerkChoice) {
+    if world.boss_pending_level_ups > 0 {
+        world.boss_pending_level_ups -= 1;
+        let was_alive = world.boss_health.is_alive();
+        world.boss_health.max += 40.0;
+        if was_alive {
+            world.boss_health.current = (world.boss_health.current + 30.0).min(world.boss_health.max);
+        }
+        world.boss_resistances.flat_armor += 0.5;
+        crate::ecs::systems::boss_ai::apply_perk_choice(world, choice);
+        if !was_alive { world.boss_health.current = 0.0; }
+    }
+    world.boss_level_up_options = None;
 }
 
 /// Ticks cooldowns and per-player damage telemetry for every non-primary actor.
