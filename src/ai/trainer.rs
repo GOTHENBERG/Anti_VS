@@ -1,7 +1,7 @@
 use crate::core::rand;
 use rayon::prelude::*;
 use crate::ai::models::{BossModel, DirectorModel, TrainingStats, MODEL_FORMAT_VERSION};
-use crate::ai::simulation::{run_headless_simulation, MatchResult};
+use crate::ai::simulation::{run_headless_simulation_with_boss_count, MatchResult};
 use crate::ecs::components::inventory::{PassiveType, WeaponType};
 
 const MATCHES_PER_AGENT: usize = 3;
@@ -87,10 +87,11 @@ fn director_utility(res: &MatchResult) -> f32 {
     let kill_bonus = if res.boss_won { 0.0 } else { 400.0 };
     let damage_frac = (res.damage_dealt_to_boss / res.boss_max_health.max(1.0)).clamp(0.0, 1.0);
     let damage_reward = damage_frac * 200.0;
-    // Награда за удержание алтарей: делится на интервалы по 14 секунд (кулдаун алтаря).
+    // Награда за удержание алтарей: делится на интервалы по базовому КД 45 секунд.
     // Суммарный бонус за 1020с ограничен 150.0 (как за 17 алтарей при старом кулдауне в 60с).
-    let altar_intervals = (res.survival_time / 14.0).max(1.0);
-    let expected_max_uptime = (res.survival_time * (altar_intervals + 1.0) * 0.5).max(14.0);
+    let altar_cooldown = crate::content::structures::ALTAR_BASE_COOLDOWN_SECONDS;
+    let altar_intervals = (res.survival_time / altar_cooldown).max(1.0);
+    let expected_max_uptime = (res.survival_time * (altar_intervals + 1.0) * 0.5).max(altar_cooldown);
     let uptime_frac = (res.total_altar_uptime_seconds / expected_max_uptime).clamp(0.0, 1.0);
     let altar_reward = uptime_frac * 150.0;
     let economy_denom = res.director_points_spent + res.director_points_unspent + 100.0;
@@ -369,11 +370,13 @@ pub fn run_co_evolutionary_training(
     reset: bool,
     round_duration: Option<f32>,
     boss_decision_interval: f32,
+    boss_count: usize,
 ) {
     let generations = generations.max(1);
     // Два элита занимают всю популяцию; при размере 2 следующие поколения
     // не получают потомков и перестают исследовать новые политики.
     let population_size = population_size.max(3);
+    let boss_count = boss_count.clamp(1, 8);
     let duration_info = match round_duration {
         Some(d) => format!("ФИКСИРОВАННЫЙ ({:.0} сек / {:.1} мин)", d, d / 60.0),
         None => format!("Curriculum (300с -> 1020с)"),
@@ -384,6 +387,7 @@ pub fn run_co_evolutionary_training(
     println!("  Движок: {} потоков Rayon (ноль-суммарные матчи с фиксированными seed)", rayon::current_num_threads());
     println!("  Поколений: {} | Размер популяции каждого агента: {}", generations, population_size);
     println!("  Длительность матчей: {}", duration_info);
+    println!("  Боссов в команде обучения: {}", boss_count);
     println!("  Частота решений Босса: {:.0} мс", boss_decision_interval * 1000.0);
     println!("  Формат: v{} (старый фитнес инвалидируется при загрузке)", MODEL_FORMAT_VERSION);
     println!("  Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
@@ -597,12 +601,13 @@ pub fn run_co_evolutionary_training(
                     AgentRef::Population(i) => &director_pop[i],
                     AgentRef::HallOfFame(i) => &hof_directors[i],
                 };
-                run_headless_simulation(
+                run_headless_simulation_with_boss_count(
                     boss,
                     director,
                     p.seed,
                     match_cap,
                     boss_decision_interval,
+                    boss_count,
                 )
             })
             .collect();

@@ -25,7 +25,7 @@ fn boss_cell_of(dx: f32, dy: f32) -> Option<(usize, usize)> {
 }
 
 /// ============================================================================
-/// СЕНСОРЫ БОССА — 166 входов
+/// СЕНСОРЫ БОССА — 182 входа
 /// ============================================================================
 /// [0..100]   4 канала × сетка 5×5 (ячейка 100 px, охват 500×500 px):
 ///            канал 0 — мобы, канал 1 — снаряды Директора,
@@ -41,6 +41,7 @@ fn boss_cell_of(dx: f32, dy: f32) -> Option<(usize, usize)> {
 ///            флаг атаки алтаря, время матча, недавний урон, дистанция до элиты.
 /// [150..154] Урон от окружения, длительность/сила яда, дистанция промаха снаряда.
 /// [154..166] Позиция (x,y) и активность каждого из четырёх обелисков.
+/// [166..182] Координаты и здоровье четырёх ближайших союзников.
 ///
 /// Ключевое отличие от старой версии: типы угроз больше не смешаны в один
 /// скаляр, у снарядов есть time-to-impact, а собственные ресурсы Босса
@@ -385,11 +386,33 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
         };
     }
 
+    let mut allies: Vec<(f32, f32, f32, f32)> = Vec::new();
+    if world.active_boss_id != 1 {
+        let hp = (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0);
+        allies.push((world.boss_pos.x, world.boss_pos.y, hp, if world.boss_health.is_alive() { 1.0 } else { -1.0 }));
+    }
+    allies.extend(world.coop_bosses.iter().filter(|player| player.id != world.active_boss_id).map(|player| {
+        let hp = (player.boss_health.current / player.boss_health.max.max(1.0)).clamp(0.0, 1.0);
+        (player.boss_pos.x, player.boss_pos.y, hp, if player.boss_health.is_alive() { 1.0 } else { -1.0 })
+    }));
+    allies.sort_by(|a, b| {
+        let da = (a.0 - world.boss_pos.x).powi(2) + (a.1 - world.boss_pos.y).powi(2);
+        let db = (b.0 - world.boss_pos.x).powi(2) + (b.1 - world.boss_pos.y).powi(2);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for (index, (x, y, hp, alive)) in allies.into_iter().take(4).enumerate() {
+        let base = 166 + index * 4;
+        obs[base] = ((x - world.boss_pos.x) / MAP_WIDTH).clamp(-1.0, 1.0);
+        obs[base + 1] = ((y - world.boss_pos.y) / MAP_HEIGHT).clamp(-1.0, 1.0);
+        obs[base + 2] = hp;
+        obs[base + 3] = alive;
+    }
+
     obs
 }
 
 /// ============================================================================
-/// СЕНСОРЫ ДИРЕКТОРА — 139 входов
+/// СЕНСОРЫ ДИРЕКТОРА — 177 входов
 /// ============================================================================
 pub const DIRECTOR_INPUT_SIZE: usize = crate::ai::neural_net::DIRECTOR_INPUT_SIZE;
 pub const DIRECTOR_ALTAR_SLOT_COUNT: usize = 25;
@@ -486,7 +509,7 @@ pub fn passive_type_to_index(p: PassiveType) -> usize {
     }
 }
 
-/// 139-мерный вектор Директора.
+/// 177-мерный вектор Директора.
 ///
 /// [0..9]     кинематика Босса
 /// [9..18]    HP/XP/уровень/действия Босса
@@ -893,6 +916,45 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     obs[138] = (valid_altar_slots.iter().filter(|&&valid| valid).count() as f32
         / DIRECTOR_ALTAR_SLOT_COUNT as f32)
         .clamp(0.0, 1.0);
+
+    let mut total_hp = 0.0f32;
+    let mut lowest_hp = 1.0f32;
+    let mut living_players = 0usize;
+    let mut centroid = Vec2::ZERO;
+    if world.boss_health.is_alive() {
+        let hp = (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0);
+        total_hp += hp;
+        lowest_hp = lowest_hp.min(hp);
+        living_players += 1;
+        centroid += world.boss_pos;
+    }
+    for player in world.coop_bosses.iter().filter(|player| player.boss_health.is_alive()) {
+        let hp = (player.boss_health.current / player.boss_health.max.max(1.0)).clamp(0.0, 1.0);
+        total_hp += hp;
+        lowest_hp = lowest_hp.min(hp);
+        living_players += 1;
+        centroid += player.boss_pos;
+    }
+    obs[139] = (world.boss_player_count() as f32 / 8.0).clamp(0.0, 1.0);
+    obs[140] = (living_players as f32 / world.boss_player_count().max(1) as f32).clamp(0.0, 1.0);
+    obs[141] = if living_players > 0 { total_hp / living_players as f32 } else { 0.0 };
+    obs[142] = if living_players > 0 { lowest_hp } else { 0.0 };
+    let centroid = if living_players > 0 { centroid / living_players as f32 } else { world.boss_pos };
+    obs[143] = ((centroid.x - boss_pos.x) / MAP_WIDTH).clamp(-1.0, 1.0);
+    obs[144] = ((centroid.y - boss_pos.y) / MAP_HEIGHT).clamp(-1.0, 1.0);
+
+    // Индивидуальные позиции/состояния команды помогают Директору использовать
+    // раздельные направления атаки и замечать отставших или павших Боссов.
+    let mut team = Vec::with_capacity(world.boss_player_count());
+    team.push((world.boss_pos, &world.boss_health));
+    team.extend(world.coop_bosses.iter().map(|player| (player.boss_pos, &player.boss_health)));
+    for (slot, (pos, health)) in team.into_iter().take(8).enumerate() {
+        let base = 145 + slot * 4;
+        obs[base] = ((pos.x - boss_pos.x) / MAP_WIDTH).clamp(-1.0, 1.0);
+        obs[base + 1] = ((pos.y - boss_pos.y) / MAP_HEIGHT).clamp(-1.0, 1.0);
+        obs[base + 2] = (health.current / health.max.max(1.0)).clamp(0.0, 1.0);
+        obs[base + 3] = if health.is_alive() { 1.0 } else { 0.0 };
+    }
 
     obs
 }

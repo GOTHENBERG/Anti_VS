@@ -2,21 +2,18 @@ use macroquad::prelude::*;
 use crate::core::rand;
 use crate::ai::models::{BossModel, DirectorModel};
 use crate::ai::neural_net::{
-    DirectorActionContext, BOSS_DASH_BASE_COOLDOWN_SECONDS, BOSS_TRAINING_DECISION_INTERVAL,
+    DirectorActionContext, BOSS_DASH_BASE_COOLDOWN_SECONDS,
     INPUT_SIZE, OUT_DASH, OUT_DASH_X, OUT_DASH_Y, OUT_MOVE_MAG, OUT_MOVE_X, OUT_MOVE_Y, OUT_REST,
 };
 use crate::content::mobs::{get_squad_config, spawn_squad_in_sector};
 use crate::content::structures::{
-    can_place_blood_altar, spawn_blood_altar, try_spawn_blood_altar, BLOOD_ALTAR_COST,
+    can_place_blood_altar, spawn_blood_altar, BLOOD_ALTAR_COST,
 };
 use crate::core::{MAP_HEIGHT, MAP_WIDTH};
 use crate::ecs::components::combat::Faction;
 use crate::ecs::systems::{
-    combat::update_combat,
     director::update_director,
-    meditation::update_meditation,
     movement::update_movement,
-    skills::update_skills,
 };
 use crate::ecs::world::World;
 
@@ -69,11 +66,40 @@ pub fn run_headless_simulation(
     max_duration_seconds: f32,
     boss_decision_interval: f32,
 ) -> MatchResult {
+    run_headless_simulation_with_boss_count(
+        boss_model,
+        director_model,
+        seed,
+        max_duration_seconds,
+        boss_decision_interval,
+        1,
+    )
+}
+
+pub fn run_headless_simulation_with_boss_count(
+    boss_model: &BossModel,
+    director_model: &DirectorModel,
+    seed: u64,
+    max_duration_seconds: f32,
+    boss_decision_interval: f32,
+    boss_count: usize,
+) -> MatchResult {
     rand::seed(seed);
 
     let mut world = World::new();
     world.is_headless = true;
     world.boss_model = Some(boss_model.clone());
+    let boss_count = boss_count.clamp(1, 8);
+    for player_index in 1..boss_count {
+        let angle = player_index as f32 * std::f32::consts::TAU / boss_count as f32;
+        let offset = Vec2::new(angle.cos(), angle.sin()) * 140.0;
+        world.add_coop_boss(
+            player_index as u8 + 1,
+            Vec2::new(MAP_WIDTH * 0.5, MAP_HEIGHT * 0.5) + offset,
+            format!("AI-{}", player_index + 1),
+            (player_index % 5) as u8,
+        );
+    }
 
     let dt = 0.05f32; // 20 тиков на каждую виртуальную секунду
     let boss_decision_interval = boss_decision_interval.max(dt);
@@ -88,11 +114,14 @@ pub fn run_headless_simulation(
 
     // Начальный алтарь
     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
+    crate::content::structures::spawn_corner_obelisks(&mut world);
 
     let mut cached_action: Option<BossAction> = None;
+    let mut coop_cached_actions = vec![None; world.coop_bosses.len()];
+    let mut coop_think_timers = vec![boss_decision_interval; world.coop_bosses.len()];
     let mut boss_think_timer = boss_decision_interval;
 
-    while world.boss_health.is_alive() && sim_time < max_duration_seconds {
+    while world.any_boss_alive() && sim_time < max_duration_seconds {
         sim_time += dt;
         director_decision_timer += dt;
 
@@ -132,23 +161,53 @@ pub fn run_headless_simulation(
             dash_dir: Vec2::X,
             rest: false,
         });
-        let (walk_dist, dashed) = apply_boss_action(&mut world, action, dt);
+        let (walk_dist, dashed) = if world.boss_health.is_alive() {
+            apply_boss_action(&mut world, action, dt)
+        } else {
+            (0.0, false)
+        };
         total_distance_walked += walk_dist;
         if dashed {
             total_dashes += 1;
         }
 
-        update_meditation(&mut world, dt);
+        for index in 0..world.coop_bosses.len() {
+            if !world.coop_bosses[index].boss_health.is_alive() { continue; }
+            coop_think_timers[index] += dt;
+            if coop_cached_actions[index].is_none() || coop_think_timers[index] >= boss_decision_interval {
+                coop_think_timers[index] = 0.0;
+                world.swap_coop_boss_context(index);
+                coop_cached_actions[index] = Some(think_boss(&world, boss_model));
+                world.swap_coop_boss_context(index);
+            }
+            let coop_action = coop_cached_actions[index].unwrap_or(BossAction {
+                move_dir: Vec2::ZERO,
+                move_mag: 0.0,
+                dash: false,
+                dash_dir: Vec2::X,
+                rest: false,
+            });
+            world.swap_coop_boss_context(index);
+            let (walk_dist, dashed) = apply_boss_action(&mut world, coop_action, dt);
+            world.swap_coop_boss_context(index);
+            total_distance_walked += walk_dist;
+            if dashed { total_dashes += 1; }
+        }
+
+        crate::ecs::systems::coop::tick_coop_boss_timers(&mut world, dt);
+        crate::ecs::systems::coop::update_all_boss_effects(&mut world, dt);
         if world.boss_still_time >= 1.2 {
             total_meditation_time += dt;
         }
-        update_skills(&mut world, dt);
+        total_meditation_time += world.coop_bosses.iter().filter(|p| p.boss_still_time >= 1.2).count() as f32 * dt;
         update_movement(&mut world, dt);
-        update_combat(&mut world, dt);
+        crate::ecs::systems::coop::update_coop_boss_environment(&mut world, dt);
+        crate::ecs::systems::coop::update_all_boss_combat(&mut world, dt);
+        crate::ecs::systems::coop::update_revives(&mut world, dt);
 
         // Учитываем только алтари: стены и обелиски не должны раздувать награду за uptime.
         for st in &world.structures {
-            if st.structure_type == crate::content::structures::STRUCTURE_ALTAR
+            if crate::content::structures::is_altar_structure_type(st.structure_type)
                 && st.health.is_alive()
             {
                 total_altar_uptime_seconds += dt;
@@ -156,8 +215,10 @@ pub fn run_headless_simulation(
         }
     }
 
-    let boss_won = world.boss_health.is_alive();
-    let final_level = world.boss_inventory.level;
+    let boss_won = world.any_boss_alive();
+    let total_levels = world.boss_inventory.level as usize
+        + world.coop_bosses.iter().map(|player| player.boss_inventory.level as usize).sum::<usize>();
+    let final_level = (total_levels / world.boss_player_count()) as u32;
     let dmg_to_boss = world.total_damage_dealt_to_boss;
     let (director_grades, points_spent, points_unspent) = world
         .directors
@@ -177,7 +238,7 @@ pub fn run_headless_simulation(
         boss_level: final_level,
         boss_won,
         damage_dealt_to_boss: dmg_to_boss,
-        boss_max_health: world.boss_health.max,
+        boss_max_health: world.boss_health.max + world.coop_bosses.iter().map(|player| player.boss_health.max).sum::<f32>(),
         altars_built,
         altars_destroyed: world.boss_altars_destroyed_total,
         obelisks_deactivated: world.boss_obelisks_deactivated_total,
@@ -336,12 +397,15 @@ fn run_director_decision(
         if decision.should_build_altar
             && can_place_blood_altar(world, decision.altar_target_pos)
         {
+            let altar_tier = decision.altar_tier;
+            let altar_cost = crate::content::structures::altar_cost(altar_tier);
+            let altar_cd = crate::content::structures::altar_cooldown(altar_tier);
             let spent = world
                 .directors
                 .first_mut()
                 .map(|d| {
-                    if d.altar_cooldown <= 0.0 && d.spend_points(BLOOD_ALTAR_COST) {
-                        d.altar_cooldown = d.altar_max_cooldown;
+                    if d.altar_cooldown_for_tier(altar_tier) <= 0.0 && d.spend_points(altar_cost) {
+                        d.set_altar_cooldown_for_tier(altar_tier, altar_cd);
                         true
                     } else {
                         false
@@ -349,7 +413,7 @@ fn run_director_decision(
                 })
                 .unwrap_or(false);
 
-            if spent && try_spawn_blood_altar(world, decision.altar_target_pos) {
+            if spent && crate::content::structures::try_spawn_tier_altar(world, decision.altar_target_pos, altar_tier) {
                 *altars_built += 1;
             }
         }
@@ -381,7 +445,7 @@ fn run_director_decision(
                         .unwrap_or(false);
                     if paid {
                         spawn_squad_in_sector(world, tier, decision.spawn_sector);
-                        mobs_spawned_by_tier[(tier - 1) as usize] += config.count;
+                        mobs_spawned_by_tier[(tier - 1) as usize] += config.count * world.living_boss_count();
                     }
                 }
             }
@@ -441,6 +505,12 @@ fn build_director_context(world: &World) -> DirectorActionContext {
         total_points_spent: director.map_or(0.0, |d| d.total_points_spent),
         altar_cooldown: director.map_or(0.0, |d| d.altar_cooldown),
         altar_cost: BLOOD_ALTAR_COST,
+        altar_tier_cooldowns: std::array::from_fn(|index| {
+            director.map_or(0.0, |d| d.altar_cooldown_for_tier(index as u8 + 1))
+        }),
+        altar_tier_costs: std::array::from_fn(|index| {
+            crate::content::structures::altar_cost(index as u8 + 1)
+        }),
         grade_fury: director.map_or(0, |d| d.grade_fury),
         grade_carapace: director.map_or(0, |d| d.grade_carapace),
         grade_pestilence: director.map_or(0, |d| d.grade_pestilence),
@@ -540,7 +610,7 @@ fn run_director_fallback(
             if paid {
                 let sector = rand::gen_range(0usize, 8);
                 spawn_squad_in_sector(world, tier as u8, sector);
-                mobs_spawned_by_tier[tier - 1] += count;
+                mobs_spawned_by_tier[tier - 1] += count * world.living_boss_count();
             }
         }
     }
@@ -578,6 +648,7 @@ fn run_director_fallback(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::neural_net::BOSS_TRAINING_DECISION_INTERVAL;
 
     #[test]
     fn deterministic_seed_reproducible() {

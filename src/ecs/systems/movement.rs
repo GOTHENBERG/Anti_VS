@@ -5,7 +5,14 @@ use crate::ecs::components::inventory::DamageSourceKind;
 use crate::ecs::world::World;
 
 #[inline(always)]
-fn update_single_mob(mob: &mut crate::ecs::world::MobEntity, boss_pos: Vec2, boss_vel: Vec2, dt: f32) {
+fn update_single_mob(
+    mob: &mut crate::ecs::world::MobEntity,
+    primary_boss_pos: Vec2,
+    primary_boss_vel: Vec2,
+    primary_boss_alive: bool,
+    coop_bosses: &[crate::ecs::world::BossPlayerState],
+    dt: f32,
+) {
     // Обновление таймеров статусов
     if mob.status.burn_timer > 0.0 {
         mob.status.burn_timer = (mob.status.burn_timer - dt).max(0.0);
@@ -21,6 +28,32 @@ fn update_single_mob(mob: &mut crate::ecs::world::MobEntity, boss_pos: Vec2, bos
     if mob.status.freeze_timer > 0.0 {
         mob.status.freeze_timer = (mob.status.freeze_timer - dt).max(0.0);
     }
+
+    // Мобы преследуют ближайшего живого Босса: при нескольких игроках каждый моб
+    // сам выбирает цель по текущей дистанции, не закрепляясь навсегда за одним игроком.
+    let assigned_target = mob.target_boss_id.and_then(|id| {
+        if id == 1 && primary_boss_alive {
+            Some((primary_boss_pos, primary_boss_vel))
+        } else {
+            coop_bosses.iter()
+                .find(|player| player.id == id && player.boss_health.is_alive())
+                .map(|player| (player.boss_pos, player.boss_vel))
+        }
+    });
+    let (boss_pos, boss_vel) = if let Some(target) = assigned_target {
+        target
+    } else {
+        let mut nearest = if primary_boss_alive {
+            Some((primary_boss_pos, primary_boss_vel, primary_boss_pos.distance_squared(mob.pos)))
+        } else { None };
+        for player in coop_bosses.iter().filter(|player| player.boss_health.is_alive()) {
+            let distance = player.boss_pos.distance_squared(mob.pos);
+            if nearest.map_or(true, |(_, _, best)| distance < best) {
+                nearest = Some((player.boss_pos, player.boss_vel, distance));
+            }
+        }
+        nearest.map_or((primary_boss_pos, primary_boss_vel), |(pos, vel, _)| (pos, vel))
+    };
 
     // Вычисление целевой точки в зависимости от роли моба
     let target_pos = match mob.tier {
@@ -104,14 +137,21 @@ fn update_single_mob(mob: &mut crate::ecs::world::MobEntity, boss_pos: Vec2, bos
 pub fn update_movement(world: &mut World, dt: f32) {
     let boss_pos = world.boss_pos;
     let boss_vel = world.boss_vel;
+    let primary_boss_alive = world.boss_health.is_alive();
+    let coop_bosses = &world.coop_bosses;
+    let live_coop_bosses: Vec<(u8, Vec2)> = coop_bosses
+        .iter()
+        .filter(|player| player.boss_health.is_alive())
+        .map(|player| (player.id, player.boss_pos))
+        .collect();
 
     // 1. Обновление движения, физики и эффектов мобов:
     // В Headless (обучение): последовательный цикл внутри своего потока Rayon (0 оверхеда).
     // В игре с графикой: параллельное обновление на всех 8 потоках i3-10100F для максимального FPS.
     if world.is_headless {
-        world.mobs.iter_mut().for_each(|mob| update_single_mob(mob, boss_pos, boss_vel, dt));
+        world.mobs.iter_mut().for_each(|mob| update_single_mob(mob, boss_pos, boss_vel, primary_boss_alive, coop_bosses, dt));
     } else {
-        world.mobs.par_iter_mut().for_each(|mob| update_single_mob(mob, boss_pos, boss_vel, dt));
+        world.mobs.par_iter_mut().for_each(|mob| update_single_mob(mob, boss_pos, boss_vel, primary_boss_alive, coop_bosses, dt));
     }
 
     // 2. Перестроение Пространственной Сетки (Spatial Grid) для мгновенных запросов O(1)
@@ -152,7 +192,17 @@ pub fn update_movement(world: &mut World, dt: f32) {
                     }
                 }
             } else if proj.faction == Faction::Director {
-                closest_target_pos = Some(world.boss_pos);
+                if primary_boss_alive {
+                    closest_target_pos = Some(boss_pos);
+                    min_dist_sq = proj.pos.distance_squared(boss_pos);
+                }
+                for &(_, player_pos) in &live_coop_bosses {
+                    let dist_sq = proj.pos.distance_squared(player_pos);
+                    if dist_sq < min_dist_sq {
+                        min_dist_sq = dist_sq;
+                        closest_target_pos = Some(player_pos);
+                    }
+                }
             }
 
             if let Some(target_pos) = closest_target_pos {
@@ -242,7 +292,7 @@ pub fn update_movement(world: &mut World, dt: f32) {
         let miasma_dps = 10.0 + (pestilence_lvl as f32) * 2.5;
         let poison_res = world.boss_resistances.poison_res.clamp(-0.5, 0.85);
         for st in &world.structures {
-            if st.structure_type == crate::content::structures::STRUCTURE_ALTAR && world.boss_pos.distance_squared(st.pos) < miasma_radius * miasma_radius {
+            if crate::content::structures::is_altar_structure_type(st.structure_type) && world.boss_pos.distance_squared(st.pos) < miasma_radius * miasma_radius {
                 let dmg = miasma_dps * (1.0 - poison_res) * dt;
                 world.boss_health.take_damage(dmg);
                 world.boss_inventory.record_damage_taken(dmg, DamageType::Poison, DamageSourceKind::Hazard);

@@ -82,7 +82,7 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         }
 
         match structure.structure_type {
-            crate::content::structures::STRUCTURE_ALTAR => {
+            altar_type if crate::content::structures::is_altar_structure_type(altar_type) => {
                 draw_circle_lines(
                     structure.pos.x,
                     structure.pos.y,
@@ -110,7 +110,7 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
                 );
             }
             crate::content::structures::STRUCTURE_OBELISK => {
-                let half = crate::content::structures::OBELISK_RADIUS * 2.0;
+                let half = crate::content::structures::OBELISK_FOOTPRINT_HALF_EXTENT;
                 let border = if structure.is_active {
                     Color::new(1.0, 0.2, 0.9, 0.95)
                 } else {
@@ -136,7 +136,7 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         }
 
         match structure.structure_type {
-            crate::content::structures::STRUCTURE_ALTAR => {
+            altar_type if crate::content::structures::is_altar_structure_type(altar_type) => {
                 if pestilence_lvl > 0 {
                     let miasma_radius = 160.0f32;
                     let pulse = (time * 2.5).sin() * 6.0;
@@ -145,7 +145,15 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
                     draw_circle(structure.pos.x, structure.pos.y, r, Color::new(0.55, 0.10, 0.75, alpha));
                     draw_circle_lines(structure.pos.x, structure.pos.y, r, 1.8, Color::new(0.75, 0.20, 0.95, alpha * 2.0));
                 }
-                draw_blood_altar(structure.pos, structure.health.current, structure.health.max, time, textures);
+                let altar_tier = crate::content::structures::altar_tier_from_structure_type(structure.structure_type).unwrap_or(1);
+                draw_blood_altar(structure.pos, structure.health.current, structure.health.max, altar_tier, time, textures);
+                fonts.draw_heading(
+                    &format!("T{}", altar_tier),
+                    structure.pos.x - 10.0,
+                    structure.pos.y - 54.0,
+                    11.0,
+                    GOLD,
+                );
             }
             crate::content::structures::STRUCTURE_WALL => {
                 draw_wall(structure.pos, structure.health.current, structure.health.max, structure.lifetime, structure.max_lifetime, textures);
@@ -403,23 +411,55 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
     }
 
     // Тело и экипировка Босса
-    draw_boss(
-        world.boss_pos,
-        world.boss_vel,
-        world.boss_facing,
-        world.boss_invulnerable_timer > 0.0,
-        world.boss_skin,
-        time,
-        textures,
-    );
-    let name_width = fonts.measure_heading(&world.boss_name, 13.0).width;
-    fonts.draw_heading(
-        &world.boss_name,
-        world.boss_pos.x - name_width * 0.5,
-        world.boss_pos.y - 49.0,
-        13.0,
-        Color::new(0.95, 0.88, 0.68, 0.96),
-    );
+    if world.boss_health.is_alive() {
+        draw_boss(
+            world.boss_pos,
+            world.boss_vel,
+            world.boss_facing,
+            world.boss_invulnerable_timer > 0.0,
+            world.boss_skin,
+            time,
+            textures,
+        );
+        draw_boss_name(&world.boss_name, world.boss_pos, fonts, Color::new(0.95, 0.88, 0.68, 0.96));
+    } else {
+        draw_downed_boss(
+            world.boss_pos,
+            world.boss_revive_progress,
+            &world.boss_name,
+            textures,
+            fonts,
+        );
+    }
+
+    for player in &world.coop_bosses {
+        if !in_view(player.boss_pos, 72.0) {
+            continue;
+        }
+        if player.boss_health.is_alive() {
+            draw_boss(
+                player.boss_pos,
+                player.boss_vel,
+                player.boss_facing,
+                player.boss_invulnerable_timer > 0.0,
+                player.boss_skin,
+                time,
+                textures,
+            );
+            draw_boss_name(&player.boss_name, player.boss_pos, fonts, Color::new(0.55, 0.85, 1.0, 0.98));
+            let hp_ratio = (player.boss_health.current / player.boss_health.max.max(1.0)).clamp(0.0, 1.0);
+            draw_rectangle(player.boss_pos.x - 24.0, player.boss_pos.y + 35.0, 48.0, 4.0, DARKGRAY);
+            draw_rectangle(player.boss_pos.x - 24.0, player.boss_pos.y + 35.0, 48.0 * hp_ratio, 4.0, SKYBLUE);
+        } else {
+            draw_downed_boss(
+                player.boss_pos,
+                player.revive_progress,
+                &player.boss_name,
+                textures,
+                fonts,
+            );
+        }
+    }
 
     // 9. Отрисовка частиц
     for p in &world.particles {
@@ -431,4 +471,51 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         color.a = alpha;
         draw_circle(p.pos.x, p.pos.y, p.radius, color);
     }
+}
+
+fn draw_boss_name(name: &str, pos: Vec2, fonts: &GameFonts, color: Color) {
+    let name_width = fonts.measure_heading(name, 13.0).width;
+    fonts.draw_heading(name, pos.x - name_width * 0.5, pos.y - 49.0, 13.0, color);
+}
+
+fn draw_downed_boss(pos: Vec2, revive_progress: f32, name: &str, textures: &GameTextures, fonts: &GameFonts) {
+    let radius = crate::ecs::systems::coop::REVIVE_RADIUS;
+    draw_circle(pos.x, pos.y, radius, Color::new(0.12, 0.55, 0.85, 0.12));
+    draw_circle_lines(pos.x, pos.y, radius, 2.0, Color::new(0.35, 0.8, 1.0, 0.85));
+
+    let progress = (revive_progress / crate::ecs::systems::coop::REVIVE_SECONDS).clamp(0.0, 1.0);
+    let segments = (progress * 36.0).ceil() as usize;
+    for i in 0..segments {
+        let a0 = (i as f32 / 36.0) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+        let a1 = ((i + 1) as f32 / 36.0) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+        draw_line(
+            pos.x + a0.cos() * (radius - 3.0),
+            pos.y + a0.sin() * (radius - 3.0),
+            pos.x + a1.cos() * (radius - 3.0),
+            pos.y + a1.sin() * (radius - 3.0),
+            4.0,
+            SKYBLUE,
+        );
+    }
+
+    if let Some(frame) = textures.knight_idle.first() {
+        draw_texture_ex(
+            frame,
+            pos.x - 22.0,
+            pos.y - 22.0,
+            Color::new(0.55, 0.62, 0.68, 0.82),
+            DrawTextureParams {
+                dest_size: Some(Vec2::new(44.0, 44.0)),
+                rotation: std::f32::consts::FRAC_PI_2,
+                pivot: Some(pos),
+                ..Default::default()
+            },
+        );
+    } else {
+        draw_ellipse(pos.x, pos.y + 7.0, 25.0, 9.0, 0.0, Color::new(0.22, 0.27, 0.31, 0.9));
+        draw_circle(pos.x - 16.0, pos.y - 3.0, 7.0, Color::new(0.55, 0.62, 0.68, 0.85));
+    }
+    draw_boss_name(name, pos, fonts, SKYBLUE);
+    let remaining = (crate::ecs::systems::coop::REVIVE_SECONDS - revive_progress.max(0.0)).max(0.0);
+    fonts.draw_heading(&format!("ВОСКРЕШЕНИЕ {:.1}с", remaining), pos.x - 50.0, pos.y + 63.0, 10.0, SKYBLUE);
 }

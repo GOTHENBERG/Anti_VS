@@ -5,16 +5,57 @@ use crate::ecs::world::{StructureEntity, World};
 pub const STRUCTURE_ALTAR: u8 = 1;
 pub const STRUCTURE_WALL: u8 = 2;
 pub const STRUCTURE_OBELISK: u8 = 3;
+pub const STRUCTURE_TIER_ALTAR_BASE: u8 = 20;
+pub const MAX_ALTAR_TIER: u8 = 16;
 
 pub const BLOOD_ALTAR_COST: f32 = 50.0;
 pub const ALTAR_MIN_SPACING: f32 = 120.0;
 pub const BUILD_GRID_SIZE: f32 = 50.0;
+pub const ALTAR_BASE_COOLDOWN_SECONDS: f32 = 45.0;
 
 pub const WALL_COST: f32 = 10.0;
 pub const WALL_MAX_COOLDOWN: f32 = 2.0;
 pub const WALL_LIFETIME: f32 = 60.0;
 pub const WALL_RADIUS: f32 = 25.0; // 50x50 px баррикада
 pub const OBELISK_RADIUS: f32 = 75.0; // 300x300 px визуальный размер
+pub const OBELISK_FOOTPRINT_HALF_EXTENT: f32 = OBELISK_RADIUS * 2.0;
+
+pub fn structure_type_for_altar_tier(tier: u8) -> u8 {
+    let tier = tier.clamp(1, MAX_ALTAR_TIER);
+    if tier == 1 { STRUCTURE_ALTAR } else { STRUCTURE_TIER_ALTAR_BASE + tier }
+}
+
+pub fn altar_tier_from_structure_type(structure_type: u8) -> Option<u8> {
+    if structure_type == STRUCTURE_ALTAR {
+        Some(1)
+    } else if (STRUCTURE_TIER_ALTAR_BASE + 2..=STRUCTURE_TIER_ALTAR_BASE + MAX_ALTAR_TIER)
+        .contains(&structure_type)
+    {
+        Some(structure_type - STRUCTURE_TIER_ALTAR_BASE)
+    } else {
+        None
+    }
+}
+
+pub fn is_altar_structure_type(structure_type: u8) -> bool {
+    altar_tier_from_structure_type(structure_type).is_some()
+}
+
+pub fn altar_cost(tier: u8) -> f32 {
+    if tier <= 1 {
+        BLOOD_ALTAR_COST
+    } else {
+        crate::content::mobs::get_squad_config(tier).cost * 1.6
+    }
+}
+
+pub fn altar_cooldown(tier: u8) -> f32 {
+    ALTAR_BASE_COOLDOWN_SECONDS + tier.saturating_sub(1) as f32 * 1.5
+}
+
+pub fn altar_spawn_interval(tier: u8) -> f32 {
+    1.0 + tier.saturating_sub(1) as f32 * 0.15
+}
 
 /// Converts a world coordinate to the center of its 50 px placement cell.
 pub fn snap_to_build_grid(pos: Vec2) -> Vec2 {
@@ -83,7 +124,21 @@ pub fn try_spawn_blood_altar(world: &mut World, requested: Vec2) -> bool {
 }
 
 pub fn spawn_blood_altar(world: &mut World, pos: Vec2) {
+    spawn_tier_altar(world, pos, 1);
+}
+
+pub fn try_spawn_tier_altar(world: &mut World, requested: Vec2, tier: u8) -> bool {
+    let requested = snap_to_build_grid(requested);
+    if !can_place_blood_altar(world, requested) {
+        return false;
+    }
+    spawn_tier_altar(world, requested, tier);
+    true
+}
+
+pub fn spawn_tier_altar(world: &mut World, pos: Vec2, tier: u8) {
     let pos = snap_to_build_grid(pos);
+    let tier = tier.clamp(1, MAX_ALTAR_TIER);
     let id = world.alloc_id();
     let carapace_level = world.directors.first().map_or(0, |director| director.grade_carapace);
     let mut resistances = Resistances {
@@ -98,11 +153,11 @@ pub fn spawn_blood_altar(world: &mut World, pos: Vec2) {
     world.structures.push(StructureEntity {
         id,
         pos,
-        health: Health::new(650.0),
+        health: Health::new(650.0 + (tier.saturating_sub(1) as f32 * 180.0)),
         resistances,
         faction: Faction::Director,
         radius: 30.0,
-        structure_type: STRUCTURE_ALTAR,
+        structure_type: structure_type_for_altar_tier(tier),
         pulse_timer: 0.0,
         spawn_timer: 0.0,
         lifetime: -1.0,
@@ -112,7 +167,7 @@ pub fn spawn_blood_altar(world: &mut World, pos: Vec2) {
     });
 
     world.spawn_particles(pos, 25, Color::new(0.6, 0.0, 0.8, 1.0), 90.0);
-    world.add_floating_text(pos, "АЛТАРЬ КРОВИ".to_string(), PURPLE, 1.2);
+    world.add_floating_text(pos, format!("АЛТАРЬ ТИРА {}", tier), PURPLE, 1.2);
 }
 
 /// Проверяет, можно ли поставить Стену-Баррикаду (50x50 px)
@@ -131,6 +186,12 @@ pub fn can_place_wall(world: &World, requested: Vec2) -> bool {
             let dx = (structure.pos.x - requested.x).abs();
             let dy = (structure.pos.y - requested.y).abs();
             dx < BUILD_GRID_SIZE && dy < BUILD_GRID_SIZE
+        } else if structure.structure_type == STRUCTURE_OBELISK {
+            // Match the visible 300x300 obelisk boundary. Wall cells may touch its
+            // edge, but may not overlap the sprite or leave a misleading inner ring.
+            let half_extent = OBELISK_FOOTPRINT_HALF_EXTENT + WALL_RADIUS;
+            (structure.pos.x - requested.x).abs() < half_extent
+                && (structure.pos.y - requested.y).abs() < half_extent
         } else {
             distance_sq_to_wall_aabb(structure.pos, requested) < structure.radius * structure.radius
         }
@@ -207,7 +268,7 @@ pub fn spawn_corner_obelisks(world: &mut World) {
         world.structures.push(StructureEntity {
             id,
             pos,
-            health: Health::new(1500.0),
+            health: Health::new(1500.0 * world.boss_player_count() as f32),
             resistances,
             faction: Faction::Director,
             radius: OBELISK_RADIUS,

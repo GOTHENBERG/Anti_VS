@@ -8,7 +8,21 @@ pub enum GameRole {
     Boss,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
+pub enum MenuAction {
+    Local(GameRole),
+    Host { bind_address: String, duration_secs: f32 },
+    Join { address: String },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NetworkField {
+    HostBind,
+    MatchMinutes,
+    HostAddress,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayerControl {
     Up,
     Down,
@@ -106,6 +120,12 @@ pub struct MainMenu {
     editing_nickname: bool,
     show_controls: bool,
     rebinding: Option<PlayerControl>,
+    show_multiplayer: bool,
+    network_field: Option<NetworkField>,
+    host_bind_address: String,
+    host_match_minutes: String,
+    host_address: String,
+    notice: Option<String>,
 }
 
 impl MainMenu {
@@ -115,10 +135,23 @@ impl MainMenu {
             editing_nickname: false,
             show_controls: false,
             rebinding: None,
+            show_multiplayer: false,
+            network_field: None,
+            host_bind_address: "0.0.0.0:45678".to_string(),
+            host_match_minutes: "17".to_string(),
+            host_address: "26.0.0.1:45678".to_string(),
+            notice: None,
         }
     }
 
-    pub fn draw(&mut self, fonts: &GameFonts) -> Option<GameRole> {
+    pub fn set_notice(&mut self, notice: String) {
+        self.notice = Some(notice);
+    }
+
+    pub fn draw(&mut self, fonts: &GameFonts) -> Option<MenuAction> {
+        if self.show_multiplayer {
+            return self.draw_multiplayer(fonts);
+        }
         let w = screen_width();
         let h = screen_height();
         let (mx, my) = mouse_position();
@@ -128,7 +161,7 @@ impl MainMenu {
         draw_circle_lines(w * 0.5, h * 0.39, 220.0, 1.0, Color::new(0.75, 0.55, 0.24, 0.22));
 
         let panel_w = 650.0f32.min(w - 40.0);
-        let panel_h = 560.0f32.min(h - 36.0);
+        let panel_h = 650.0f32.min(h - 36.0);
         let x = (w - panel_w) * 0.5;
         let y = (h - panel_h) * 0.5;
         draw_rectangle(x, y, panel_w, panel_h, Color::new(0.055, 0.06, 0.095, 0.97));
@@ -249,22 +282,164 @@ impl MainMenu {
 
         let director_rect = Rect::new(x + 42.0, button_y, panel_w - 84.0, 54.0);
         let boss_rect = Rect::new(x + 42.0, button_y + 65.0, panel_w - 84.0, 54.0);
+        let multiplayer_rect = Rect::new(x + 42.0, button_y + 130.0, panel_w - 84.0, 48.0);
         draw_menu_button(director_rect, "ИГРАТЬ ЗА ДИРЕКТОРА  ·  ПРОТИВ БОССА ИИ", contains(director_rect, mx, my), fonts);
         draw_menu_button(boss_rect, "ИГРАТЬ ЗА БОССА  ·  ПРОТИВ ДИРЕКТОРА ИИ", contains(boss_rect, mx, my), fonts);
-        fonts.draw_text("Директор и босс используют сохранённые обученные модели.", x + 44.0, y + panel_h - 22.0, 10.5, Color::new(0.62, 0.64, 0.72, 0.9));
+        draw_menu_button(multiplayer_rect, "СЕТЕВАЯ ИГРА  ·  СОЗДАТЬ / ПОДКЛЮЧИТЬСЯ", contains(multiplayer_rect, mx, my), fonts);
+        if !self.show_controls {
+            fonts.draw_text("Директор и босс используют сохранённые обученные модели.", x + 44.0, y + panel_h - 14.0, 10.5, Color::new(0.62, 0.64, 0.72, 0.9));
+        }
         if is_mouse_button_pressed(MouseButton::Left) && contains(director_rect, mx, my) {
             if self.settings.nickname.trim().is_empty() {
                 self.settings.nickname = "Игрок".to_string();
             }
             self.settings.save();
-            return Some(GameRole::Director);
+            return Some(MenuAction::Local(GameRole::Director));
         }
         if is_mouse_button_pressed(MouseButton::Left) && contains(boss_rect, mx, my) {
             if self.settings.nickname.trim().is_empty() {
                 self.settings.nickname = "Игрок".to_string();
             }
             self.settings.save();
-            return Some(GameRole::Boss);
+            return Some(MenuAction::Local(GameRole::Boss));
+        }
+        if is_mouse_button_pressed(MouseButton::Left) && contains(multiplayer_rect, mx, my) {
+            self.show_multiplayer = true;
+            self.notice = None;
+            self.network_field = None;
+        }
+        None
+    }
+
+    fn draw_multiplayer(&mut self, fonts: &GameFonts) -> Option<MenuAction> {
+        let w = screen_width();
+        let h = screen_height();
+        let (mx, my) = mouse_position();
+        clear_background(Color::new(0.035, 0.035, 0.065, 1.0));
+
+        let panel_w = 650.0f32.min(w - 40.0);
+        let panel_h = 620.0f32.min(h - 36.0);
+        let x = (w - panel_w) * 0.5;
+        let y = (h - panel_h) * 0.5;
+        draw_rectangle(x, y, panel_w, panel_h, Color::new(0.055, 0.06, 0.095, 0.97));
+        draw_rectangle_lines(x, y, panel_w, panel_h, 2.0, Color::new(0.72, 0.45, 0.18, 0.9));
+        draw_rectangle(x, y, panel_w, 8.0, Color::new(0.78, 0.17, 0.16, 0.9));
+
+        let title = "СЕТЕВАЯ ИГРА";
+        let title_w = fonts.measure_heading(title, 29.0).width;
+        fonts.draw_heading(title, (w - title_w) * 0.5, y + 52.0, 29.0, GOLD);
+        fonts.draw_text(
+            &format!("Игрок: {}  ·  Образ {}", self.settings.nickname, self.settings.skin + 1),
+            x + 42.0,
+            y + 83.0,
+            12.0,
+            LIGHTGRAY,
+        );
+
+        let field_x = x + 42.0;
+        let field_w = panel_w - 84.0;
+        let bind_rect = Rect::new(field_x, y + 111.0, field_w, 40.0);
+        let minutes_rect = Rect::new(field_x, y + 175.0, field_w, 40.0);
+        let address_rect = Rect::new(field_x, y + 382.0, field_w, 40.0);
+        let create_rect = Rect::new(field_x, y + 235.0, field_w, 54.0);
+        let join_rect = Rect::new(field_x, y + 440.0, field_w, 54.0);
+        let back_rect = Rect::new(field_x, y + panel_h - 66.0, field_w, 44.0);
+
+        draw_menu_input(
+            bind_rect,
+            "АДРЕС И ПОРТ ХОСТА",
+            &self.host_bind_address,
+            self.network_field == Some(NetworkField::HostBind),
+            mx,
+            my,
+            fonts,
+        );
+        draw_menu_input(
+            minutes_rect,
+            "ТАЙМЕР МАТЧА, МИНУТ (1–180)",
+            &self.host_match_minutes,
+            self.network_field == Some(NetworkField::MatchMinutes),
+            mx,
+            my,
+            fonts,
+        );
+        draw_menu_button(create_rect, "СОЗДАТЬ ИГРУ ЗА ДИРЕКТОРА", contains(create_rect, mx, my), fonts);
+
+        fonts.draw_text(
+            "Игроки подключаются по RadminVPN IP. Хост управляет Директором.",
+            field_x,
+            y + 325.0,
+            11.0,
+            Color::new(0.68, 0.70, 0.79, 0.95),
+        );
+        draw_menu_input(
+            address_rect,
+            "АДРЕС ХОСТА В RADMINVPN",
+            &self.host_address,
+            self.network_field == Some(NetworkField::HostAddress),
+            mx,
+            my,
+            fonts,
+        );
+        draw_menu_button(join_rect, "ПОДКЛЮЧИТЬСЯ ЗА БОССА", contains(join_rect, mx, my), fonts);
+
+        if let Some(notice) = &self.notice {
+            fonts.draw_text(notice, field_x, y + panel_h - 78.0, 11.0, Color::new(1.0, 0.45, 0.35, 1.0));
+        }
+        draw_menu_button(back_rect, "НАЗАД", contains(back_rect, mx, my), fonts);
+
+        for (rect, field) in [
+            (bind_rect, NetworkField::HostBind),
+            (minutes_rect, NetworkField::MatchMinutes),
+            (address_rect, NetworkField::HostAddress),
+        ] {
+            if is_mouse_button_pressed(MouseButton::Left) && contains(rect, mx, my) {
+                self.network_field = Some(field);
+            }
+        }
+        if let Some(field) = self.network_field {
+            let value = match field {
+                NetworkField::HostBind => &mut self.host_bind_address,
+                NetworkField::MatchMinutes => &mut self.host_match_minutes,
+                NetworkField::HostAddress => &mut self.host_address,
+            };
+            let max_len = if field == NetworkField::MatchMinutes { 4 } else { 64 };
+            while let Some(ch) = get_char_pressed() {
+                let allowed = match field {
+                    NetworkField::HostBind | NetworkField::HostAddress => ch.is_ascii_alphanumeric() || ".:-[]".contains(ch),
+                    NetworkField::MatchMinutes => ch.is_ascii_digit() || ch == '.',
+                };
+                if allowed && value.len() < max_len {
+                    value.push(ch);
+                }
+            }
+            if is_key_pressed(KeyCode::Backspace) {
+                value.pop();
+            }
+            if is_key_pressed(KeyCode::Enter) {
+                self.network_field = None;
+            }
+        }
+
+        if is_mouse_button_pressed(MouseButton::Left) && contains(back_rect, mx, my) {
+            self.show_multiplayer = false;
+            self.network_field = None;
+            self.notice = None;
+        }
+        if is_mouse_button_pressed(MouseButton::Left) && contains(create_rect, mx, my) {
+            let duration_minutes = self.host_match_minutes.trim().parse::<f32>().ok();
+            if let Some(minutes) = duration_minutes.filter(|minutes| (1.0..=180.0).contains(minutes)) {
+                self.settings.save();
+                return Some(MenuAction::Host {
+                    bind_address: self.host_bind_address.trim().to_string(),
+                    duration_secs: minutes * 60.0,
+                });
+            }
+            self.notice = Some("Укажи длительность матча от 1 до 180 минут.".to_string());
+        }
+        if is_mouse_button_pressed(MouseButton::Left) && contains(join_rect, mx, my) {
+            self.settings.save();
+            return Some(MenuAction::Join { address: self.host_address.trim().to_string() });
         }
         None
     }
@@ -282,6 +457,23 @@ fn skin_palette() -> [Color; 5] {
         Color::new(0.82, 0.68, 1.0, 1.0),
         Color::new(1.0, 0.84, 0.50, 1.0),
     ]
+}
+
+fn draw_menu_input(
+    rect: Rect,
+    label: &str,
+    value: &str,
+    active: bool,
+    mx: f32,
+    my: f32,
+    fonts: &GameFonts,
+) {
+    let hovered = contains(rect, mx, my);
+    draw_rectangle(rect.x, rect.y, rect.w, rect.h, Color::new(0.025, 0.03, 0.055, 1.0));
+    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.2, if active || hovered { GOLD } else { GRAY });
+    fonts.draw_heading(label, rect.x + 12.0, rect.y - 5.0, 9.5, Color::new(0.72, 0.72, 0.82, 1.0));
+    let cursor = if active && (get_time() as u64 % 2 == 0) { "|" } else { "" };
+    fonts.draw_heading(&format!("{value}{cursor}"), rect.x + 12.0, rect.y + 26.0, 14.0, WHITE);
 }
 
 fn parse_key_code(name: &str) -> Option<KeyCode> {

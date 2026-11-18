@@ -511,14 +511,22 @@ fn draw_kamikaze(mob: &MobEntity, time: f32) {
 }
 
 /// Отрисовка Алтаря Крови
-pub fn draw_blood_altar(pos: Vec2, current_hp: f32, max_hp: f32, time: f32, textures: &GameTextures) {
+pub fn draw_blood_altar(pos: Vec2, current_hp: f32, max_hp: f32, tier: u8, time: f32, textures: &GameTextures) {
+    let tier_color = match (tier.saturating_sub(1)) % 6 {
+        0 => Color::new(0.9, 0.18, 0.25, 1.0),
+        1 => Color::new(0.95, 0.55, 0.14, 1.0),
+        2 => Color::new(0.8, 0.78, 0.2, 1.0),
+        3 => Color::new(0.22, 0.78, 0.55, 1.0),
+        4 => Color::new(0.3, 0.55, 1.0, 1.0),
+        _ => Color::new(0.76, 0.35, 1.0, 1.0),
+    };
     let aura_radius = 180.0;
     let aura_pulse = (time * 2.5).sin() * 5.0;
 
     // 1. Мягкая фоновая полупрозрачная аура крови на земле (зона лечения 180px)
-    draw_circle(pos.x, pos.y, aura_radius + aura_pulse, Color::new(0.65, 0.05, 0.15, 0.08));
+    draw_circle(pos.x, pos.y, aura_radius + aura_pulse, Color::new(tier_color.r, tier_color.g, tier_color.b, 0.08));
     // 2. Внешняя светящаяся граница ауры (рунический контур радиуса 180px)
-    draw_circle_lines(pos.x, pos.y, aura_radius + aura_pulse, 1.8, Color::new(0.85, 0.15, 0.25, 0.45));
+    draw_circle_lines(pos.x, pos.y, aura_radius + aura_pulse, 1.8, Color::new(tier_color.r, tier_color.g, tier_color.b, 0.55));
 
     // 3. Расширяющаяся периодическая волна исцеления
     let wave_cycle = (time * 0.8).fract();
@@ -538,13 +546,13 @@ pub fn draw_blood_altar(pos: Vec2, current_hp: f32, max_hp: f32, time: f32, text
     if let Some(altar_tex) = textures.altar.as_ref() {
         draw_ellipse(pos.x, pos.y + 18.0, 28.0, 10.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.55));
         let pulse = (time * 4.0).sin() * 2.0;
-        draw_circle(pos.x, pos.y + 4.0, 22.0 + pulse, Color::new(0.7, 0.05, 0.15, 0.35));
+        draw_circle(pos.x, pos.y + 4.0, 22.0 + pulse, Color::new(tier_color.r, tier_color.g, tier_color.b, 0.35));
 
         draw_texture_ex(
             altar_tex,
             pos.x - 20.0,
             pos.y - 40.0,
-            WHITE,
+            tier_color,
             DrawTextureParams {
                 dest_size: Some(Vec2::new(40.0, 64.0)),
                 ..Default::default()
@@ -568,6 +576,25 @@ pub fn draw_blood_altar(pos: Vec2, current_hp: f32, max_hp: f32, time: f32, text
         draw_rectangle(pos.x - 25.0, pos.y - 38.0, 50.0, 6.0, DARKGRAY);
         draw_rectangle(pos.x - 25.0, pos.y - 38.0, 50.0 * hp_pct, 6.0, RED);
         draw_rectangle_lines(pos.x - 25.0, pos.y - 38.0, 50.0, 6.0, 1.5, WHITE);
+    }
+
+    // A tier-specific summon portrait reuses the project's matching mob sprite,
+    // making every altar type readable without adding third-party art.
+    draw_circle(pos.x, pos.y - 24.0, 11.0, Color::new(0.06, 0.07, 0.10, 0.95));
+    draw_circle_lines(pos.x, pos.y - 24.0, 11.0, 1.6, tier_color);
+    if let Some(mob_portrait) = textures.get_mob_texture(tier, 0) {
+        draw_texture_ex(
+            mob_portrait,
+            pos.x - 8.0,
+            pos.y - 32.0,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(Vec2::new(16.0, 16.0)),
+                ..Default::default()
+            },
+        );
+    } else {
+        draw_circle(pos.x, pos.y - 24.0, 4.0, tier_color);
     }
 }
 

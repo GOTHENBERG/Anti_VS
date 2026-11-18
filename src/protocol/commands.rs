@@ -48,6 +48,23 @@ pub enum Command {
     BossDash {
         target_dir: NetVec2,
     },
+    /// Registers a remote or local co-op Boss actor.
+    JoinBoss {
+        player_id: u8,
+        name: String,
+        skin: u8,
+    },
+    /// Latest held controls for one co-op Boss player; host applies them on its fixed tick.
+    BossInput {
+        player_id: u8,
+        move_dir: NetVec2,
+        aim_dir: NetVec2,
+        dash_pressed: bool,
+    },
+    /// Host stopped receiving a player's packets; switch the actor to AI control.
+    DisconnectBoss {
+        player_id: u8,
+    },
     /// Размещение разрушаемой структуры (Алтарь Крови)
     PlaceStructure {
         director_id: u8,

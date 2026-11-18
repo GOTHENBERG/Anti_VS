@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use std::collections::{HashMap, HashSet};
 use crate::core::rand;
 use crate::core::spatial_grid::SpatialGrid;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction, Health, Resistances, StatusEffects};
@@ -7,6 +8,8 @@ use crate::ecs::components::inventory::{BossInventory, WeaponType};
 #[derive(Clone, Debug)]
 pub struct MobEntity {
     pub id: usize,
+    /// Boss player this Director squad was spawned to pursue; altar mobs use None.
+    pub target_boss_id: Option<u8>,
     pub pos: Vec2,
     pub vel: Vec2,
     pub speed: f32,
@@ -94,7 +97,7 @@ pub struct ParticleEntity {
     pub max_lifetime: f32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct DirectorState {
     pub id: u8,
     pub points: f32,
@@ -104,6 +107,8 @@ pub struct DirectorState {
     pub squad_cooldowns: [f32; 16],
     pub altar_cooldown: f32,
     pub altar_max_cooldown: f32,
+    /// Independent placement cooldowns for tier 2..=16 altars (tier 1 keeps legacy fields).
+    pub altar_tier_cooldowns: [f32; 15],
     pub wall_cooldown: f32,
     pub wall_max_cooldown: f32,
     /// Время с момента последнего призыва отряда. Даёт Директору сенсор темпа.
@@ -125,7 +130,8 @@ impl DirectorState {
             income_timer: 0.0,
             squad_cooldowns: [0.0; 16],
             altar_cooldown: 0.0,
-            altar_max_cooldown: 14.0, // 14 секунд кулдаун на постройку Алтаря (высокий темп тактики)
+            altar_max_cooldown: crate::content::structures::altar_cooldown(1),
+            altar_tier_cooldowns: [0.0; 15],
             wall_cooldown: 0.0,
             wall_max_cooldown: 2.0, // 2 секунды кулдаун на постройку Стены-Баррикады
             time_since_last_spawn: 10.0,
@@ -146,6 +152,108 @@ impl DirectorState {
             true
         } else {
             false
+        }
+    }
+
+    pub fn altar_cooldown_for_tier(&self, tier: u8) -> f32 {
+        if tier <= 1 {
+            self.altar_cooldown
+        } else {
+            self.altar_tier_cooldowns[(tier.clamp(2, 16) - 2) as usize]
+        }
+    }
+
+    pub fn set_altar_cooldown_for_tier(&mut self, tier: u8, seconds: f32) {
+        if tier <= 1 {
+            self.altar_cooldown = seconds;
+            self.altar_max_cooldown = seconds;
+        } else {
+            self.altar_tier_cooldowns[(tier.clamp(2, 16) - 2) as usize] = seconds;
+        }
+    }
+}
+
+/// Runtime state owned by an additional Boss player in a co-op session.
+#[derive(Clone, Debug)]
+pub struct BossPlayerState {
+    pub id: u8,
+    pub boss_pos: Vec2,
+    pub boss_vel: Vec2,
+    pub boss_facing: Vec2,
+    pub boss_name: String,
+    pub boss_skin: u8,
+    pub boss_health: Health,
+    pub boss_resistances: Resistances,
+    pub boss_inventory: BossInventory,
+    pub boss_dash_cooldown: f32,
+    pub boss_invulnerable_timer: f32,
+    pub boss_policy_think_timer: f32,
+    pub boss_policy_has_cached_action: bool,
+    pub boss_policy_move_dir: Vec2,
+    pub boss_policy_move_mag: f32,
+    pub boss_policy_dash: bool,
+    pub boss_policy_dash_dir: Vec2,
+    pub boss_policy_rest: bool,
+    pub boss_still_time: f32,
+    pub boss_damage_taken_timer: f32,
+    pub boss_mushroom_still_time: f32,
+    pub boss_poison_timer: f32,
+    pub boss_poison_dps: f32,
+    pub blade_storm_angle: f32,
+    pub divine_shield_angle: f32,
+    pub death_ray_active: Option<(Vec2, Vec2, f32)>,
+    pub revive_progress: f32,
+    pub revive_target_id: Option<u8>,
+    pub pending_level_ups: usize,
+    pub human_controlled: bool,
+    pub input_move_dir: Vec2,
+    pub input_aim_dir: Vec2,
+    pub input_dash_pressed: bool,
+}
+
+impl BossPlayerState {
+    pub fn new(id: u8, pos: Vec2, name: impl Into<String>, skin: u8) -> Self {
+        Self {
+            id,
+            boss_pos: pos,
+            boss_vel: Vec2::ZERO,
+            boss_facing: Vec2::X,
+            boss_name: name.into(),
+            boss_skin: skin,
+            boss_health: Health::new(1200.0),
+            boss_resistances: Resistances {
+                flat_armor: 6.0,
+                physical_res: 0.15,
+                fire_res: 0.05,
+                ice_res: 0.05,
+                poison_res: 0.05,
+                holy_res: 0.20,
+            },
+            boss_inventory: BossInventory::new(),
+            boss_dash_cooldown: 0.0,
+            boss_invulnerable_timer: 0.0,
+            boss_policy_think_timer: 0.0,
+            boss_policy_has_cached_action: false,
+            boss_policy_move_dir: Vec2::ZERO,
+            boss_policy_move_mag: 0.0,
+            boss_policy_dash: false,
+            boss_policy_dash_dir: Vec2::X,
+            boss_policy_rest: false,
+            boss_still_time: 0.0,
+            boss_damage_taken_timer: 0.0,
+            boss_mushroom_still_time: 0.0,
+            boss_poison_timer: 0.0,
+            boss_poison_dps: 0.0,
+            blade_storm_angle: 0.0,
+            divine_shield_angle: 0.0,
+            death_ray_active: None,
+            revive_progress: 0.0,
+            revive_target_id: None,
+            pending_level_ups: 0,
+            human_controlled: false,
+            input_move_dir: Vec2::ZERO,
+            input_aim_dir: Vec2::X,
+            input_dash_pressed: false,
         }
     }
 }
@@ -169,17 +277,26 @@ pub struct World {
     pub boss_policy_dash: bool,
     pub boss_policy_dash_dir: Vec2,
     pub boss_policy_rest: bool,
-    pub boss_still_time: f32, // Время стояния на месте (для медитации)
-    pub boss_damage_taken_timer: f32, // Кулдаун после получения урона (3 сек блокирует медитацию)
-    pub boss_mushroom_still_time: f32, // Время стояния для регенерации от Спорового Мицелия
-    pub boss_poison_timer: f32, // Таймер отравления босса (от Чумных Спор Директора)
-    pub boss_poison_dps: f32,   // Урон ядом в секунду
-    pub game_time: f32, // Игровое время симуляции / сессии
-
-    // Углы вращения для эволюций
+    pub boss_still_time: f32,
+    pub boss_damage_taken_timer: f32,
+    pub boss_mushroom_still_time: f32,
+    pub boss_poison_timer: f32,
+    pub boss_poison_dps: f32,
+    pub boss_revive_progress: f32,
+    pub boss_human_controlled: bool,
+    pub boss_input_move_dir: Vec2,
+    pub boss_input_aim_dir: Vec2,
+    pub boss_input_dash_pressed: bool,
+    pub boss_pending_level_ups: usize,
+    /// ID of the Boss state temporarily loaded into the legacy `boss_*` fields.
+    pub active_boss_id: u8,
     pub blade_storm_angle: f32,
     pub divine_shield_angle: f32,
-    pub death_ray_active: Option<(Vec2, Vec2, f32)>, // start, end, lifetime
+    pub death_ray_active: Option<(Vec2, Vec2, f32)>,
+    pub coop_bosses: Vec<BossPlayerState>,
+    pub obelisk_contributors: HashMap<usize, HashSet<u8>>,
+    pub game_time: f32, // Игровое время симуляции / сессии
+    pub match_duration_secs: f32,
 
     // Пространственная сетка для O(1) поиска
     pub spatial_grid: SpatialGrid,
@@ -211,6 +328,123 @@ pub struct World {
 }
 
 impl World {
+    /// Swaps an additional player into the legacy single-Boss field view so existing
+    /// combat/skill systems can process that actor without cloning the whole world.
+    /// Call it a second time with the same index to restore the primary Boss context.
+    pub fn swap_coop_boss_context(&mut self, index: usize) -> bool {
+        let Some(player) = self.coop_bosses.get_mut(index) else {
+            return false;
+        };
+        macro_rules! swap_field { ($field:ident) => { std::mem::swap(&mut self.$field, &mut player.$field); }; }
+        std::mem::swap(&mut self.active_boss_id, &mut player.id);
+        swap_field!(boss_pos);
+        swap_field!(boss_vel);
+        swap_field!(boss_facing);
+        swap_field!(boss_name);
+        swap_field!(boss_skin);
+        swap_field!(boss_health);
+        swap_field!(boss_resistances);
+        swap_field!(boss_inventory);
+        swap_field!(boss_dash_cooldown);
+        swap_field!(boss_invulnerable_timer);
+        swap_field!(boss_policy_think_timer);
+        swap_field!(boss_policy_has_cached_action);
+        swap_field!(boss_policy_move_dir);
+        swap_field!(boss_policy_move_mag);
+        swap_field!(boss_policy_dash);
+        swap_field!(boss_policy_dash_dir);
+        swap_field!(boss_policy_rest);
+        swap_field!(boss_still_time);
+        swap_field!(boss_damage_taken_timer);
+        swap_field!(boss_mushroom_still_time);
+        swap_field!(boss_poison_timer);
+        swap_field!(boss_poison_dps);
+        std::mem::swap(&mut self.boss_revive_progress, &mut player.revive_progress);
+        std::mem::swap(&mut self.boss_pending_level_ups, &mut player.pending_level_ups);
+        swap_field!(blade_storm_angle);
+        swap_field!(divine_shield_angle);
+        swap_field!(death_ray_active);
+        true
+    }
+
+    pub fn add_coop_boss(&mut self, id: u8, pos: Vec2, name: impl Into<String>, skin: u8) {
+        if id <= 1 || self.coop_bosses.iter().any(|boss| boss.id == id) {
+            return;
+        }
+        let old_count = self.boss_player_count();
+        self.coop_bosses.push(BossPlayerState::new(id, pos, name, skin));
+        let new_count = self.boss_player_count();
+        let scale = new_count as f32 / old_count.max(1) as f32;
+        for structure in &mut self.structures {
+            if structure.structure_type == crate::content::structures::STRUCTURE_OBELISK {
+                structure.health.max *= scale;
+                structure.health.current *= scale;
+            }
+        }
+    }
+
+    pub fn boss_player_count(&self) -> usize {
+        self.coop_bosses.len() + 1
+    }
+
+    pub fn living_boss_count(&self) -> usize {
+        usize::from(self.boss_health.is_alive())
+            + self.coop_bosses.iter().filter(|player| player.boss_health.is_alive()).count()
+    }
+
+    pub fn any_boss_alive(&self) -> bool {
+        self.boss_health.is_alive() || self.coop_bosses.iter().any(|player| player.boss_health.is_alive())
+    }
+
+    pub fn nearest_live_boss_pos(&self, from: Vec2) -> Vec2 {
+        let mut target = self.boss_pos;
+        let mut distance = if self.boss_health.is_alive() {
+            from.distance_squared(target)
+        } else {
+            f32::MAX
+        };
+        for player in self.coop_bosses.iter().filter(|player| player.boss_health.is_alive()) {
+            let candidate_distance = from.distance_squared(player.boss_pos);
+            if candidate_distance < distance {
+                target = player.boss_pos;
+                distance = candidate_distance;
+            }
+        }
+        target
+    }
+
+    pub fn record_obelisk_contribution(&mut self, structure_id: usize) {
+        self.obelisk_contributors
+            .entry(structure_id)
+            .or_default()
+            .insert(self.active_boss_id);
+    }
+
+    pub fn grant_boss_player_xp(&mut self, player_id: u8, amount: f32) {
+        if self.active_boss_id == player_id {
+            self.boss_pending_level_ups += self.boss_inventory.add_xp(amount);
+        } else if let Some(player) = self.coop_bosses.iter_mut().find(|player| player.id == player_id) {
+            player.pending_level_ups += player.boss_inventory.add_xp(amount);
+        }
+    }
+
+    /// Distributes XP among living Bosses; downed players receive the same share
+    /// without reducing the living players' share, as required by the co-op rules.
+    pub fn grant_shared_boss_xp(&mut self, total_xp: f32) {
+        if total_xp <= 0.0 {
+            return;
+        }
+        let living_count = self.living_boss_count();
+        if living_count == 0 {
+            return;
+        }
+        let share = total_xp / living_count as f32;
+        self.boss_pending_level_ups += self.boss_inventory.add_xp(share);
+        for player in &mut self.coop_bosses {
+            player.pending_level_ups += player.boss_inventory.add_xp(share);
+        }
+    }
+
     pub fn push_audio(&mut self, event: crate::audio::AudioEvent) {
         if self.audio_events.len() < 32 {
             self.audio_events.push(event);
@@ -248,10 +482,20 @@ impl World {
             boss_mushroom_still_time: 0.0,
             boss_poison_timer: 0.0,
             boss_poison_dps: 0.0,
-            game_time: 0.0,
+            boss_revive_progress: 0.0,
+            boss_human_controlled: false,
+            boss_input_move_dir: Vec2::ZERO,
+            boss_input_aim_dir: Vec2::X,
+            boss_input_dash_pressed: false,
+            boss_pending_level_ups: 0,
+            active_boss_id: 1,
             blade_storm_angle: 0.0,
             divine_shield_angle: 0.0,
             death_ray_active: None,
+            coop_bosses: Vec::new(),
+            obelisk_contributors: HashMap::new(),
+            game_time: 0.0,
+            match_duration_secs: crate::core::time::GAME_DURATION_SECS,
             spatial_grid: SpatialGrid::new(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT),
             mobs: Vec::with_capacity(3000),
             projectiles: Vec::with_capacity(1500),

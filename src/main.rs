@@ -16,7 +16,9 @@ use crate::audio::AudioManager;
 use crate::content::mobs::{get_squad_config, spawn_squad_perimeter};
 use crate::content::structures::{
     can_place_blood_altar, can_place_wall, spawn_blood_altar, spawn_corner_obelisks,
-    snap_to_build_grid, try_spawn_blood_altar, try_spawn_wall, BLOOD_ALTAR_COST, WALL_COST, STRUCTURE_ALTAR,
+    snap_to_build_grid, try_spawn_tier_altar, try_spawn_wall,
+    altar_cost, altar_cooldown, altar_tier_from_structure_type, structure_type_for_altar_tier,
+    WALL_COST,
     STRUCTURE_WALL,
 };
 use crate::core::time::GameClock;
@@ -30,14 +32,12 @@ enum PlacementMode {
 use crate::core::{MAP_HEIGHT, MAP_WIDTH};
 use crate::ecs::systems::{
     boss_ai::update_boss_ai,
-    combat::update_combat,
     director::update_director,
-    meditation::update_meditation,
     movement::update_movement,
-    skills::update_skills,
 };
 use crate::ecs::world::World;
-use crate::network::driver::{LocalDriver, NetworkDriver};
+use crate::network::driver::NetworkDriver;
+use crate::network::session::UdpDriver;
 use crate::protocol::commands::Command;
 use crate::render::codex::draw_codex;
 use crate::render::cursor::draw_overlord_cursor;
@@ -59,11 +59,16 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     // Режим автономного со-эволюционного обучения ботов (Self-Play Training)
-    // Поддерживает аргументы: cargo run --release -- --train [поколений] [размер популяции] [300 / 1020] [--think-ms 50|100|200] [--clean / --reset]
+    // Supports --train [generations] [population] [duration] [--bosses N] [--think-ms 50|100|200] [--clean / --reset].
     let args: Vec<String> = std::env::args().collect();
     if let Some(pos) = args.iter().position(|a| a == "--train") {
         let generations = args.get(pos + 1).and_then(|s| s.parse().ok()).unwrap_or(8);
         let population = args.get(pos + 2).and_then(|s| s.parse().ok()).unwrap_or(8);
+        let boss_count = args.iter()
+            .position(|arg| arg == "--bosses" || arg == "--boss-count")
+            .and_then(|idx| args.get(idx + 1))
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(1);
         let reset = args.iter().any(|a| a == "--clean" || a == "--reset");
         let training_think_interval = args
             .iter()
@@ -91,6 +96,7 @@ async fn main() {
             reset,
             round_duration,
             training_think_interval,
+            boss_count,
         );
         return;
     }
@@ -100,7 +106,9 @@ async fn main() {
         .unwrap_or_else(crate::ai::models::DirectorModel::default);
     let mut menu = crate::render::main_menu::MainMenu::load();
     let args: Vec<String> = std::env::args().collect();
-    let mut game_role = if args.iter().any(|a| a == "--boss-player") {
+    let has_host = args.iter().any(|arg| arg == "--host");
+    let connect_arg = args.iter().position(|arg| arg == "--connect").and_then(|index| args.get(index + 1));
+    let mut game_role = if !has_host && (args.iter().any(|a| a == "--boss-player") || connect_arg.is_some()) {
         crate::render::main_menu::GameRole::Boss
     } else {
         crate::render::main_menu::GameRole::Director
@@ -108,14 +116,44 @@ async fn main() {
     let show_main_menu_at_start = !args.iter().any(|a| {
         a == "--screenshot" || a == "--codex" || a == "--dossier" || a == "--recipe"
             || a == "--dossier-item" || a == "--settings" || a == "--pause" || a == "--boss-player"
+            || a == "--host" || a == "--connect"
     });
     let mut show_main_menu = show_main_menu_at_start;
     let mut world = World::new();
     // Модель загружается один раз за сессию, а не на каждом создании мира.
     world.boss_model = boss_model.clone();
     apply_player_profile(&mut world, &menu.settings, game_role);
-    let mut clock = GameClock::new();
-    let mut net_driver = LocalDriver::new();
+    let cli_match_duration = args.iter()
+        .position(|arg| arg == "--match-minutes")
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse::<f32>().ok())
+        .filter(|minutes| (1.0..=180.0).contains(minutes))
+        .map(|minutes| minutes * 60.0)
+        .unwrap_or(crate::core::time::GAME_DURATION_SECS);
+    let mut clock = GameClock::with_duration(if has_host { cli_match_duration } else { crate::core::time::GAME_DURATION_SECS });
+    world.match_duration_secs = clock.duration_secs;
+    let mut net_driver = if has_host {
+        let bind = args.iter().position(|arg| arg == "--host")
+            .and_then(|index| args.get(index + 1))
+            .filter(|value| !value.starts_with("--"))
+            .map(String::as_str)
+            .unwrap_or("0.0.0.0:45678");
+        match UdpDriver::host(bind) {
+            Ok(driver) => driver,
+            Err(error) => { eprintln!("Could not start UDP host on {bind}: {error}"); return; }
+        }
+    } else if let Some(address) = connect_arg {
+        let Ok(address) = address.parse() else {
+            eprintln!("Invalid --connect address; expected an IP address such as 26.12.34.56:45678");
+            return;
+        };
+        match UdpDriver::client(address, menu.settings.nickname.clone(), menu.settings.skin) {
+            Ok(driver) => driver,
+            Err(error) => { eprintln!("Could not start UDP client: {error}"); return; }
+        }
+    } else {
+        UdpDriver::local()
+    };
     let fonts = GameFonts::load();
     let textures = GameTextures::load().await;
     let mut audio = AudioManager::load().await;
@@ -146,6 +184,7 @@ async fn main() {
     let mut last_mouse_pos = Vec2::from(mouse_position());
     let mut is_dragging_map = false;
     let mut placement_mode = PlacementMode::None;
+    let mut selected_altar_tier = 1u8;
     let mut active_dossier_tier: Option<u8> = if auto_dossier { Some(1) } else { None };
     let mut opened_dossier_from_codex = false;
     let mut active_item_inspection: Option<crate::render::item_dossier::ItemInspectionTarget> = if auto_recipe {
@@ -170,20 +209,68 @@ async fn main() {
         let current_mpos = Vec2::from(mouse_position());
         let mouse_delta = current_mpos - last_mouse_pos;
 
+        if !show_main_menu
+            && game_role == crate::render::main_menu::GameRole::Director
+            && (is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl))
+        {
+            let altar_tier_key = [
+                (KeyCode::Q, 1), (KeyCode::W, 2), (KeyCode::E, 3), (KeyCode::R, 4),
+                (KeyCode::A, 5), (KeyCode::S, 6), (KeyCode::D, 7), (KeyCode::F, 8),
+                (KeyCode::Z, 9), (KeyCode::X, 10), (KeyCode::C, 11), (KeyCode::V, 12),
+                (KeyCode::G, 13), (KeyCode::H, 14), (KeyCode::Y, 15), (KeyCode::U, 16),
+            ];
+            if let Some((_, tier)) = altar_tier_key.iter().find(|(key, _)| is_key_pressed(*key)) {
+                selected_altar_tier = *tier;
+                placement_mode = PlacementMode::Altar;
+                world.add_floating_text(
+                    world.boss_pos,
+                    format!("Выбран алтарь тира {}", selected_altar_tier),
+                    GOLD,
+                    1.1,
+                );
+            }
+        }
+
         if show_main_menu {
-            if let Some(role) = menu.draw(&fonts) {
-                game_role = role;
-                show_main_menu = false;
-                world = World::new();
-                world.boss_model = boss_model.clone();
-                apply_player_profile(&mut world, &menu.settings, game_role);
-                clock = GameClock::new();
-                cam_pos = world.boss_pos;
-                follow_boss = true;
-                spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
-                spawn_corner_obelisks(&mut world);
-                audio.shuffle_start();
-                show_mouse(game_role == crate::render::main_menu::GameRole::Boss);
+            if let Some(action) = menu.draw(&fonts) {
+                let launch: Result<(_, _, f32), String> = match action {
+                    crate::render::main_menu::MenuAction::Local(role) => {
+                        Ok((role, UdpDriver::local(), crate::core::time::GAME_DURATION_SECS))
+                    }
+                    crate::render::main_menu::MenuAction::Host { bind_address, duration_secs } => {
+                        UdpDriver::host(&bind_address)
+                            .map(|driver| (crate::render::main_menu::GameRole::Director, driver, duration_secs))
+                            .map_err(|error| format!("Не удалось создать игру на {bind_address}: {error}"))
+                    }
+                    crate::render::main_menu::MenuAction::Join { address } => {
+                        match address.parse() {
+                            Ok(host) => UdpDriver::client(host, menu.settings.nickname.clone(), menu.settings.skin)
+                                .map(|driver| (crate::render::main_menu::GameRole::Boss, driver, crate::core::time::GAME_DURATION_SECS))
+                                .map_err(|error| format!("Не удалось подключиться к {address}: {error}")),
+                            Err(_) => Err("Нужен адрес хоста в формате IP:порт, например 26.12.34.56:45678.".to_string()),
+                        }
+                    }
+                };
+
+                match launch {
+                    Ok((role, driver, duration_secs)) => {
+                        net_driver = driver;
+                        game_role = role;
+                        show_main_menu = false;
+                        world = World::new();
+                        world.boss_model = boss_model.clone();
+                        world.match_duration_secs = duration_secs;
+                        apply_player_profile(&mut world, &menu.settings, game_role);
+                        clock = GameClock::with_duration(duration_secs);
+                        cam_pos = world.boss_pos;
+                        follow_boss = true;
+                        spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
+                        spawn_corner_obelisks(&mut world);
+                        audio.shuffle_start();
+                        show_mouse(game_role == crate::render::main_menu::GameRole::Boss);
+                    }
+                    Err(error) => menu.set_notice(error),
+                }
             }
             last_mouse_pos = current_mpos;
             next_frame().await;
@@ -308,8 +395,9 @@ async fn main() {
         }
 
         // Перезапуск игры по R
-        let is_game_over = !world.boss_health.is_alive() || clock.is_time_up();
-        if !world.boss_health.is_alive() && !boss_death_sound_played {
+        let boss_team_alive = world.any_boss_alive();
+        let is_game_over = !boss_team_alive || clock.is_time_up();
+        if !boss_team_alive && !boss_death_sound_played {
             audio.handle_event(crate::audio::AudioEvent::BossDeath);
             boss_death_sound_played = true;
         }
@@ -324,15 +412,20 @@ async fn main() {
             audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
 
-        if is_key_pressed(KeyCode::R) {
+        if is_key_pressed(KeyCode::R) && !net_driver.is_network_client() {
+            let duration_secs = clock.duration_secs;
             world = World::new();
             world.boss_model = boss_model.clone();
+            world.match_duration_secs = duration_secs;
             apply_player_profile(&mut world, &menu.settings, game_role);
-            clock = GameClock::new();
+            clock = GameClock::with_duration(duration_secs);
             cam_pos = world.boss_pos;
             follow_boss = true;
             spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
             spawn_corner_obelisks(&mut world);
+            for command in net_driver.rejoin_commands() {
+                execute_command(&mut world, command);
+            }
             is_paused = false;
             placement_mode = PlacementMode::None;
             show_codex = false;
@@ -377,7 +470,27 @@ async fn main() {
                 crate::render::main_menu::GameRole::Boss => {
                     (player_move_dir, player_aim_dir, player_dash_pressed) =
                         collect_boss_player_input(&menu.settings, &world, &world_cam);
+                    if net_driver.is_network_client() {
+                        if let Some(player_id) = net_driver.assigned_player_id() {
+                            net_driver.send_command(Command::BossInput {
+                                player_id,
+                                move_dir: player_move_dir.into(),
+                                aim_dir: player_aim_dir.into(),
+                                dash_pressed: player_dash_pressed,
+                            });
+                        }
+                    }
                 }
+            }
+        }
+        if !is_running && net_driver.is_network_client() && game_role == crate::render::main_menu::GameRole::Boss {
+            if let Some(player_id) = net_driver.assigned_player_id() {
+                net_driver.send_command(Command::BossInput {
+                    player_id,
+                    move_dir: Vec2::ZERO.into(),
+                    aim_dir: world.boss_facing.into(),
+                    dash_pressed: false,
+                });
             }
         }
 
@@ -386,12 +499,37 @@ async fn main() {
         for cmd in commands {
             execute_command(&mut world, cmd);
         }
+        if net_driver.is_network_client() {
+            if let Some(snapshot) = net_driver.take_snapshot() {
+                let local_id = net_driver.assigned_player_id().unwrap_or(1);
+                crate::network::snapshot::apply_to_world(snapshot, &mut world, local_id);
+                clock.elapsed_secs = world.game_time;
+                clock.duration_secs = world.match_duration_secs;
+                if follow_boss { cam_pos = world.boss_pos; }
+            }
+        }
 
         // 4. Обновление систем мира
-        if is_running {
+        if is_running && !net_driver.is_network_client() {
             update_director(&mut world, dt);
             match game_role {
-                crate::render::main_menu::GameRole::Director => update_boss_ai(&mut world, dt),
+                crate::render::main_menu::GameRole::Director => {
+                    if world.boss_human_controlled {
+                        let move_dir = world.boss_input_move_dir;
+                        let aim_dir = world.boss_input_aim_dir;
+                        let dash_pressed = world.boss_input_dash_pressed;
+                        crate::ecs::systems::boss_ai::update_player_boss(
+                            &mut world,
+                            dt,
+                            move_dir,
+                            aim_dir,
+                            dash_pressed,
+                        );
+                        world.boss_input_dash_pressed = false;
+                    } else {
+                        update_boss_ai(&mut world, dt);
+                    }
+                }
                 crate::render::main_menu::GameRole::Boss => {
                     director_ai_timer += dt;
                     if director_ai_timer >= 0.4 {
@@ -411,15 +549,41 @@ async fn main() {
                     );
                 }
             }
-            update_meditation(&mut world, dt);
-            update_skills(&mut world, dt);
+            for index in 0..world.coop_bosses.len() {
+                let (human_controlled, move_dir, aim_dir, dash_pressed) = {
+                    let player = &world.coop_bosses[index];
+                    (player.human_controlled, player.input_move_dir, player.input_aim_dir, player.input_dash_pressed)
+                };
+                if world.swap_coop_boss_context(index) {
+                    if human_controlled {
+                    crate::ecs::systems::boss_ai::update_player_boss(
+                        &mut world,
+                        dt,
+                        move_dir,
+                        aim_dir,
+                        dash_pressed,
+                    );
+                    } else {
+                        update_boss_ai(&mut world, dt);
+                    }
+                    if let Some(player) = world.coop_bosses.get_mut(index) {
+                        player.input_dash_pressed = false;
+                    }
+                    world.swap_coop_boss_context(index);
+                }
+            }
+            crate::ecs::systems::coop::tick_coop_boss_timers(&mut world, dt);
+            crate::ecs::systems::coop::update_all_boss_effects(&mut world, dt);
             update_movement(&mut world, dt);
-            update_combat(&mut world, dt);
+            crate::ecs::systems::coop::update_coop_boss_environment(&mut world, dt);
+            crate::ecs::systems::coop::update_all_boss_combat(&mut world, dt);
+            crate::ecs::systems::coop::update_revives(&mut world, dt);
             audio.process_events(&mut world);
             audio.update_music(dt, cam_pos, world.boss_pos);
         } else {
             audio.update_music(dt, cam_pos, world.boss_pos);
         }
+        net_driver.publish_snapshot(&world);
 
         // 5. Отрисовка мира через камеру с Viewport Frustum Culling
         set_camera(&world_cam);
@@ -451,6 +615,15 @@ async fn main() {
                             ..Default::default()
                         });
                     }
+                    let cost = altar_cost(selected_altar_tier);
+                    let cooldown = world.directors.first().map_or(0.0, |d| d.altar_cooldown_for_tier(selected_altar_tier));
+                    fonts.draw_text(
+                        &format!("T{}  {} souls  CD {:.1}s", selected_altar_tier, cost as u32, cooldown),
+                        clamped.x + 34.0,
+                        clamped.y - 18.0,
+                        15.0,
+                        GOLD,
+                    );
                 }
                 PlacementMode::Wall => {
                     let can_place = can_place_wall(&world, clamped);
@@ -483,6 +656,17 @@ async fn main() {
             }
         };
 
+        if net_driver.is_networked() {
+            let (label, color) = if net_driver.is_network_host() {
+                ("СЕТЬ · UDP ХОСТ".to_string(), Color::new(0.55, 0.95, 0.75, 0.95))
+            } else if !net_driver.is_network_connected() {
+                ("СЕТЬ · ПОДКЛЮЧЕНИЕ К ХОСТУ…".to_string(), Color::new(1.0, 0.75, 0.3, 0.95))
+            } else {
+                (format!("СЕТЬ · БОСС #{}", net_driver.assigned_player_id().unwrap_or(0)), Color::new(0.55, 0.85, 1.0, 0.95))
+            };
+            fonts.draw_heading(&label, 18.0, screen_h - 18.0, 12.0, color);
+        }
+
         if placement_mode != PlacementMode::None {
             let banner_w = 490.0;
             let banner_h = 32.0;
@@ -491,7 +675,7 @@ async fn main() {
             draw_rectangle(banner_x, banner_y, banner_w, banner_h, Color::new(0.08, 0.08, 0.16, 0.95));
             draw_rectangle_lines(banner_x, banner_y, banner_w, banner_h, 2.0, GOLD);
             let text = match placement_mode {
-                PlacementMode::Altar => "УСТАНОВКА АЛТАРЯ: [ЛКМ] - Поставить  |  [ПКМ / Esc] - Отмена",
+                PlacementMode::Altar => "УСТАНОВКА АЛТАРЯ: [ЛКМ] - Поставить | Ctrl+Q/W/E/R/A/S/D/F и Ctrl+Z/X/C/V/G/H/Y/U - тир | [Esc] - Отмена",
                 PlacementMode::Wall => "УСТАНОВКА БАРРИКАДЫ: [ЛКМ] - Поставить  |  [ПКМ / Esc] - Отмена",
                 PlacementMode::None => "",
             };
@@ -560,6 +744,9 @@ async fn main() {
             }
         }
 
+        if let Some(tier) = ui_interaction.altar_tier {
+            selected_altar_tier = tier;
+        }
         if ui_interaction.start_altar_placement {
             placement_mode = PlacementMode::Altar;
             audio.handle_event(crate::audio::AudioEvent::UiClick);
@@ -581,12 +768,14 @@ async fn main() {
 
                 match placement_mode {
                     PlacementMode::Altar => {
+                        let cost = altar_cost(selected_altar_tier);
+                        let altar_type = structure_type_for_altar_tier(selected_altar_tier);
                         if can_place_blood_altar(&world, clamped_click) {
                             if let Some(director) = world.directors.first() {
-                                if director.points >= BLOOD_ALTAR_COST && director.altar_cooldown <= 0.0 {
+                                if director.points >= cost && director.altar_cooldown_for_tier(selected_altar_tier) <= 0.0 {
                                     net_driver.send_command(Command::PlaceStructure {
                                         director_id: director.id,
-                                        structure_type: STRUCTURE_ALTAR,
+                                        structure_type: altar_type,
                                         pos: clamped_click.into(),
                                     });
                                     placement_mode = PlacementMode::None;
@@ -682,10 +871,12 @@ async fn main() {
                     is_paused = false;
                 }
                 crate::render::settings::SettingsAction::Restart => {
+                    let duration_secs = clock.duration_secs;
                     world = World::new();
                     world.boss_model = boss_model.clone();
+                    world.match_duration_secs = duration_secs;
                     apply_player_profile(&mut world, &menu.settings, game_role);
-                    clock = GameClock::new();
+                    clock = GameClock::with_duration(duration_secs);
                     cam_pos = world.boss_pos;
                     follow_boss = true;
                     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
@@ -709,7 +900,7 @@ async fn main() {
                 crate::render::settings::SettingsAction::None => {}
             }
         } else if is_game_over {
-            let victory = !world.boss_health.is_alive();
+            let victory = !world.any_boss_alive();
             draw_game_over(&world, &clock, victory, &fonts);
         }
 
@@ -860,6 +1051,7 @@ fn apply_player_profile(
 fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, _world_cam: &Camera2D) {
     if let Some(director) = world.directors.first() {
         let is_shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
+        let is_ctrl = is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
 
         // Переключение страницы мобов Директора: клавиши [1], [2] и [Tab]
         if is_key_pressed(KeyCode::Tab) {
@@ -873,42 +1065,45 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, _world_ca
             driver.send_command(Command::SetMobPage { director_id: director.id, page: 1 });
         }
 
-        // 1. Горячие клавиши Q, W, E, R, A, S, D, F для спавна отрядов (Shift = спавн на все деньги)
-        let keys = [
-            KeyCode::Q, KeyCode::W, KeyCode::E, KeyCode::R,
-            KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::F,
-        ];
-        for (i, key) in keys.iter().enumerate() {
-            if is_key_pressed(*key) {
-                let tier = (i + 1) as u8 + (director.mob_page * 8);
-                if is_shift {
-                    driver.send_command(Command::SpawnSquadMax { director_id: director.id, tier });
-                } else {
-                    try_summon_squad(director, tier, driver);
+        if !is_ctrl {
+            // 1. Горячие клавиши Q, W, E, R, A, S, D, F для спавна отрядов
+            // (Shift = спавн на все деньги)
+            let keys = [
+                KeyCode::Q, KeyCode::W, KeyCode::E, KeyCode::R,
+                KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::F,
+            ];
+            for (i, key) in keys.iter().enumerate() {
+                if is_key_pressed(*key) {
+                    let tier = (i + 1) as u8 + (director.mob_page * 8);
+                    if is_shift {
+                        driver.send_command(Command::SpawnSquadMax { director_id: director.id, tier });
+                    } else {
+                        try_summon_squad(director, tier, driver);
+                    }
                 }
             }
-        }
 
-        // 1.1 Горячие клавиши Z, X, C для улучшений мобов Директора (Shift = прокачка на все деньги)
-        if is_key_pressed(KeyCode::Z) {
-            if is_shift {
-                driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 0 });
-            } else {
-                driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 0 });
+            // 1.1 Горячие клавиши Z, X, C для улучшений Директора.
+            if is_key_pressed(KeyCode::Z) {
+                if is_shift {
+                    driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 0 });
+                } else {
+                    driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 0 });
+                }
             }
-        }
-        if is_key_pressed(KeyCode::X) {
-            if is_shift {
-                driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 1 });
-            } else {
-                driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 1 });
+            if is_key_pressed(KeyCode::X) {
+                if is_shift {
+                    driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 1 });
+                } else {
+                    driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 1 });
+                }
             }
-        }
-        if is_key_pressed(KeyCode::C) {
-            if is_shift {
-                driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 2 });
-            } else {
-                driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 2 });
+            if is_key_pressed(KeyCode::C) {
+                if is_shift {
+                    driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: 2 });
+                } else {
+                    driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: 2 });
+                }
             }
         }
     }
@@ -1074,7 +1269,7 @@ fn execute_command(world: &mut World, cmd: Command) {
         } => {
             match structure_type {
                 STRUCTURE_WALL => {
-                    let clamped_pos = snap_to_build_grid(pos);
+                    let clamped_pos = snap_to_build_grid(pos.into());
                     let mut can_build = false;
                     if can_place_wall(world, clamped_pos) {
                         if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
@@ -1089,24 +1284,72 @@ fn execute_command(world: &mut World, cmd: Command) {
                         world.push_audio(crate::audio::AudioEvent::AltarBuild);
                     }
                 }
-                _ => {
-                    let clamped_pos = snap_to_build_grid(pos);
+                altar_type if altar_tier_from_structure_type(altar_type).is_some() => {
+                    let tier = altar_tier_from_structure_type(altar_type).unwrap_or(1);
+                    let cost = altar_cost(tier);
+                    let cooldown = altar_cooldown(tier);
+                    let clamped_pos = snap_to_build_grid(pos.into());
                     let mut can_build = false;
                     if can_place_blood_altar(world, clamped_pos) {
                         if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
-                            if director.altar_cooldown <= 0.0
-                                && director.spend_points(BLOOD_ALTAR_COST)
+                            if director.altar_cooldown_for_tier(tier) <= 0.0
+                                && director.spend_points(cost)
                             {
-                                director.altar_cooldown = director.altar_max_cooldown;
+                                director.set_altar_cooldown_for_tier(tier, cooldown);
                                 can_build = true;
                             }
                         }
                     }
                     if can_build {
-                        try_spawn_blood_altar(world, clamped_pos);
+                        try_spawn_tier_altar(world, clamped_pos, tier);
                         world.push_audio(crate::audio::AudioEvent::AltarBuild);
                     }
                 }
+                _ => {}
+            }
+        }
+        Command::JoinBoss { player_id, name, skin } => {
+            if player_id == 1 {
+                world.boss_name = name.chars().take(32).collect();
+                world.boss_skin = skin % 5;
+                world.boss_human_controlled = true;
+            } else {
+                let angle = player_id.saturating_sub(2) as f32 * std::f32::consts::TAU / 7.0;
+                let spawn_pos = Vec2::new(MAP_WIDTH * 0.5, MAP_HEIGHT * 0.5)
+                    + Vec2::new(angle.cos(), angle.sin()) * 150.0;
+                world.add_coop_boss(player_id, spawn_pos, name, skin);
+                if let Some(player) = world.coop_bosses.iter_mut().find(|player| player.id == player_id) {
+                    player.human_controlled = true;
+                }
+            }
+        }
+        Command::BossInput { player_id, move_dir, aim_dir, dash_pressed } => {
+            let move_dir: Vec2 = move_dir.into();
+            let aim_dir: Vec2 = aim_dir.into();
+            let move_dir = if move_dir.is_finite() { move_dir.clamp_length_max(1.0) } else { Vec2::ZERO };
+            if player_id == 1 {
+                world.boss_input_move_dir = move_dir;
+                world.boss_input_aim_dir = if aim_dir.is_finite() && aim_dir.length_squared() > 0.01 {
+                    aim_dir.normalize()
+                } else { world.boss_facing };
+                world.boss_input_dash_pressed |= dash_pressed;
+            } else if let Some(player) = world.coop_bosses.iter_mut().find(|player| player.id == player_id) {
+                player.input_move_dir = move_dir;
+                player.input_aim_dir = if aim_dir.is_finite() && aim_dir.length_squared() > 0.01 {
+                    aim_dir.normalize()
+                } else { player.boss_facing };
+                player.input_dash_pressed |= dash_pressed;
+            }
+        }
+        Command::DisconnectBoss { player_id } => {
+            if player_id == 1 {
+                world.boss_human_controlled = false;
+                world.boss_input_move_dir = Vec2::ZERO;
+                world.boss_input_dash_pressed = false;
+            } else if let Some(player) = world.coop_bosses.iter_mut().find(|player| player.id == player_id) {
+                player.human_controlled = false;
+                player.input_move_dir = Vec2::ZERO;
+                player.input_dash_pressed = false;
             }
         }
         Command::SetMobPage { director_id, page } => {

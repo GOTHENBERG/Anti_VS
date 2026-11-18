@@ -80,7 +80,7 @@ impl WaypointPlanner {
         // через отдельные сенсоры политики и могут конкурировать с алтарями и мобами.
         let mut altars: Vec<Vec2> = world.structures
             .iter()
-            .filter(|s| s.structure_type == crate::content::structures::STRUCTURE_ALTAR && s.health.is_alive())
+            .filter(|s| crate::content::structures::is_altar_structure_type(s.structure_type) && s.health.is_alive())
             .map(|s| s.pos)
             .collect();
 

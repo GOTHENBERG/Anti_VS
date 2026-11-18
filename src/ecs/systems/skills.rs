@@ -82,7 +82,7 @@ pub fn select_tactical_target(world: &World, boss_pos: Vec2, max_range: f32) -> 
             if dist <= max_range {
                 let base_score = match st.structure_type {
                     crate::content::structures::STRUCTURE_OBELISK if st.is_active => 110.0,
-                    crate::content::structures::STRUCTURE_ALTAR => 110.0,
+                    _ if crate::content::structures::is_altar_structure_type(st.structure_type) => 110.0,
                     crate::content::structures::STRUCTURE_WALL => 35.0,
                     _ => -100.0,
                 };
@@ -109,7 +109,7 @@ pub fn select_cluster_density_target(world: &World, boss_pos: Vec2, max_range: f
 
     // 1. Алтарь Крови оценивается как кандидат кластера
     for st in &world.structures {
-        if st.structure_type == 1 && st.health.is_alive() {
+        if crate::content::structures::is_altar_structure_type(st.structure_type) && st.health.is_alive() {
             let dist = st.pos.distance(boss_pos);
             if dist <= max_range {
                 let cluster_around_altar = world.spatial_grid.query_nearby(st.pos, aoe_radius);
@@ -189,7 +189,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
     let spd_mult = world.boss_inventory.get_projectile_speed_multiplier();
 
     // Вращение орбит для Бури Клинков и Праведного Щита
-    world.game_time += dt;
+    // Shared match time advances once, even when co-op actors are evaluated through
+    // the legacy single-Boss context swap.
+    if world.active_boss_id == 1 {
+        world.game_time += dt;
+    }
     world.blade_storm_angle = (world.blade_storm_angle + dt * 6.0) % (std::f32::consts::PI * 2.0);
     world.divine_shield_angle = (world.divine_shield_angle + dt * 4.0) % (std::f32::consts::PI * 2.0);
 
@@ -1340,68 +1344,106 @@ pub fn update_skills(world: &mut World, dt: f32) {
     world.projectiles.extend(new_projectiles);
     world.acid_pools.extend(new_acid_pools);
 
-    // 2. Стрельба культистов (Тир 3/11), Огненных элементалей (Тир 7/15) и Жнеца/Аватара (Тир 8/16)
+    if world.active_boss_id == 1 {
+        if world.active_boss_id == 1 {
+            update_world_structures(world, dt);
+        }
+    }
+}
+
+/// Updates ranged attacks once per world tick and aims each squad at its assigned Boss.
+/// Altar-spawned units have no assigned player and choose the nearest living Boss.
+pub fn update_enemy_mob_attacks(world: &mut World, dt: f32) {
+    let primary_pos = world.boss_pos;
+    let primary_alive = world.boss_health.is_alive();
+    let coop_bosses = &world.coop_bosses;
     let mut enemy_shots = Vec::new();
+
     for mob in &mut world.mobs {
-        if mob.tier == 3 || mob.tier == 11 {
+        if !mob.health.is_alive() { continue; }
+        let assigned_target = mob.target_boss_id.and_then(|id| {
+            if id == 1 && primary_alive {
+                Some(primary_pos)
+            } else {
+                coop_bosses.iter()
+                    .find(|player| player.id == id && player.boss_health.is_alive())
+                    .map(|player| player.boss_pos)
+            }
+        });
+        let mut nearest_target = if primary_alive {
+            Some((primary_pos.distance_squared(mob.pos), primary_pos))
+        } else { None };
+        for player in coop_bosses.iter().filter(|player| player.boss_health.is_alive()) {
+            let distance = player.boss_pos.distance_squared(mob.pos);
+            if nearest_target.map_or(true, |(best, _)| distance < best) {
+                nearest_target = Some((distance, player.boss_pos));
+            }
+        }
+        let Some(target_pos) = assigned_target.or_else(|| nearest_target.map(|(_, pos)| pos)) else {
+            continue;
+        };
+        let dist_sq = mob.pos.distance_squared(target_pos);
+        let shot = if mob.tier == 3 || mob.tier == 11 {
             mob.attack_timer -= dt;
-            let dist_sq = mob.pos.distance_squared(boss_pos);
-            let shoot_dist = if mob.tier == 11 { 380.0 } else { 310.0 };
-            if dist_sq < shoot_dist * shoot_dist && mob.attack_timer <= 0.0 {
+            let range = if mob.tier == 11 { 380.0 } else { 310.0 };
+            if dist_sq < range * range && mob.attack_timer <= 0.0 {
                 mob.attack_timer = if mob.tier == 11 { 1.6 } else { 2.0 };
-                let (dmg, dmg_type, spd) = if mob.tier == 11 {
+                let (damage, damage_type, speed) = if mob.tier == 11 {
                     (48.0, DamageType::True, 260.0)
                 } else {
                     (18.0, DamageType::Physical, 230.0)
                 };
-                enemy_shots.push((mob.pos, dmg, dmg_type, spd, 9.0, None));
-            }
+                Some((mob.pos, target_pos, damage, damage_type, speed, 9.0, None))
+            } else { None }
         } else if mob.tier == 7 || mob.tier == 15 {
             mob.attack_timer -= dt;
-            let dist_sq = mob.pos.distance_squared(boss_pos);
-            let shoot_dist = if mob.tier == 15 { 440.0 } else { 360.0 };
-            if dist_sq < shoot_dist * shoot_dist && mob.attack_timer <= 0.0 {
+            let range = if mob.tier == 15 { 440.0 } else { 360.0 };
+            if dist_sq < range * range && mob.attack_timer <= 0.0 {
                 mob.attack_timer = if mob.tier == 15 { 1.8 } else { 2.2 };
-                let (dmg, spd) = if mob.tier == 15 { (110.0, 300.0) } else { (35.0, 260.0) };
-                enemy_shots.push((mob.pos, dmg, DamageType::Fire, spd, 14.0, None));
-            }
+                let (damage, speed) = if mob.tier == 15 { (110.0, 300.0) } else { (35.0, 260.0) };
+                Some((mob.pos, target_pos, damage, DamageType::Fire, speed, 14.0, None))
+            } else { None }
         } else if mob.tier == 8 || mob.tier == 16 {
             mob.attack_timer -= dt;
-            let dist_sq = mob.pos.distance_squared(boss_pos);
-            let shoot_dist = if mob.tier == 16 { 500.0 } else { 420.0 };
-            if dist_sq < shoot_dist * shoot_dist && mob.attack_timer <= 0.0 {
+            let range = if mob.tier == 16 { 500.0 } else { 420.0 };
+            if dist_sq < range * range && mob.attack_timer <= 0.0 {
                 mob.attack_timer = if mob.tier == 16 { 2.4 } else { 2.8 };
-                let (dmg, spd) = if mob.tier == 16 { (160.0, 320.0) } else { (70.0, 280.0) };
-                enemy_shots.push((mob.pos, dmg, DamageType::True, spd, 20.0, Some(WeaponType::ExecutionerAxe)));
-            }
-        }
+                let (damage, speed) = if mob.tier == 16 { (160.0, 320.0) } else { (70.0, 280.0) };
+                Some((mob.pos, target_pos, damage, DamageType::True, speed, 20.0, Some(WeaponType::ExecutionerAxe)))
+            } else { None }
+        } else { None };
+
+        if let Some(shot) = shot { enemy_shots.push(shot); }
     }
 
-    for (pos, dmg, dmg_type, speed, rad, source_w) in enemy_shots {
+    for (pos, target_pos, damage, damage_type, speed, radius, source_weapon) in enemy_shots {
         let id = world.alloc_id();
-        let dir = (boss_pos - pos).normalize_or_zero();
+        let direction = (target_pos - pos).normalize_or_zero();
         world.projectiles.push(ProjectileEntity {
             id,
             pos,
-            vel: dir * speed,
-            damage: dmg,
-            damage_type: dmg_type,
+            vel: direction * speed,
+            damage,
+            damage_type,
             armor_penetration: 0.20,
             lifetime: 2.5,
-            radius: rad,
+            radius,
             pierce: 1,
             faction: Faction::Director,
             homing_strength: 0.0,
-            source_weapon: source_w,
+            source_weapon,
         });
     }
+}
 
-    // 3. Импульсы, стены и спавн скелетов Алтарей Крови
+pub fn update_world_structures(world: &mut World, dt: f32) {
+    // Shared world timers run once per frame, while each player gets their own weapon timers.
+    // 3. Импульсы, стены и спавн бойцов алтарей
     let mut altar_heal_pulses = Vec::new();
     let mut altar_spawns = Vec::new();
 
     for structure in &mut world.structures {
-        if structure.structure_type == crate::content::structures::STRUCTURE_ALTAR && structure.health.is_alive() {
+        if crate::content::structures::is_altar_structure_type(structure.structure_type) && structure.health.is_alive() {
             structure.pulse_timer += dt;
             if structure.pulse_timer >= 3.0 {
                 structure.pulse_timer = 0.0;
@@ -1409,9 +1451,10 @@ pub fn update_skills(world: &mut World, dt: f32) {
             }
 
             structure.spawn_timer += dt;
-            if structure.spawn_timer >= 1.0 {
+            let altar_tier = crate::content::structures::altar_tier_from_structure_type(structure.structure_type).unwrap_or(1);
+            if structure.spawn_timer >= crate::content::structures::altar_spawn_interval(altar_tier) {
                 structure.spawn_timer = 0.0;
-                altar_spawns.push(structure.pos);
+                altar_spawns.push((structure.pos, altar_tier));
             }
         } else if structure.structure_type == crate::content::structures::STRUCTURE_WALL && structure.health.is_alive() {
             structure.lifetime -= dt;
@@ -1482,40 +1525,35 @@ pub fn update_skills(world: &mut World, dt: f32) {
         world.add_floating_text(pos, "💀 ИНФЕРНАЛЬНЫЙ ПРОРЫВ! ОРДА ВЫРВАЛАСЬ!".to_string(), RED, 2.5);
 
         let income = if let Some(d) = world.directors.first() {
-            d.income_rate + (world.structures.iter().filter(|s| s.structure_type == crate::content::structures::STRUCTURE_ALTAR && s.health.is_alive()).count() as f32 * 3.0)
+            d.income_rate + (world.structures.iter().filter(|s| crate::content::structures::is_altar_structure_type(s.structure_type) && s.health.is_alive()).count() as f32 * 3.0)
         } else {
             12.0
         };
-        let mut budget = income * 15.0;
+        let mut budget = income * 15.0 * world.boss_player_count() as f32;
         let current_spent = world.directors.first().map_or(0.0, |d| d.total_points_spent);
 
-        while budget >= 35.0 {
-            let candidate_tier = if current_spent >= 10000.0 && budget >= 1800.0 {
-                8
-            } else if current_spent >= 4000.0 && budget >= 500.0 {
-                6
-            } else if current_spent >= 2500.0 && budget >= 300.0 {
-                5
-            } else if current_spent >= 1000.0 && budget >= 150.0 {
-                4
-            } else if current_spent >= 400.0 && budget >= 70.0 {
-                3
-            } else if budget >= 35.0 {
-                2
-            } else {
-                1
-            };
+        while budget >= crate::content::mobs::get_squad_config(1).cost {
+            // Spend the breach budget on the most expensive mob that is both
+            // unlocked and affordable. This covers all 16 mob types and prevents
+            // the previous hard-coded tier-8 ceiling from starving late-game waves.
+            let candidate_tier = (1u8..=16).rev().find(|tier| {
+                let config = crate::content::mobs::get_squad_config(*tier);
+                current_spent >= config.unlock_spent_threshold && budget >= config.cost
+            });
+            let Some(candidate_tier) = candidate_tier else { break; };
             let cost = crate::content::mobs::get_squad_config(candidate_tier).cost;
             let offset = Vec2::new(rand::gen_range(-90.0, 90.0), rand::gen_range(-90.0, 90.0));
             crate::content::mobs::spawn_single_mob_at_pos(world, candidate_tier, pos + offset);
-            budget -= cost.min(budget);
+            budget -= cost;
         }
     }
 
-    // Непрерывный спавн 1 скелета каждую секунду от каждого живого алтаря
-    for altar_pos in altar_spawns {
-        let offset = Vec2::new(rand::gen_range(-25.0, 25.0), rand::gen_range(-25.0, 25.0));
-        crate::content::mobs::spawn_single_mob_at_pos(world, 1, altar_pos + offset);
+    // Each altar's reinforcement wave scales with the number of Boss players.
+    for (altar_pos, altar_tier) in altar_spawns {
+        for _ in 0..world.boss_player_count() {
+            let offset = Vec2::new(rand::gen_range(-25.0, 25.0), rand::gen_range(-25.0, 25.0));
+            crate::content::mobs::spawn_single_mob_at_pos(world, altar_tier, altar_pos + offset);
+        }
         if !world.is_headless {
             world.spawn_particles(altar_pos, 5, Color::new(0.6, 0.1, 0.8, 0.7), 40.0);
         }

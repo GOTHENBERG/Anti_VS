@@ -2,7 +2,6 @@ use macroquad::prelude::*;
 use crate::core::rand;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction};
 use crate::ecs::components::inventory::{DamageSourceKind, PassiveType, WeaponType};
-use crate::ecs::systems::boss_ai::handle_boss_level_up;
 use crate::ecs::world::{SoulGemEntity, World};
 
 pub fn update_combat(world: &mut World, dt: f32) {
@@ -111,6 +110,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
     // Звук урона по боссу отключен для чистоты аудиомикса
 
     // 1.3 Контактный урон аур по разрушаемым Алтарям Крови
+    let mut obelisk_contribution_ids = Vec::new();
     for st in &mut world.structures {
         if !crate::content::structures::boss_can_damage_structure(st) {
             continue;
@@ -126,6 +126,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
+            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
         }
 
         if has_divine_shield && dist_sq < (95.0 + st.radius).powi(2) {
@@ -138,6 +139,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
+            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
             world.boss_health.heal(dmg * 0.05);
         }
 
@@ -151,6 +153,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
+            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
         }
 
         if has_invincible_bastion && dist_sq < (105.0 + st.radius).powi(2) {
@@ -163,8 +166,10 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
+            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
         }
     }
+    for id in obelisk_contribution_ids.drain(..) { world.record_obelisk_contribution(id); }
 
     // Обработка детонаций Камикадзе
     for (exp_pos, exp_damage, exp_radius) in kamikaze_explosions {
@@ -205,6 +210,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
     // 2. Обработка очереди урона (из skills, кислотных луж и т.д.)
     let queue = std::mem::take(&mut world.damage_queue);
     let mut structure_texts = Vec::new();
+    let mut queued_obelisk_contributions = Vec::new();
 
     // O(1) поиск моба по id вместо O(N) на каждый пакет урона.
     let mob_index: std::collections::HashMap<usize, usize> =
@@ -248,9 +254,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
         {
             let actual_dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(actual_dmg);
+            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && actual_dmg > 0.0 { queued_obelisk_contributions.push(st.id); }
             structure_texts.push((st.pos, format!("-{:.0}", actual_dmg)));
         }
     }
+    for id in queued_obelisk_contributions { world.record_obelisk_contribution(id); }
     for (pos, txt) in structure_texts {
         world.add_floating_text(pos, txt, GOLD, 1.0);
     }
@@ -259,6 +267,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let mut boss_hits = Vec::new();
     let mut hit_particles = Vec::new();
     let mut structure_proj_hits = Vec::new();
+    let mut projectile_obelisk_contributions = Vec::new();
     // Переиспользуемый буфер: ноль аллокаций на каждый снаряд.
     let mut nearby_scratch: Vec<usize> = Vec::with_capacity(64);
 
@@ -357,6 +366,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     };
                     let actual_dmg = st.resistances.calculate_damage(&packet, false);
                     st.health.take_damage(actual_dmg);
+                    if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && actual_dmg > 0.0 { projectile_obelisk_contributions.push(st.id); }
                     proj.pierce = proj.pierce.saturating_sub(1);
                     hit_particles.push((st.pos, PURPLE));
                     structure_proj_hits.push((st.pos, format!("-{:.0}", actual_dmg)));
@@ -411,6 +421,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
             }
         }
     }
+
+    for id in projectile_obelisk_contributions { world.record_obelisk_contribution(id); }
 
     // Применяем всплывающий урон по структурам
     for (pos, txt) in structure_proj_hits {
@@ -522,17 +534,18 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
     for (st_id, st_pos, st_type) in destroyed_events {
         match st_type {
-            crate::content::structures::STRUCTURE_ALTAR => {
+            altar_type if crate::content::structures::is_altar_structure_type(altar_type) => {
+                let altar_tier = crate::content::structures::altar_tier_from_structure_type(altar_type).unwrap_or(1);
                 world.boss_altars_destroyed_total += 1;
                 world.screen_shake = 14.0;
                 world.spawn_particles(st_pos, 50, PURPLE, 190.0);
                 world.spawn_particles(st_pos, 35, RED, 150.0);
                 world.spawn_particles(st_pos, 25, GOLD, 130.0);
-                world.add_floating_text(st_pos, "💥 АЛТАРЬ КРОВИ РАЗРУШЕН!".to_string(), GOLD, 1.6);
+                world.add_floating_text(st_pos, format!("💥 АЛТАРЬ ТИРА {} УНИЧТОЖЕН!", altar_tier), GOLD, 1.6);
                 dropped_gems.push(SoulGemEntity {
                     id: st_id,
                     pos: st_pos,
-                    xp_value: 150.0,
+                    xp_value: 150.0 + altar_tier.saturating_sub(1) as f32 * 40.0,
                     is_magnet: true,
                 });
             }
@@ -550,6 +563,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
             }
             crate::content::structures::STRUCTURE_OBELISK => {
                 world.boss_obelisks_deactivated_total += 1;
+                if let Some(contributors) = world.obelisk_contributors.remove(&st_id) {
+                    for contributor_id in contributors {
+                        world.grant_boss_player_xp(contributor_id, 350.0);
+                    }
+                }
                 world.screen_shake = 25.0;
                 world.spawn_particles(st_pos, 80, GOLD, 260.0);
                 world.spawn_particles(st_pos, 60, PURPLE, 220.0);
@@ -625,16 +643,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
     }
 
     if collected_xp > 0.0 {
-        let level_ups = world.boss_inventory.add_xp(collected_xp);
-        for _ in 0..level_ups {
-            // Сноуболл Босса: увеличение живучести и брони с каждым уровнем
-            world.boss_health.max += 40.0;
-            world.boss_health.current = (world.boss_health.current + 30.0).min(world.boss_health.max);
-            world.boss_resistances.flat_armor += 0.5;
-
-            // Запуск адаптивного Level-Up
-            handle_boss_level_up(world);
-        }
+        world.grant_shared_boss_xp(collected_xp);
+        crate::ecs::systems::coop::apply_pending_level_ups(world);
     }
 
     // 6. Проверка Эгиды Бессмертия (ImmortalAegis Revive):

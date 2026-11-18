@@ -170,7 +170,14 @@ pub fn spawn_squad_perimeter(world: &mut World, tier: u8) {
 pub fn spawn_squad_at_dist(world: &mut World, tier: u8, ring_radius: f32) {
     // Случайный сдвиг угла, чтобы отряды распределялись органично по кольцу
     let base_angle = rand::gen_range(0.0, std::f32::consts::TAU);
-    spawn_squad_arc(world, tier, ring_radius, base_angle, std::f32::consts::TAU);
+    let target_positions = boss_target_positions(world);
+    let target_count = target_positions.len();
+    for (target_id, target_pos) in target_positions {
+        spawn_squad_arc_at(world, tier, target_id, target_pos, ring_radius, base_angle, std::f32::consts::TAU);
+    }
+    if let Some(director) = world.directors.first_mut() {
+        director.total_mobs_spawned += get_squad_config(tier).count * target_count;
+    }
 }
 
 /// Спавн отряда в одном из 8 секторов вокруг Босса (0..7).
@@ -179,19 +186,27 @@ pub fn spawn_squad_in_sector(world: &mut World, tier: u8, sector: usize) {
     let sector_idx = sector % 8;
     let center_angle = (sector_idx as f32) * std::f32::consts::TAU / 8.0
         + rand::gen_range(-0.12, 0.12);
-    spawn_squad_arc(world, tier, 820.0, center_angle, std::f32::consts::TAU / 8.0);
+    let target_positions = boss_target_positions(world);
+    let target_count = target_positions.len();
+    for (target_id, target_pos) in target_positions {
+        spawn_squad_arc_at(world, tier, target_id, target_pos, 820.0, center_angle, std::f32::consts::TAU / 8.0);
+    }
+    if let Some(director) = world.directors.first_mut() {
+        director.total_mobs_spawned += get_squad_config(tier).count * target_count;
+    }
 }
 
 /// Спавн отряда дугой `arc_width` с центром в `center_angle`.
-fn spawn_squad_arc(
+fn spawn_squad_arc_at(
     world: &mut World,
     tier: u8,
+    target_boss_id: u8,
+    boss_pos: Vec2,
     ring_radius: f32,
     center_angle: f32,
     arc_width: f32,
 ) {
     let config = get_squad_config(tier);
-    let boss_pos = world.boss_pos;
     let map_w = crate::core::MAP_WIDTH;
     let map_h = crate::core::MAP_HEIGHT;
 
@@ -253,6 +268,7 @@ fn spawn_squad_arc(
 
         world.mobs.push(MobEntity {
             id,
+            target_boss_id: Some(target_boss_id),
             pos: spawn_pos,
             vel: Vec2::ZERO,
             speed,
@@ -277,9 +293,21 @@ fn spawn_squad_arc(
         });
     }
 
-    if let Some(director) = world.directors.first_mut() {
-        director.total_mobs_spawned += config.count;
+}
+
+fn boss_target_positions(world: &World) -> Vec<(u8, Vec2)> {
+    let mut positions = Vec::with_capacity(world.coop_bosses.len() + 1);
+    if world.boss_health.is_alive() {
+        positions.push((1, world.boss_pos));
     }
+    positions.extend(
+        world
+            .coop_bosses
+            .iter()
+            .filter(|player| player.boss_health.is_alive())
+            .map(|player| (player.id, player.boss_pos)),
+    );
+    positions
 }
 
 /// Точечный спавн одного юнита в указанных координатах (например, скелета от Алтаря Крови)
@@ -321,6 +349,7 @@ pub fn spawn_single_mob_at_pos(world: &mut World, tier: u8, pos: Vec2) {
 
     world.mobs.push(MobEntity {
         id,
+            target_boss_id: None,
         pos: clamped_pos,
         vel: Vec2::ZERO,
         speed,

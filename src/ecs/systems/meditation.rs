@@ -1,7 +1,6 @@
 use macroquad::prelude::*;
 use crate::core::rand;
 use crate::ecs::components::inventory::PassiveType;
-use crate::ecs::systems::boss_ai::handle_boss_level_up;
 use crate::ecs::world::World;
 
 pub fn update_meditation(world: &mut World, dt: f32) {
@@ -43,13 +42,8 @@ pub fn update_meditation(world: &mut World, dt: f32) {
 
             // Получение +30 опыта в секунду
             let xp_gain = 30.0 * dt;
-            let level_ups = world.boss_inventory.add_xp(xp_gain);
-            for _ in 0..level_ups {
-                world.boss_health.max += 40.0;
-                world.boss_health.current = (world.boss_health.current + 30.0).min(world.boss_health.max);
-                world.boss_resistances.flat_armor += 0.5;
-                handle_boss_level_up(world);
-            }
+            world.grant_shared_boss_xp(xp_gain);
+            crate::ecs::systems::coop::apply_pending_level_ups(world);
 
             // Визуальные частицы медитации (зеленые и золотые искры вокруг босса)
             if !world.is_headless && rand::gen_range(0.0, 1.0) < 0.40 {

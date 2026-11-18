@@ -4,13 +4,24 @@ pub const GAME_DURATION_SECS: f32 = 1020.0; // 17 минут
 pub struct GameClock {
     pub elapsed_secs: f32,
     pub delta_secs: f32,
+    pub duration_secs: f32,
 }
 
 impl GameClock {
     pub fn new() -> Self {
+        Self::with_duration(GAME_DURATION_SECS)
+    }
+
+    pub fn with_duration(duration_secs: f32) -> Self {
+        let duration_secs = if duration_secs.is_finite() {
+            duration_secs.clamp(60.0, 10_800.0)
+        } else {
+            GAME_DURATION_SECS
+        };
         Self {
             elapsed_secs: 0.0,
             delta_secs: 0.0,
+            duration_secs,
         }
     }
 
@@ -20,11 +31,11 @@ impl GameClock {
     }
 
     pub fn time_remaining_secs(&self) -> f32 {
-        (GAME_DURATION_SECS - self.elapsed_secs).max(0.0)
+        (self.duration_secs - self.elapsed_secs).max(0.0)
     }
 
     pub fn is_time_up(&self) -> bool {
-        self.elapsed_secs >= GAME_DURATION_SECS
+        self.elapsed_secs >= self.duration_secs
     }
 
     pub fn formatted_remaining(&self) -> String {

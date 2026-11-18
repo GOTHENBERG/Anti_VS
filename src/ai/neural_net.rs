@@ -2,9 +2,9 @@ use crate::core::rand;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
-// БОСС: 166 сенсоров -> 64 -> 48 -> 7 действий
+// БОСС: 182 сенсора -> 64 -> 48 -> 7 действий
 // ============================================================================
-pub const INPUT_SIZE: usize = 166;
+pub const INPUT_SIZE: usize = 182;
 pub const HIDDEN1_SIZE: usize = 64;
 pub const HIDDEN2_SIZE: usize = 48;
 pub const OUTPUT_SIZE: usize = 7;
@@ -27,7 +27,7 @@ pub const OUT_DASH_Y: usize = 5;
 pub const OUT_REST: usize = 6;
 
 /// Полносвязная глубокая нейронная сеть (Deep MLP)
-/// Архитектура: 166 сенсорных входов -> 64 (Leaky ReLU) -> 48 (Leaky ReLU) -> 7 выходов.
+/// Архитектура: 182 сенсорных входа -> 64 (Leaky ReLU) -> 48 (Leaky ReLU) -> 7 выходов.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NeuralNet {
     pub input_size: usize,
@@ -35,7 +35,7 @@ pub struct NeuralNet {
     pub hidden2_size: usize,
     pub output_size: usize,
 
-    // Слой 1: 166 -> 64
+    // Слой 1: 182 -> 64
     pub w1: Vec<Vec<f32>>,
     pub b1: Vec<f32>,
 
@@ -294,13 +294,13 @@ impl NeuralNet {
 }
 
 // ============================================================================
-// ДИРЕКТОР: 139 сенсоров -> 64 -> 48 -> три головы
+// ДИРЕКТОР: 177 сенсоров -> 64 -> 48 -> три головы
 // ============================================================================
-pub const DIRECTOR_INPUT_SIZE: usize = 139;
+pub const DIRECTOR_INPUT_SIZE: usize = 177;
 pub const DIRECTOR_HIDDEN1_SIZE: usize = 64;
 pub const DIRECTOR_HIDDEN2_SIZE: usize = 48;
 pub const DIRECTOR_ECONOMY_HEAD_SIZE: usize = 20; // 0: Пас, 1..16: Тиры, 17: Ярость, 18: Панцирь, 19: Чумные споры
-pub const DIRECTOR_ALTAR_HEAD_SIZE: usize = 3; // [0]: триггер, [1]: X-слот, [2]: Y-слот
+pub const DIRECTOR_ALTAR_HEAD_SIZE: usize = 19; // [0]: триггер, [1..2]: слот, [3..18]: тир алтаря
 pub const DIRECTOR_SPAWN_HEAD_SIZE: usize = 8; // 8 секторов спавна вокруг Босса
 
 /// Контекст для маски доступности и совместного бюджета действий Директора.
@@ -310,6 +310,8 @@ pub struct DirectorActionContext {
     pub total_points_spent: f32,
     pub altar_cooldown: f32,
     pub altar_cost: f32,
+    pub altar_tier_cooldowns: [f32; 16],
+    pub altar_tier_costs: [f32; 16],
     pub grade_fury: u32,
     pub grade_carapace: u32,
     pub grade_pestilence: u32,
@@ -322,6 +324,7 @@ pub struct DirectorDecision {
     pub target_action: usize, // 0: Пас, 1..16: Отряд, 17: Ярость, 18: Панцирь, 19: Чумные споры
     pub should_build_altar: bool,
     pub altar_target_pos: macroquad::prelude::Vec2,
+    pub altar_tier: u8,
     pub spawn_sector: usize, // 0..7 — сектор появления отряда вокруг Босса
 }
 
@@ -332,7 +335,7 @@ pub struct DirectorBrainNet {
     pub hidden1_size: usize,
     pub hidden2_size: usize,
 
-    // Слой 1: 139 -> 64
+    // Слой 1: 177 -> 64
     pub w1: Vec<Vec<f32>>,
     pub b1: Vec<f32>,
 
@@ -419,14 +422,19 @@ impl DirectorBrainNet {
             && self.w_econ.len() == DIRECTOR_ECONOMY_HEAD_SIZE
             && self.w_econ.iter().all(|r| r.len() == DIRECTOR_HIDDEN2_SIZE)
             && self.b_econ.len() == DIRECTOR_ECONOMY_HEAD_SIZE
-            && self.w_altar.len() == DIRECTOR_ALTAR_HEAD_SIZE
+            && (self.w_altar.len() == 3 || self.w_altar.len() == DIRECTOR_ALTAR_HEAD_SIZE)
             && self.w_altar.iter().all(|r| r.len() == DIRECTOR_HIDDEN2_SIZE)
-            && self.b_altar.len() == DIRECTOR_ALTAR_HEAD_SIZE
+            && (self.b_altar.len() == 3 || self.b_altar.len() == DIRECTOR_ALTAR_HEAD_SIZE)
             && self.w_spawn.len() == DIRECTOR_SPAWN_HEAD_SIZE
             && self.w_spawn.iter().all(|r| r.len() == DIRECTOR_HIDDEN2_SIZE)
             && self.b_spawn.len() == DIRECTOR_SPAWN_HEAD_SIZE;
         if !old_shape_ok {
             return false;
+        }
+
+        if self.w_altar.len() == 3 {
+            self.w_altar.resize_with(DIRECTOR_ALTAR_HEAD_SIZE, || vec![0.0; DIRECTOR_HIDDEN2_SIZE]);
+            self.b_altar.resize(DIRECTOR_ALTAR_HEAD_SIZE, 0.0);
         }
 
         if old_input < DIRECTOR_INPUT_SIZE {
@@ -529,7 +537,15 @@ impl DirectorBrainNet {
             altar_raw[i] = 1.0 / (1.0 + (-sum).exp());
         }
 
-        let altar_ready = ctx.altar_cooldown <= 0.0 && ctx.points >= ctx.altar_cost;
+        let altar_tier_index = altar_raw[3..]
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(index, _)| index)
+            .unwrap_or(0);
+        let altar_tier = altar_tier_index as u8 + 1;
+        let altar_ready = ctx.altar_tier_cooldowns[altar_tier_index] <= 0.0
+            && ctx.points >= ctx.altar_tier_costs[altar_tier_index];
         let sx = (altar_raw[1] * 5.0).floor().clamp(0.0, 4.0) as usize;
         let sy = (altar_raw[2] * 5.0).floor().clamp(0.0, 4.0) as usize;
         let requested_slot = sy * 5 + sx;
@@ -555,7 +571,7 @@ impl DirectorBrainNet {
 
         // 4. Голова экономики: маска учитывает остаток после одновременной постройки.
         let points_after_altar = if should_build_altar {
-            (ctx.points - ctx.altar_cost).max(0.0)
+            (ctx.points - ctx.altar_tier_costs[altar_tier_index]).max(0.0)
         } else {
             ctx.points
         };
@@ -610,6 +626,7 @@ impl DirectorBrainNet {
             target_action: best_action,
             should_build_altar,
             altar_target_pos,
+            altar_tier,
             spawn_sector,
         }
     }

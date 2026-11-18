@@ -1,7 +1,6 @@
 use macroquad::prelude::*;
 use crate::content::mobs::get_squad_config;
 use crate::content::passives::get_passive_def;
-use crate::content::structures::BLOOD_ALTAR_COST;
 use crate::content::weapons::get_weapon_def;
 use crate::core::time::GameClock;
 use crate::ecs::components::inventory::{PassiveSlot, PassiveType, WeaponSlot, WeaponType};
@@ -23,6 +22,7 @@ pub struct UiInteraction {
     pub clicked_sound_toggle: bool,
     pub clicked_next_track: bool,
     pub set_mob_page: Option<u8>,
+    pub altar_tier: Option<u8>,
     pub is_mouse_over_ui: bool,
     pub map_click_world_pos: Option<Vec2>,
     pub start_altar_placement: bool,
@@ -33,7 +33,6 @@ enum HoverTooltip {
     Weapon(WeaponSlot, f32, f32),
     Passive(PassiveSlot, f32, f32),
     WorldEntity(Vec2, Vec<(String, Color)>),
-    AltarWidget(f32, f32),
     WallWidget(f32, f32),
     SoulsPlaque(f32, f32),
 }
@@ -387,7 +386,7 @@ pub fn render_ui(
             hovered_tooltip = Some(HoverTooltip::SoulsPlaque(panel_x, panel_y));
         }
 
-        let altar_count = world.structures.iter().filter(|s| s.structure_type == crate::content::structures::STRUCTURE_ALTAR && s.health.is_alive()).count();
+        let altar_count = world.structures.iter().filter(|s| crate::content::structures::is_altar_structure_type(s.structure_type) && s.health.is_alive()).count();
         let total_income = director.income_rate + (altar_count as f32 * 3.0);
 
         // Внешняя темная обсидиановая плашка со скошенными углами и золотым кантом
@@ -481,72 +480,11 @@ pub fn render_ui(
         let altar_str = format!("🏛️{}", altar_count);
         fonts.draw_heading(&altar_str, div2_x + 6.0, panel_y + 25.0, 11.5, PURPLE);
 
-        // 7.1 Виджеты Алтаря Крови и Стены-Баррикады (прямо над строкой душ)
-        let sw_w = (panel_w - 6.0) / 2.0;
+        // Виджет стены остаётся отдельным; алтари выбираются на карточках мобов.
+        let sw_w = panel_w;
         let sw_h = 52.0;
         let sw_y = panel_y - sw_h - 6.0;
-
-        // --- ЛЕВЫЙ: АЛТАРЬ КРОВИ ---
-        let aw_x = panel_x;
-        let on_altar_cd = director.altar_cooldown > 0.0;
-        let can_afford_altar = director.points >= BLOOD_ALTAR_COST;
-
-        if mx >= aw_x && mx <= aw_x + sw_w && my >= sw_y && my <= sw_y + sw_h {
-            interaction.is_mouse_over_ui = true;
-            hovered_tooltip = Some(HoverTooltip::AltarWidget(aw_x, sw_y));
-            if is_mouse_button_pressed(MouseButton::Left) && !on_altar_cd && can_afford_altar {
-                interaction.start_altar_placement = true;
-            }
-        }
-
-        let aw_border = if on_altar_cd {
-            Color::new(0.9, 0.25, 0.25, 0.95)
-        } else if can_afford_altar {
-            PURPLE
-        } else {
-            GRAY
-        };
-
-        draw_rectangle(aw_x, sw_y, sw_w, sw_h, Color::new(0.08, 0.08, 0.14, 0.95));
-        draw_rectangle_lines(aw_x, sw_y, sw_w, sw_h, 1.8, aw_border);
-
-        if let Some(altar_tex) = textures.altar.as_ref() {
-            let icon_w = 20.0;
-            let icon_h = 32.0;
-            let icon_tint = if on_altar_cd { Color::new(0.8, 0.4, 0.4, 0.8) } else { WHITE };
-            draw_texture_ex(
-                altar_tex,
-                aw_x + 6.0,
-                sw_y + (sw_h - icon_h) / 2.0,
-                icon_tint,
-                DrawTextureParams {
-                    dest_size: Some(Vec2::new(icon_w, icon_h)),
-                    ..Default::default()
-                },
-            );
-        } else {
-            draw_circle(aw_x + 16.0, sw_y + 26.0, 8.0, PURPLE);
-        }
-
-        let a_cx = aw_x + 30.0;
-        fonts.draw_heading("АЛТАРЬ [ЛКМ]", a_cx, sw_y + 16.0, 10.5, GOLD);
-        if on_altar_cd {
-            let cd_text = format!("{:.1}с", director.altar_cooldown);
-            fonts.draw_text(&cd_text, a_cx, sw_y + 30.0, 10.0, Color::new(1.0, 0.35, 0.35, 1.0));
-            let prog = (1.0 - director.altar_cooldown / director.altar_max_cooldown).clamp(0.0, 1.0);
-            draw_rectangle(a_cx, sw_y + 34.0, 75.0, 3.0, Color::new(0.2, 0.1, 0.1, 0.9));
-            draw_rectangle(a_cx, sw_y + 34.0, 75.0 * prog, 3.0, ORANGE);
-        } else if can_afford_altar {
-            fonts.draw_text("ГОТОВ [50]", a_cx, sw_y + 30.0, 10.5, GREEN);
-        } else {
-            fonts.draw_text("50 Душ", a_cx, sw_y + 30.0, 10.0, GRAY);
-        }
-        let live_altars = world.structures.iter().filter(|s| s.structure_type == crate::content::structures::STRUCTURE_ALTAR && s.health.is_alive()).count();
-        let a_cnt = format!("Жизнь: {} шт", live_altars);
-        fonts.draw_text(&a_cnt, a_cx, sw_y + 46.0, 9.5, LIGHTGRAY);
-
-        // --- ПРАВЫЙ: СТЕНА-БАРРИКАДА ---
-        let ww_x = panel_x + sw_w + 6.0;
+        let ww_x = panel_x;
         let on_wall_cd = director.wall_cooldown > 0.0;
         let can_afford_wall = director.points >= crate::content::structures::WALL_COST;
 
@@ -586,7 +524,7 @@ pub fn render_ui(
             draw_rectangle(ww_x + 8.0, sw_y + 14.0, 22.0, 22.0, GRAY);
         }
 
-        let w_cx = ww_x + 34.0;
+        let w_cx = ww_x + 38.0;
         fonts.draw_heading("СТЕНА [B]", w_cx, sw_y + 16.0, 10.5, SKYBLUE);
         if on_wall_cd {
             let cd_text = format!("{:.1}с", director.wall_cooldown);
@@ -612,7 +550,7 @@ pub fn render_ui(
 
         let g_btn_w = (total_cards_w - 16.0) / 3.0; // 214.3px
         let g_btn_h = 30.0;
-        let card_h = 118.0;
+        let card_h = 146.0;
         let cards_y = screen_h - card_h - 16.0;
         let g_y = cards_y - g_btn_h - 6.0;
 
@@ -838,6 +776,64 @@ pub fn render_ui(
                 fonts.draw_text(&lock_str, cx + (card_w - lw) / 2.0, cy + 112.0, 9.5, RED);
             }
 
+            let altar_cooldown = director.altar_cooldown_for_tier(tier);
+            let altar_cost = crate::content::structures::altar_cost(tier);
+            let altar_affordable = director.points >= altar_cost;
+            let altar_can_build = is_unlocked && altar_affordable && altar_cooldown <= 0.0;
+            let altar_button = Rect::new(cx + 4.0, cy + 120.0, card_w - 8.0, 22.0);
+            let altar_button_hover = mx >= altar_button.x
+                && mx <= altar_button.x + altar_button.w
+                && my >= altar_button.y
+                && my <= altar_button.y + altar_button.h;
+            if altar_button_hover {
+                interaction.is_mouse_over_ui = true;
+                if is_mouse_button_pressed(MouseButton::Left) && altar_can_build {
+                    interaction.start_altar_placement = true;
+                    interaction.altar_tier = Some(tier);
+                }
+            }
+            let altar_border = if altar_cooldown > 0.0 {
+                Color::new(0.85, 0.35, 0.25, 0.95)
+            } else if altar_can_build {
+                PURPLE
+            } else {
+                GRAY
+            };
+            draw_rectangle(altar_button.x, altar_button.y, altar_button.w, altar_button.h, Color::new(0.06, 0.055, 0.10, 0.96));
+            draw_rectangle_lines(altar_button.x, altar_button.y, altar_button.w, altar_button.h, 1.0, if altar_button_hover { GOLD } else { altar_border });
+            let altar_label = if altar_cooldown > 0.0 {
+                format!("КД {:.0}с", altar_cooldown)
+            } else if !is_unlocked {
+                format!("🔒 {:.0}", config.unlock_spent_threshold)
+            } else if !altar_affordable {
+                format!("ЦЕНА {:.0}", altar_cost)
+            } else {
+                "СТРОИТЬ".to_string()
+            };
+            let portrait_size = 15.0;
+            if let Some(mob_tex) = textures.get_mob_texture(tier, 0) {
+                draw_texture_ex(
+                    mob_tex,
+                    altar_button.x + 3.0,
+                    altar_button.y + 3.0,
+                    if is_unlocked { WHITE } else { GRAY },
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::splat(portrait_size)),
+                        ..Default::default()
+                    },
+                );
+            }
+            let label_left = altar_button.x + 20.0;
+            let label_width = altar_button.w - 22.0;
+            let altar_label_width = fonts.measure_text(&altar_label, 8.0).width;
+            fonts.draw_text(
+                &altar_label,
+                label_left + (label_width - altar_label_width).max(0.0) * 0.5,
+                altar_button.y + 15.0,
+                8.0,
+                if altar_can_build { Color::new(0.82, 0.62, 1.0, 1.0) } else { altar_border },
+            );
+
             // Клик по карте:
             // 1. Клик по кнопке [i] -> открывает подробное Досье
             if is_mouse_button_pressed(MouseButton::Left) && is_info_hover && is_unlocked {
@@ -845,7 +841,7 @@ pub fn render_ui(
             }
             // 2. Клик ЛКМ по самой карте -> ПРИЗЫВАЕТ МОБА!
             else if (is_mouse_button_pressed(MouseButton::Left) || is_mouse_button_pressed(MouseButton::Right))
-                && card_hover && !is_info_hover && is_unlocked && can_afford
+                && card_hover && !is_info_hover && !altar_button_hover && is_unlocked && can_afford
             {
                 if is_shift {
                     interaction.direct_summon_max_tier = Some(tier);
@@ -970,9 +966,6 @@ pub fn render_ui(
             }
             HoverTooltip::WorldEntity(screen_pos, lines) => {
                 draw_world_entity_tooltip(screen_pos, lines, screen_w, screen_h, fonts);
-            }
-            HoverTooltip::AltarWidget(aw_x, aw_y) => {
-                draw_altar_widget_tooltip(aw_x, aw_y, screen_w, fonts, world);
             }
             HoverTooltip::WallWidget(ww_x, ww_y) => {
                 draw_wall_widget_tooltip(ww_x, ww_y, screen_w, fonts);
@@ -1100,7 +1093,7 @@ fn draw_minimap(
     for st in &world.structures {
         let sp = to_mini(st.pos);
         match st.structure_type {
-            crate::content::structures::STRUCTURE_ALTAR => {
+            altar_type if crate::content::structures::is_altar_structure_type(altar_type) => {
                 if st.health.is_alive() {
                     draw_circle(sp.x, sp.y, 3.5, PURPLE);
                     draw_circle_lines(sp.x, sp.y, 3.5, 1.0, WHITE);
@@ -1200,7 +1193,7 @@ fn draw_souls_plaque_tooltip(
     draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, GOLD);
 
     fonts.draw_heading("👑 КАЗНА И ЭКОНОМИКА ДИРЕКТОРА", card_x + 12.0, card_y + 22.0, 15.0, GOLD);
-    let altar_count = world.structures.iter().filter(|s| s.structure_type == crate::content::structures::STRUCTURE_ALTAR && s.health.is_alive()).count();
+    let altar_count = world.structures.iter().filter(|s| crate::content::structures::is_altar_structure_type(s.structure_type) && s.health.is_alive()).count();
     let total_income = director.income_rate + (altar_count as f32 * 3.0);
     fonts.draw_text(&format!("• Текущий баланс: {:.0} Очков Душ", director.points), card_x + 12.0, card_y + 44.0, 12.5, WHITE);
     fonts.draw_text(&format!("• Суммарный доход: +{:.1} / 2с (Базовый + Алтари)", total_income), card_x + 12.0, card_y + 64.0, 12.5, GREEN);
@@ -1208,29 +1201,6 @@ fn draw_souls_plaque_tooltip(
     fonts.draw_text(&format!("• Всего призвано: {} монстров", director.total_mobs_spawned), card_x + 12.0, card_y + 104.0, 12.0, SKYBLUE);
     fonts.draw_text(&format!("• Производительность: {} FPS | На поле: {}", get_fps(), world.mobs.len()), card_x + 12.0, card_y + 124.0, 12.0, YELLOW);
     fonts.draw_text("Совет: Каждая трата душ навсегда ускоряет доход на +2%!", card_x + 12.0, card_y + 146.0, 11.0, GRAY);
-}
-
-/// Всплывающая подсказка для виджета Алтаря Крови
-fn draw_altar_widget_tooltip(aw_x: f32, aw_y: f32, screen_w: f32, fonts: &GameFonts, world: &World) {
-    let card_w = 390.0;
-    let card_h = 195.0;
-    let card_x = (aw_x - card_w - 12.0).clamp(10.0, screen_w - card_w - 10.0);
-    let card_y = (aw_y - 20.0).max(10.0);
-
-    draw_rectangle(card_x, card_y, card_w, card_h, Color::new(0.06, 0.06, 0.12, 0.96));
-    draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, PURPLE);
-
-    fonts.draw_heading("🏛️ АЛТАРЬ КРОВИ (Инфернальная база)", card_x + 12.0, card_y + 22.0, 15.0, GOLD);
-    fonts.draw_text("• Постройка: Клик [ЛКМ] по виджету, затем [ЛКМ] на арене", card_x + 12.0, card_y + 44.0, 11.5, WHITE);
-    let cost_str = format!("• Стоимость: {:.0} Душ | Кулдаун: 14 сек (Без лимита шт)", BLOOD_ALTAR_COST);
-    fonts.draw_text(&cost_str, card_x + 12.0, card_y + 64.0, 11.5, YELLOW);
-    let live_altars = world.structures.iter().filter(|s| s.structure_type == crate::content::structures::STRUCTURE_ALTAR && s.health.is_alive()).count();
-    let inc_str = format!("• Доход: +3.0 Душ каждые 2 сек (Текущий: +{:.0}/2с)", live_altars as f32 * 3.0);
-    fonts.draw_text(&inc_str, card_x + 12.0, card_y + 84.0, 11.5, GREEN);
-    fonts.draw_text("• Спавн: 1 Скелет каждую секунду непрерывно штурмует босса!", card_x + 12.0, card_y + 104.0, 11.5, SKYBLUE);
-    fonts.draw_text("• Аура Крови: Восстанавливает +35 HP союзникам в радиусе 180px/3с", card_x + 12.0, card_y + 124.0, 11.5, LIGHTGRAY);
-    fonts.draw_text("• Здоровье: 650 HP (Броня: 12, уязвим к святому урону -60%)", card_x + 12.0, card_y + 144.0, 11.5, GRAY);
-    fonts.draw_text("⚠️ ОПАСНОСТЬ: Босс активно ищет и штурмует алтари (+150 XP)", card_x + 12.0, card_y + 168.0, 11.5, ORANGE);
 }
 
 /// Всплывающая подсказка для виджета Стены-Баррикады
