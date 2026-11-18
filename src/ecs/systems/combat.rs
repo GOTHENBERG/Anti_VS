@@ -58,9 +58,13 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let is_boss_invulnerable = world.boss_invulnerable_timer > 0.0;
 
     let has_blade_storm = world.boss_inventory.has_weapon(WeaponType::BladeStorm);
+    let has_holy_hammer = world.boss_inventory.has_weapon(WeaponType::HolyHammer);
     let has_divine_shield = world.boss_inventory.has_weapon(WeaponType::DivineShield);
     let has_hellfire = world.boss_inventory.has_weapon(WeaponType::Hellfire);
+    let has_aegis_orbiters = world.boss_inventory.has_weapon(WeaponType::AegisOrbiters);
     let has_invincible_bastion = world.boss_inventory.has_weapon(WeaponType::InvincibleBastion);
+    let has_sacred_scriptures = world.boss_inventory.has_weapon(WeaponType::SacredScriptures);
+    let has_infernal_liturgy = world.boss_inventory.has_weapon(WeaponType::InfernalLiturgy);
     let has_octarine_core = world.boss_inventory.has_passive(PassiveType::OctarineCore);
     let has_pyromaniac = world.boss_inventory.has_passive(PassiveType::Pyromaniac);
     let has_immortal_aegis = world.boss_inventory.has_passive(PassiveType::ImmortalAegis);
@@ -124,7 +128,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 let packet = DamagePacket {
                     source_id: Some(0),
                     target_id: mob.id,
-                    amount: 65.0 * dt,
+                    amount: 65.0 * dt * dmg_mult,
                     damage_type: DamageType::Physical,
                     armor_penetration: 0.35,
                 };
@@ -138,12 +142,25 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 }
             }
 
-            // 1.2 Эволюция: Праведный Щит (DivineShield) — щит с вампиризмом
-            if has_divine_shield && dist_sq < 95.0 * 95.0 {
+            // 1.2 Святой Молот (HolyHammer) — вращающиеся освященные молоты
+            if has_holy_hammer && dist_sq < 88.0 * 88.0 {
                 let packet = DamagePacket {
                     source_id: Some(0),
                     target_id: mob.id,
-                    amount: 80.0 * dt,
+                    amount: 60.0 * dt * dmg_mult,
+                    damage_type: DamageType::Holy,
+                    armor_penetration: 0.25,
+                };
+                let dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
+                mob.health.take_damage(dmg);
+            }
+
+            // 1.3 Эволюция: Праведный Щит (DivineShield) — щит с вампиризмом
+            if has_divine_shield && dist_sq < 98.0 * 98.0 {
+                let packet = DamagePacket {
+                    source_id: Some(0),
+                    target_id: mob.id,
+                    amount: 80.0 * dt * dmg_mult,
                     damage_type: DamageType::Holy,
                     armor_penetration: 0.20,
                 };
@@ -152,6 +169,58 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
                 // Вампиризм: 5% урона возвращается в здоровье босса
                 world.boss_health.heal(dmg * 0.05);
+            }
+
+            // 1.4 Орбитальные Бастионы (AegisOrbiters) — защитные барьеры
+            if has_aegis_orbiters && dist_sq < 106.0 * 106.0 {
+                let packet = DamagePacket {
+                    source_id: Some(0),
+                    target_id: mob.id,
+                    amount: 70.0 * dt * dmg_mult,
+                    damage_type: DamageType::Physical,
+                    armor_penetration: 0.35,
+                };
+                let dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
+                mob.health.take_damage(dmg);
+            }
+
+            // 1.5 Эволюция: Несокрушимая Крепость (InvincibleBastion) — сверхпрочное силовое поле
+            if has_invincible_bastion && dist_sq < 125.0 * 125.0 {
+                let packet = DamagePacket {
+                    source_id: Some(0),
+                    target_id: mob.id,
+                    amount: 115.0 * dt * dmg_mult,
+                    damage_type: DamageType::Holy,
+                    armor_penetration: 0.50,
+                };
+                let dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
+                mob.health.take_damage(dmg);
+            }
+
+            // 1.6 Орбитальный Гримуар (SacredScriptures) — священные вращающиеся фолианты
+            if has_sacred_scriptures && dist_sq < 92.0 * 92.0 {
+                let packet = DamagePacket {
+                    source_id: Some(0),
+                    target_id: mob.id,
+                    amount: 55.0 * dt * dmg_mult,
+                    damage_type: DamageType::Holy,
+                    armor_penetration: 0.30,
+                };
+                let dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
+                mob.health.take_damage(dmg);
+            }
+
+            // 1.7 Эволюция: Инфернальная Литургия (InfernalLiturgy) — адские пылающие скрижали
+            if has_infernal_liturgy && dist_sq < 115.0 * 115.0 {
+                let packet = DamagePacket {
+                    source_id: Some(0),
+                    target_id: mob.id,
+                    amount: 110.0 * dt * dmg_mult,
+                    damage_type: DamageType::Fire,
+                    armor_penetration: 0.50,
+                };
+                let dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
+                mob.health.take_damage(dmg);
             }
         }
     }
@@ -185,7 +254,20 @@ pub fn update_combat(world: &mut World, dt: f32) {
             if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
         }
 
-        if has_divine_shield && dist_sq < (95.0 + st.radius).powi(2) {
+        if has_holy_hammer && dist_sq < (88.0 + st.radius).powi(2) {
+            let packet = DamagePacket {
+                source_id: Some(0),
+                target_id: st.id,
+                amount: 70.0 * dt,
+                damage_type: DamageType::Holy,
+                armor_penetration: 0.25,
+            };
+            let dmg = st.resistances.calculate_damage(&packet, false);
+            st.health.take_damage(dmg);
+            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+        }
+
+        if has_divine_shield && dist_sq < (98.0 + st.radius).powi(2) {
             let packet = DamagePacket {
                 source_id: Some(0),
                 target_id: st.id,
@@ -212,12 +294,51 @@ pub fn update_combat(world: &mut World, dt: f32) {
             if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
         }
 
-        if has_invincible_bastion && dist_sq < (105.0 + st.radius).powi(2) {
+        if has_aegis_orbiters && dist_sq < (106.0 + st.radius).powi(2) {
+            let packet = DamagePacket {
+                source_id: Some(0),
+                target_id: st.id,
+                amount: 80.0 * dt,
+                damage_type: DamageType::Physical,
+                armor_penetration: 0.35,
+            };
+            let dmg = st.resistances.calculate_damage(&packet, false);
+            st.health.take_damage(dmg);
+            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+        }
+
+        if has_invincible_bastion && dist_sq < (125.0 + st.radius).powi(2) {
             let packet = DamagePacket {
                 source_id: Some(0),
                 target_id: st.id,
                 amount: 110.0 * dt,
                 damage_type: DamageType::Holy,
+                armor_penetration: 0.50,
+            };
+            let dmg = st.resistances.calculate_damage(&packet, false);
+            st.health.take_damage(dmg);
+            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+        }
+
+        if has_sacred_scriptures && dist_sq < (92.0 + st.radius).powi(2) {
+            let packet = DamagePacket {
+                source_id: Some(0),
+                target_id: st.id,
+                amount: 65.0 * dt,
+                damage_type: DamageType::Holy,
+                armor_penetration: 0.30,
+            };
+            let dmg = st.resistances.calculate_damage(&packet, false);
+            st.health.take_damage(dmg);
+            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+        }
+
+        if has_infernal_liturgy && dist_sq < (115.0 + st.radius).powi(2) {
+            let packet = DamagePacket {
+                source_id: Some(0),
+                target_id: st.id,
+                amount: 120.0 * dt,
+                damage_type: DamageType::Fire,
                 armor_penetration: 0.50,
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
@@ -468,14 +589,27 @@ pub fn update_combat(world: &mut World, dt: f32) {
         } else if proj.faction == Faction::Director {
             let dist_to_boss_sq = proj.pos.distance_squared(boss_pos);
 
-            // Парирование / уничтожение вражеских снарядов щитом или бурей клинков
+            // Парирование / уничтожение вражеских снарядов активными орбиталями и щитами
             let is_parried = (has_blade_storm && dist_to_boss_sq < 85.0 * 85.0)
-                || (has_divine_shield && dist_to_boss_sq < 95.0 * 95.0)
+                || (has_holy_hammer && dist_to_boss_sq < 88.0 * 88.0)
+                || (has_divine_shield && dist_to_boss_sq < 98.0 * 98.0)
+                || (has_aegis_orbiters && dist_to_boss_sq < 106.0 * 106.0)
+                || (has_invincible_bastion && dist_to_boss_sq < 125.0 * 125.0)
+                || (has_sacred_scriptures && dist_to_boss_sq < 92.0 * 92.0)
+                || (has_infernal_liturgy && dist_to_boss_sq < 115.0 * 115.0)
                 || (is_boss_invulnerable && dist_to_boss_sq < 70.0 * 70.0);
 
             if is_parried {
                 proj.lifetime = 0.0;
-                let spark_color = if has_divine_shield { GOLD } else { SKYBLUE };
+                let spark_color = if has_infernal_liturgy {
+                    ORANGE
+                } else if has_divine_shield || has_holy_hammer || has_sacred_scriptures {
+                    GOLD
+                } else if has_aegis_orbiters || has_invincible_bastion {
+                    Color::new(0.3, 0.9, 1.0, 1.0)
+                } else {
+                    SKYBLUE
+                };
                 hit_particles.push((proj.pos, spark_color));
                 continue;
             }

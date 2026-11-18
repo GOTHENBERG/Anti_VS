@@ -364,10 +364,10 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
 
     // Эволюция: Буря Клинков (BladeStorm) — вращающийся вихрь клинков
     if world.boss_inventory.has_weapon(WeaponType::BladeStorm) {
-        let blade_count = 8;
+        let blade_count = (8 + world.boss_inventory.get_duplicator_projectiles()).min(16) as usize;
         let radius = 78.0;
         for i in 0..blade_count {
-            let angle = world.blade_storm_angle + (i as f32) * std::f32::consts::PI * 2.0 / (blade_count as f32);
+            let angle = (time * 5.5) + (i as f32) * std::f32::consts::TAU / (blade_count as f32);
             let b_pos = Vec2::new(bx + angle.cos() * radius, by + angle.sin() * radius);
 
             if let Some(w_tex) = textures.proj_wind.as_ref() {
@@ -392,15 +392,46 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         }
     }
 
+    // Святой Молот (HolyHammer) — вращающиеся освященные молоты
+    if world.boss_inventory.has_weapon(WeaponType::HolyHammer) {
+        let extra_proj = world.boss_inventory.get_weapon(WeaponType::HolyHammer).map(|w| w.bonus_projectiles as usize).unwrap_or(0);
+        let hammer_count = (2 + extra_proj + world.boss_inventory.get_duplicator_projectiles()).clamp(2, 6);
+        let radius = 86.0;
+        for i in 0..hammer_count {
+            let angle = (time * 3.8) + (i as f32) * std::f32::consts::TAU / (hammer_count as f32);
+            let h_pos = Vec2::new(bx + angle.cos() * radius, by + angle.sin() * radius);
+
+            if let Some(h_tex) = textures.icon_holy_hammer.as_ref().or(textures.proj_holy.as_ref()) {
+                draw_texture_ex(
+                    h_tex,
+                    h_pos.x - 14.0,
+                    h_pos.y - 14.0,
+                    WHITE,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(28.0, 28.0)),
+                        rotation: angle + std::f32::consts::PI / 4.0 + time * 6.0,
+                        pivot: Some(h_pos),
+                        ..Default::default()
+                    },
+                );
+            } else {
+                draw_circle(h_pos.x, h_pos.y, 9.0, GOLD);
+                draw_circle_lines(h_pos.x, h_pos.y, 9.0, 2.0, WHITE);
+                let head = h_pos + Vec2::new(angle.cos(), angle.sin()) * 8.0;
+                draw_rectangle(head.x - 6.0, head.y - 4.0, 12.0, 8.0, GOLD);
+            }
+        }
+    }
+
     // Эволюция: Праведный Щит (DivineShield) — вращающиеся священные щиты
     if world.boss_inventory.has_weapon(WeaponType::DivineShield) {
-        let shield_count = 3;
+        let shield_count = (3 + world.boss_inventory.get_duplicator_projectiles()).min(6) as usize;
         let radius = 98.0;
         for i in 0..shield_count {
-            let angle = world.divine_shield_angle + (i as f32) * std::f32::consts::PI * 2.0 / (shield_count as f32);
+            let angle = (time * 3.5) + (i as f32) * std::f32::consts::TAU / (shield_count as f32);
             let s_pos = Vec2::new(bx + angle.cos() * radius, by + angle.sin() * radius);
 
-            if let Some(s_tex) = textures.icon_shield.as_ref() {
+            if let Some(s_tex) = textures.icon_evo_divine_shield.as_ref().or(textures.icon_shield.as_ref()) {
                 draw_texture_ex(
                     s_tex,
                     s_pos.x - 16.0,
@@ -408,6 +439,8 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
                     WHITE,
                     DrawTextureParams {
                         dest_size: Some(Vec2::new(32.0, 32.0)),
+                        rotation: angle + std::f32::consts::PI / 2.0,
+                        pivot: Some(s_pos),
                         ..Default::default()
                     },
                 );
@@ -420,15 +453,78 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         }
     }
 
+    // Орбитальные Бастионы (AegisOrbiters) — защитные кристаллы-барьеры
+    if world.boss_inventory.has_weapon(WeaponType::AegisOrbiters) {
+        let bastion_count = (3 + world.boss_inventory.get_duplicator_projectiles()).clamp(3, 7) as usize;
+        let radius = 106.0;
+        for i in 0..bastion_count {
+            let angle = (-time * 2.8) + (i as f32) * std::f32::consts::TAU / (bastion_count as f32);
+            let a_pos = Vec2::new(bx + angle.cos() * radius, by + angle.sin() * radius);
+
+            if let Some(a_tex) = textures.icon_aegis_orbiters.as_ref().or(textures.icon_aegis.as_ref()) {
+                draw_texture_ex(
+                    a_tex,
+                    a_pos.x - 15.0,
+                    a_pos.y - 15.0,
+                    Color::new(0.4, 0.95, 1.0, 0.95),
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(30.0, 30.0)),
+                        rotation: angle,
+                        pivot: Some(a_pos),
+                        ..Default::default()
+                    },
+                );
+            } else {
+                draw_circle(a_pos.x, a_pos.y, 10.0, Color::new(0.2, 0.85, 1.0, 0.85));
+                draw_circle_lines(a_pos.x, a_pos.y, 10.0, 2.0, WHITE);
+            }
+        }
+    }
+
+    // Эволюция: Несокрушимая Крепость (InvincibleBastion) — сверхпрочное силовое поле и крепости
+    if world.boss_inventory.has_weapon(WeaponType::InvincibleBastion) {
+        let bastion_count = (4 + world.boss_inventory.get_duplicator_projectiles()).clamp(4, 8) as usize;
+        let radius = 125.0;
+        let pulse = (time * 4.0).sin() * 3.0;
+
+        // Силовое кольцо между бастионами
+        draw_circle_lines(bx, by, radius + pulse, 2.5, Color::new(0.3, 0.9, 1.0, 0.65));
+        draw_circle(bx, by, radius + pulse, Color::new(0.1, 0.6, 1.0, 0.08));
+
+        for i in 0..bastion_count {
+            let angle = (-time * 3.4) + (i as f32) * std::f32::consts::TAU / (bastion_count as f32);
+            let a_pos = Vec2::new(bx + angle.cos() * (radius + pulse), by + angle.sin() * (radius + pulse));
+
+            if let Some(a_tex) = textures.icon_aegis_orbiters.as_ref().or(textures.icon_aegis.as_ref()) {
+                draw_texture_ex(
+                    a_tex,
+                    a_pos.x - 18.0,
+                    a_pos.y - 18.0,
+                    GOLD,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(36.0, 36.0)),
+                        rotation: angle,
+                        pivot: Some(a_pos),
+                        ..Default::default()
+                    },
+                );
+            } else {
+                draw_circle(a_pos.x, a_pos.y, 13.0, GOLD);
+                draw_circle_lines(a_pos.x, a_pos.y, 13.0, 3.0, WHITE);
+            }
+        }
+    }
+
     // Орбитальный Гримуар / Инфернальная Литургия: вращающиеся книги/скрижали
     let has_scriptures = world.boss_inventory.has_weapon(WeaponType::SacredScriptures);
     let has_liturgy = world.boss_inventory.has_weapon(WeaponType::InfernalLiturgy);
     if has_scriptures || has_liturgy {
-        let book_count = (if has_liturgy { 4 } else { 2 }) + world.boss_inventory.get_duplicator_projectiles();
-        let radius = if has_liturgy { 110.0 } else { 88.0 };
+        let book_count = (if has_liturgy { 4 } else { 2 }) + world.boss_inventory.get_duplicator_projectiles() as usize;
+        let radius = if has_liturgy { 114.0 } else { 90.0 };
         let book_col = if has_liturgy { ORANGE } else { GOLD };
+        let speed = if has_liturgy { 5.0 } else { 4.2 };
         for i in 0..book_count {
-            let angle = world.boss_inventory.scriptures_orbit_angle + (i as f32) * std::f32::consts::PI * 2.0 / (book_count as f32);
+            let angle = (time * speed) + (i as f32) * std::f32::consts::TAU / (book_count as f32);
             let p_pos = Vec2::new(bx + angle.cos() * radius, by + angle.sin() * radius);
             if let Some(b_tex) = textures.icon_cooldown_tome.as_ref().or(textures.icon_book.as_ref()) {
                 draw_texture_ex(

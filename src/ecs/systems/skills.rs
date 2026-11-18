@@ -436,31 +436,15 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     death_ray_damage = effective_damage;
                 }
 
-                // 1.7 Святой Молот: запуск молотов с высоким уроном по нежити и алтарям
+                // 1.7 Святой Молот (ОРБИТАЛЬНЫЙ НАВЫК): непрерывно вращающиеся освященные молоты вокруг босса
                 WeaponType::HolyHammer => {
-                    let count = 2 + (weapon.level / 3) as usize;
-                    for i in 0..count {
-                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
-                        let dir = Vec2::new(angle.cos(), angle.sin());
-                        new_projectiles.push(ProjectileEntity {
-                            id: 0,
-                            pos: boss_pos,
-                            vel: dir * (270.0 * spd_mult),
-                            damage: effective_damage,
-                            damage_type: DamageType::Holy,
-                            armor_penetration: armor_pen,
-                            lifetime: 2.2,
-                            radius: 14.0,
-                            pierce: 5,
-                            faction: Faction::Boss,
-                            homing_strength: 0.0,
-                            source_weapon: Some(WeaponType::HolyHammer),
-                        });
-                    }
+                    world.spawn_particles(boss_pos, 8, GOLD, 90.0);
                 }
 
-                // 1.8 Праведный Щит (ЭВОЛЮЦИЯ): кружащийся щит с вампиризмом
-                WeaponType::DivineShield => {}
+                // 1.8 Праведный Щит (ЭВОЛЮЦИЯ, ОРБИТАЛЬНЫЙ НАВЫК): священные щиты с вампиризмом
+                WeaponType::DivineShield => {
+                    world.spawn_particles(boss_pos, 12, GOLD, 110.0);
+                }
 
                 // 1.9 Ледяные Осколки: веер замедляющих кристаллов
                 WeaponType::IceShards => {
@@ -1131,50 +1115,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     world.spawn_particles(boss_pos, 40, Color::new(0.4, 1.0, 0.7, 0.9), 240.0);
                 }
 
-                // 1.35 Орбитальные Бастионы: защитные щиты вокруг босса
+                // 1.35 Орбитальные Бастионы (ОРБИТАЛЬНЫЙ НАВЫК): непрерывно вращающиеся защитные бастионы
                 WeaponType::AegisOrbiters => {
-                    let count = 2 + weapon.bonus_projectiles as usize;
-                    for i in 0..count {
-                        let base_angle = (world.game_time * 3.5) + (i as f32 * std::f32::consts::PI * 2.0 / count as f32);
-                        let dir = Vec2::new(base_angle.cos(), base_angle.sin());
-                        new_projectiles.push(ProjectileEntity {
-                            id: 0,
-                            pos: boss_pos + dir * 65.0,
-                            vel: dir * (200.0 * spd_mult),
-                            damage: effective_damage,
-                            damage_type: DamageType::Physical,
-                            armor_penetration: armor_pen + 0.3,
-                            lifetime: 1.8,
-                            radius: 16.0,
-                            pierce: 10,
-                            faction: Faction::Boss,
-                            homing_strength: 0.0,
-                            source_weapon: Some(WeaponType::AegisOrbiters),
-                        });
-                    }
+                    world.spawn_particles(boss_pos, 10, Color::new(0.3, 0.9, 1.0, 0.9), 110.0);
                 }
 
-                // 1.36 Несокрушимая Крепость (ЭВОЛЮЦИЯ): 4 гигантских бастиона
+                // 1.36 Несокрушимая Крепость (ЭВОЛЮЦИЯ, ОРБИТАЛЬНЫЙ НАВЫК): гигантские крепостные щиты с защитным полем
                 WeaponType::InvincibleBastion => {
-                    let count = 4 + weapon.bonus_projectiles as usize;
-                    for i in 0..count {
-                        let base_angle = (world.game_time * 4.0) + (i as f32 * std::f32::consts::PI * 0.5);
-                        let dir = Vec2::new(base_angle.cos(), base_angle.sin());
-                        new_projectiles.push(ProjectileEntity {
-                            id: 0,
-                            pos: boss_pos + dir * 75.0,
-                            vel: dir * (250.0 * spd_mult),
-                            damage: effective_damage,
-                            damage_type: DamageType::Holy,
-                            armor_penetration: armor_pen + 0.6,
-                            lifetime: 2.2,
-                            radius: 22.0,
-                            pierce: 25,
-                            faction: Faction::Boss,
-                            homing_strength: 0.0,
-                            source_weapon: Some(WeaponType::InvincibleBastion),
-                        });
-                    }
+                    world.spawn_particles(boss_pos, 18, Color::new(0.35, 0.95, 1.0, 0.95), 130.0);
                 }
 
                 // 1.37 Хаотический Метеор: падающий метеорит с колоссальным взрывом
@@ -1269,52 +1217,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     world.spawn_particles(boss_pos, 50, MAGENTA, 320.0);
                 }
 
-                // 1.41 Орбитальный Гримуар: вращающиеся вокруг босса священные фолианты
+                // 1.41 Орбитальный Гримуар (ОРБИТАЛЬНЫЙ НАВЫК): священные фолианты непрерывно кружатся вокруг босса
                 WeaponType::SacredScriptures => {
-                    let count = 2 + weapon.bonus_projectiles as usize + extra_proj;
-                    for i in 0..count {
-                        let base_angle = world.boss_inventory.scriptures_orbit_angle + (i as f32 * std::f32::consts::PI * 2.0 / count as f32);
-                        let dir = Vec2::new(base_angle.cos(), base_angle.sin());
-                        new_projectiles.push(ProjectileEntity {
-                            id: 0,
-                            pos: boss_pos + dir * (95.0 * aoe_mult),
-                            vel: dir * (170.0 * spd_mult),
-                            damage: effective_damage,
-                            damage_type: DamageType::Holy,
-                            armor_penetration: armor_pen + 0.25,
-                            lifetime: 2.6,
-                            radius: 18.0 * aoe_mult,
-                            pierce: 18,
-                            faction: Faction::Boss,
-                            homing_strength: 0.0,
-                            source_weapon: Some(WeaponType::SacredScriptures),
-                        });
-                    }
-                    world.spawn_particles(boss_pos, 16, GOLD, 140.0);
+                    world.spawn_particles(boss_pos, 16, GOLD, 100.0);
                 }
 
-                // 1.42 Инфернальная Литургия (ЭВОЛЮЦИЯ): адские фолианты с бесконечным пробитием
+                // 1.42 Инфернальная Литургия (ЭВОЛЮЦИЯ, ОРБИТАЛЬНЫЙ НАВЫК): пылающие адские скрижали
                 WeaponType::InfernalLiturgy => {
-                    let count = 4 + weapon.bonus_projectiles as usize + extra_proj;
-                    for i in 0..count {
-                        let base_angle = world.boss_inventory.scriptures_orbit_angle + (i as f32 * std::f32::consts::PI * 2.0 / count as f32);
-                        let dir = Vec2::new(base_angle.cos(), base_angle.sin());
-                        new_projectiles.push(ProjectileEntity {
-                            id: 0,
-                            pos: boss_pos + dir * (120.0 * aoe_mult),
-                            vel: dir * (240.0 * spd_mult),
-                            damage: effective_damage,
-                            damage_type: DamageType::Fire,
-                            armor_penetration: armor_pen + 0.45,
-                            lifetime: 3.5,
-                            radius: 24.0 * aoe_mult,
-                            pierce: 99,
-                            faction: Faction::Boss,
-                            homing_strength: 0.0,
-                            source_weapon: Some(WeaponType::InfernalLiturgy),
-                        });
-                    }
-                    world.spawn_particles(boss_pos, 35, ORANGE, 220.0);
+                    world.spawn_particles(boss_pos, 28, ORANGE, 125.0);
                 }
 
                 // 1.43 Клинок Веры: крестообразный бумеранг, прорезающий ряды врагов и возвращающийся назад

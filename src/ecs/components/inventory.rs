@@ -343,6 +343,10 @@ impl BossInventory {
         self.weapons.iter().any(|w| w.kind == kind)
     }
 
+    pub fn get_weapon(&self, kind: WeaponType) -> Option<&WeaponSlot> {
+        self.weapons.iter().find(|w| w.kind == kind)
+    }
+
     pub fn has_passive(&self, kind: PassiveType) -> bool {
         self.passives.iter().any(|p| p.kind == kind)
     }
@@ -797,5 +801,38 @@ mod tests {
         // Приказ "Стоп" (клавиша S) мгновенно очищает очередь
         world.boss_waypoint_queue.clear();
         assert!(world.boss_waypoint_queue.is_empty());
+    }
+
+    #[test]
+    fn test_orbitals_and_inventory_methods() {
+        use crate::content::weapons::SkillDelivery;
+
+        // Все 7 орбитальных навыков обязаны иметь тип NonDirectional
+        let orbitals = [
+            WeaponType::BladeStorm,
+            WeaponType::HolyHammer,
+            WeaponType::DivineShield,
+            WeaponType::AegisOrbiters,
+            WeaponType::InvincibleBastion,
+            WeaponType::SacredScriptures,
+            WeaponType::InfernalLiturgy,
+        ];
+
+        for &kind in &orbitals {
+            let def = crate::content::weapons::get_weapon_def(kind);
+            assert_eq!(
+                def.delivery,
+                SkillDelivery::NonDirectional,
+                "Weapon {:?} must be NonDirectional",
+                kind
+            );
+        }
+
+        // Проверяем получение слота оружия через get_weapon
+        let inv = BossInventory::new();
+        assert!(inv.has_weapon(WeaponType::WindBlade));
+        assert!(inv.get_weapon(WeaponType::WindBlade).is_some());
+        assert_eq!(inv.get_weapon(WeaponType::WindBlade).unwrap().level, 1);
+        assert!(inv.get_weapon(WeaponType::HolyHammer).is_none());
     }
 }

@@ -130,7 +130,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.5,
             damage_type: DamageType::Ice,
             is_evolution: true,
-            delivery: SkillDelivery::TargetedEntity,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::PoisonOrbs => WeaponDefinition {
             kind,

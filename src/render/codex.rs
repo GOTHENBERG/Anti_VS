@@ -396,19 +396,21 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
     let current_page = WEAPONS_PAGE.load(Ordering::Relaxed);
 
     // Верхние переключатели страниц Оружия
-    let p_btn_w = 230.0;
+    let p_btn_w = 210.0;
     let p_btn_h = 28.0;
     let p1_x = x;
-    let p2_x = x + p_btn_w + 12.0;
+    let p2_x = x + p_btn_w + 10.0;
+    let p3_x = x + (p_btn_w + 10.0) * 2.0;
     let p_btn_y = y;
 
     let p1_hover = mx >= p1_x && mx <= p1_x + p_btn_w && my >= p_btn_y && my <= p_btn_y + p_btn_h;
     let p2_hover = mx >= p2_x && mx <= p2_x + p_btn_w && my >= p_btn_y && my <= p_btn_y + p_btn_h;
+    let p3_hover = mx >= p3_x && mx <= p3_x + p_btn_w && my >= p_btn_y && my <= p_btn_y + p_btn_h;
 
     // Кнопка Страница 1 (1-10)
     draw_rectangle(p1_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 0 { Color::new(0.24, 0.18, 0.38, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
     draw_rectangle_lines(p1_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 0 { 2.0 } else { 1.0 }, if current_page == 0 { GOLD } else { GRAY });
-    fonts.draw_heading("⚔️ СТРАНИЦА 1: ОРУЖИЕ [1-10]", p1_x + 12.0, p_btn_y + 19.0, 11.5, if current_page == 0 { GOLD } else { LIGHTGRAY });
+    fonts.draw_heading("⚔️ СТРАНИЦА 1: ОРУЖИЕ [1-10]", p1_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 0 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p1_hover {
         WEAPONS_PAGE.store(0, Ordering::Relaxed);
     }
@@ -419,6 +421,14 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
     fonts.draw_heading("🔥 СТРАНИЦА 2: ОРУЖИЕ [11-20]", p2_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 1 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p2_hover {
         WEAPONS_PAGE.store(1, Ordering::Relaxed);
+    }
+
+    // Кнопка Страница 3 (21-28)
+    draw_rectangle(p3_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 2 { Color::new(0.18, 0.32, 0.44, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
+    draw_rectangle_lines(p3_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 2 { 2.0 } else { 1.0 }, if current_page == 2 { GOLD } else { GRAY });
+    fonts.draw_heading("✨ СТРАНИЦА 3: ОРУЖИЕ [21-28]", p3_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 2 { GOLD } else { LIGHTGRAY });
+    if is_mouse_button_pressed(MouseButton::Left) && p3_hover {
+        WEAPONS_PAGE.store(2, Ordering::Relaxed);
     }
 
     let weapons_page1 = [
@@ -607,7 +617,86 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
         ),
     ];
 
-    let active_weapons = if current_page == 0 { weapons_page1 } else { weapons_page2 };
+    let weapons_page3 = [
+        (
+            WeaponType::SacredScriptures,
+            "21. Орбитальный Гримуар -> ИНФЕРНАЛЬНАЯ ЛИТУРГИЯ",
+            "Рецепт: Орбитальный Гримуар (ур. 8) + Фолиант Времени",
+            "Базовый: Священные фолианты непрерывно кружатся вокруг босса.",
+            "ЭВОЛЮЦИЯ: Пылающие адские скрижали с бесконечным пробитием врагов!",
+            textures.icon_cooldown_tome.as_ref().or(textures.icon_book.as_ref()),
+            GOLD,
+        ),
+        (
+            WeaponType::FaithBoomerang,
+            "22. Клинок Веры -> НЕБЕСНЫЙ ВЕРДИКТ",
+            "Рецепт: Клинок Веры (ур. 8) + Клевер Судьбы",
+            "Базовый: Вращающийся крест-бумеранг, рассекающий ряды монстров.",
+            "ЭВОЛЮЦИЯ: Каскад святых клинков судного дня с повышенным критом!",
+            textures.icon_sword.as_ref().or(textures.proj_holy.as_ref()),
+            Color::new(0.5, 0.9, 1.0, 1.0),
+        ),
+        (
+            WeaponType::CursedChalice,
+            "23. Осквернённая Чаша -> КРОВАВЫЙ ПОТОП",
+            "Рецепт: Осквернённая Чаша (ур. 8) + Сердце Гиганта",
+            "Базовый: Проклятая чаша, детонирующая фонтаном ядовитой крови.",
+            "ЭВОЛЮЦИЯ: Непрерывный кровавый шторм, исцеляющий босса от павших врагов!",
+            textures.icon_bottle.as_ref().or(textures.icon_chest.as_ref()),
+            Color::new(0.9, 0.2, 0.3, 1.0),
+        ),
+        (
+            WeaponType::VampiricAura,
+            "24. Аура Вампиризма -> ПИРШЕСТВО ДУШ",
+            "Рецепт: Аура Вампиризма (ур. 8) + Кровавый Камень",
+            "Базовый: Алая аура, непрерывно вытягивающая жизнь из мобов в радиусе.",
+            "ЭВОЛЮЦИЯ: Колоссальный радиус кражи HP и постоянный рост силы за души!",
+            textures.icon_blood_stone.as_ref().or(textures.icon_fire_aura.as_ref()),
+            Color::new(1.0, 0.15, 0.25, 1.0),
+        ),
+        (
+            WeaponType::RunicPrism,
+            "25. Руническая Призма -> ИСКРИВЛЕНИЕ ПРОСТРАНСТВА",
+            "Рецепт: Руническая Призма (ур. 8) + Призматический Фокус",
+            "Базовый: Световые лучи, преломляющиеся между скоплениями врагов.",
+            "ЭВОЛЮЦИЯ: Пространственные разломы, расщепляющие врагов на атомы!",
+            textures.icon_prismatic.as_ref().or(textures.icon_jewel.as_ref()),
+            Color::new(0.7, 0.4, 1.0, 1.0),
+        ),
+        (
+            WeaponType::AbyssalBeam,
+            "26. Столп Бездны -> КАСКАД АПОКАЛИПСИСА",
+            "Рецепт: Столп Бездны (ур. 8) + Камень Проклятия Бездны",
+            "Базовый: Нисходящий луч Бездны, выжигающий область арены.",
+            "ЭВОЛЮЦИЯ: Орбитальная бомбардировка десятками черных лучей смерти!",
+            textures.icon_void_rift.as_ref().or(textures.icon_brimstone.as_ref()),
+            Color::new(0.85, 0.2, 0.95, 1.0),
+        ),
+        (
+            WeaponType::ChronoStasis,
+            "27. Хроно-Стазис -> БЕСКОНЕЧНАЯ ДИЛАТАЦИЯ",
+            "Рецепт: Хроно-Стазис (ур. 8) + Песочные Часы",
+            "Базовый: Купол замедления времени, тормозящий мобов и снаряды на 60%.",
+            "ЭВОЛЮЦИЯ: Полная заморозка времени для всех врагов на 2.5 сек каждые 8 сек!",
+            textures.icon_chrono_hourglass.as_ref().or(textures.icon_hourglass.as_ref()),
+            Color::new(0.4, 0.8, 1.0, 1.0),
+        ),
+        (
+            WeaponType::AstralCloak,
+            "28. Астральный Саван -> САВАН КРОВАВОГО ИМПЕРАТОРА",
+            "Рецепт: Астральный Саван (ур. 8) + Броня Света",
+            "Базовый: Астральные заряды, полностью поглощающие входящий урон раз в 12 сек.",
+            "ЭВОЛЮЦИЯ: Блокирует удары, ограничивает урон макс. 12 HP и взрывается кровью!",
+            textures.icon_armor.as_ref().or(textures.icon_shield.as_ref()),
+            GOLD,
+        ),
+    ];
+
+    let active_weapons: &[(WeaponType, &str, &str, &str, &str, Option<&Texture2D>, Color)] = match current_page {
+        0 => &weapons_page1,
+        1 => &weapons_page2,
+        _ => &weapons_page3,
+    };
 
     let grid_y = y + 34.0;
     let grid_h = h - 38.0;
@@ -681,19 +770,21 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
     let current_page = PASSIVES_PAGE.load(Ordering::Relaxed);
 
     // Верхние переключатели страниц Пассивок
-    let p_btn_w = 240.0;
+    let p_btn_w = 210.0;
     let p_btn_h = 28.0;
     let p1_x = x;
-    let p2_x = x + p_btn_w + 12.0;
+    let p2_x = x + p_btn_w + 10.0;
+    let p3_x = x + (p_btn_w + 10.0) * 2.0;
     let p_btn_y = y;
 
     let p1_hover = mx >= p1_x && mx <= p1_x + p_btn_w && my >= p_btn_y && my <= p_btn_y + p_btn_h;
     let p2_hover = mx >= p2_x && mx <= p2_x + p_btn_w && my >= p_btn_y && my <= p_btn_y + p_btn_h;
+    let p3_hover = mx >= p3_x && mx <= p3_x + p_btn_w && my >= p_btn_y && my <= p_btn_y + p_btn_h;
 
     // Кнопка Страница 1 (Базовые пассивки 1-14)
     draw_rectangle(p1_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 0 { Color::new(0.24, 0.18, 0.38, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
     draw_rectangle_lines(p1_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 0 { 2.0 } else { 1.0 }, if current_page == 0 { GOLD } else { GRAY });
-    fonts.draw_heading("🛡️ СТРАНИЦА 1: ПАССИВКИ [1-14]", p1_x + 12.0, p_btn_y + 19.0, 11.5, if current_page == 0 { GOLD } else { LIGHTGRAY });
+    fonts.draw_heading("🛡️ СТРАНИЦА 1: ПАССИВКИ [1-14]", p1_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 0 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p1_hover {
         PASSIVES_PAGE.store(0, Ordering::Relaxed);
     }
@@ -704,6 +795,14 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
     fonts.draw_heading("👑 СТРАНИЦА 2: РЕЛИКВИИ [15-28]", p2_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 1 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p2_hover {
         PASSIVES_PAGE.store(1, Ordering::Relaxed);
+    }
+
+    // Кнопка Страница 3 (Высшие артефакты 29-35)
+    draw_rectangle(p3_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 2 { Color::new(0.18, 0.32, 0.44, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
+    draw_rectangle_lines(p3_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 2 { 2.0 } else { 1.0 }, if current_page == 2 { GOLD } else { GRAY });
+    fonts.draw_heading("🔮 СТРАНИЦА 3: АРТЕФАКТЫ [29-35]", p3_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 2 { GOLD } else { LIGHTGRAY });
+    if is_mouse_button_pressed(MouseButton::Left) && p3_hover {
+        PASSIVES_PAGE.store(2, Ordering::Relaxed);
     }
 
     let passives_page1 = [
@@ -934,17 +1033,72 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             textures.icon_halo_radiance.as_ref().or(textures.icon_armor.as_ref()),
             GOLD,
         ),
+    ];
+
+    let passives_page3 = [
         (
             PassiveType::SporeMushroom,
             "29. Споровый Мицелий",
             "Пускает корни при остановке: +18 HP/с (+1.5% макс HP), игнорируя урон и врагов!",
-            "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Непрерывная биолюминесцентная регенерация.",
+            "АРТЕФАКТ: Непрерывная биолюминесцентная регенерация.",
             textures.icon_spore_mushroom.as_ref(),
             Color::new(0.2, 0.95, 0.6, 1.0),
         ),
+        (
+            PassiveType::DuplicatorRelic,
+            "30. Реликвия Раздвоения",
+            "+1 дополнительный снаряд/орбиталка ко всем навыкам за каждый уровень!",
+            "КЛЮЧЕВОЙ АРТЕФАКТ: Умножает огневую мощь и плотность щитов в 1.5 - 2 раза.",
+            textures.icon_prismatic.as_ref().or(textures.icon_jewel.as_ref()),
+            GOLD,
+        ),
+        (
+            PassiveType::CandelabraOfFury,
+            "31. Канделябр Ярости",
+            "+25% к площади действия (AoE) всех аур, взрывов и орбитальных барьеров.",
+            "КЛЮЧЕВОЙ АРТЕФАКТ: Огненная Аура и Буря Клинков охватывают огромную зону.",
+            textures.icon_cinder_heart.as_ref().or(textures.icon_fire_aura.as_ref()),
+            ORANGE,
+        ),
+        (
+            PassiveType::AbyssalCurseStone,
+            "32. Камень Проклятия Бездны",
+            "+40% к частоте спавна и скорости мобов, но +75% к получаемому опыту (XP)!",
+            "АРТЕФАКТ ЭВОЛЮЦИИ: Столп Бездны -> КАСКАД АПОКАЛИПСИСА.",
+            textures.icon_void_rift.as_ref().or(textures.icon_jewel.as_ref()),
+            PURPLE,
+        ),
+        (
+            PassiveType::SilverTears,
+            "33. Серебряные Слёзы",
+            "Периодическое благословение: мгновенное исцеление +10 HP каждые 3 секунды.",
+            "СВЯТОСТЬ: Защищает босса от периодического DoT-урона яда и горения.",
+            textures.icon_halo_radiance.as_ref().or(textures.icon_elixir.as_ref()),
+            SKYBLUE,
+        ),
+        (
+            PassiveType::GoldenSeal,
+            "34. Золотая Печать",
+            "+15% к скорости набора опыта (XP) и -12% ко всем перезарядкам способностей.",
+            "ИМПЕРСКАЯ РЕЛИКВИЯ: Ускоряет достижение 8 уровня для эволюций.",
+            textures.icon_solar_relic.as_ref().or(textures.icon_ring.as_ref()),
+            GOLD,
+        ),
+        (
+            PassiveType::TitanBloodArmor,
+            "35. Броня Титанической Крови",
+            "+30% к максимальному запасу здоровья и -15% входящего физического урона.",
+            "НЕСОКРУШИМОСТЬ: Превращает босса в неприступную живую крепость.",
+            textures.icon_light_armor.as_ref().or(textures.icon_armor.as_ref()),
+            RED,
+        ),
     ];
 
-    let active_passives = if current_page == 0 { passives_page1.as_slice() } else { passives_page2.as_slice() };
+    let active_passives = match current_page {
+        0 => passives_page1.as_slice(),
+        1 => passives_page2.as_slice(),
+        _ => passives_page3.as_slice(),
+    };
 
     let grid_y = y + 34.0;
     let grid_h = h - 38.0;

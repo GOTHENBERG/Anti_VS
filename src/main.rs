@@ -440,14 +440,13 @@ async fn main() {
             audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
 
-        // 1. Управление камерой на большой карте: WASD + колесо мыши + центрирование по C
+        // 1. Управление камерой на большой карте: Стрелки + колесо мыши + центрирование по C
         handle_camera_input(
             &mut cam_pos,
             &mut cam_zoom,
             &mut follow_boss,
             world.boss_pos,
             dt,
-            game_role == crate::render::main_menu::GameRole::Boss,
         );
 
         let screen_w = screen_width();
@@ -1000,20 +999,19 @@ fn handle_camera_input(
     follow_boss: &mut bool,
     boss_pos: Vec2,
     dt: f32,
-    arrows_only: bool,
 ) {
     let mut move_dir = Vec2::ZERO;
 
-    if is_key_down(KeyCode::Up) || (!arrows_only && is_key_down(KeyCode::W)) {
+    if is_key_down(KeyCode::Up) {
         move_dir.y -= 1.0;
     }
-    if is_key_down(KeyCode::Down) || (!arrows_only && is_key_down(KeyCode::S)) {
+    if is_key_down(KeyCode::Down) {
         move_dir.y += 1.0;
     }
-    if is_key_down(KeyCode::Left) || (!arrows_only && is_key_down(KeyCode::A)) {
+    if is_key_down(KeyCode::Left) {
         move_dir.x -= 1.0;
     }
-    if is_key_down(KeyCode::Right) || (!arrows_only && is_key_down(KeyCode::D)) {
+    if is_key_down(KeyCode::Right) {
         move_dir.x += 1.0;
     }
 
@@ -1074,9 +1072,6 @@ fn collect_boss_player_input(
 ) -> (Vec2, Vec2, bool) {
     use crate::render::main_menu::{BossControlScheme, PlayerControl};
 
-    let (mx, my) = mouse_position();
-    let mouse_world = world_cam.screen_to_world(Vec2::new(mx, my));
-    let aim_dir = (mouse_world - world.boss_pos).normalize_or_zero();
     let dash_pressed = is_key_pressed(settings.key_for(PlayerControl::Dash));
 
     match settings.control_scheme {
@@ -1103,6 +1098,12 @@ fn collect_boss_player_input(
                 move_dir = move_dir.normalize();
             }
 
+            let aim_dir = if move_dir.length_squared() > 0.01 {
+                move_dir.normalize()
+            } else {
+                world.boss_facing
+            };
+
             (move_dir, aim_dir, dash_pressed)
         }
         BossControlScheme::MouseRts => {
@@ -1110,6 +1111,9 @@ fn collect_boss_player_input(
             if is_key_pressed(settings.key_for(PlayerControl::Stop)) {
                 world.boss_waypoint_queue.clear();
             }
+
+            let (mx, my) = mouse_position();
+            let mouse_world = world_cam.screen_to_world(Vec2::new(mx, my));
 
             let screen_w = screen_width();
             let top_panel_w = 680.0f32.min(screen_w - 240.0);
@@ -1142,6 +1146,12 @@ fn collect_boss_player_input(
                     break;
                 }
             }
+
+            let aim_dir = if move_dir.length_squared() > 0.01 {
+                move_dir.normalize()
+            } else {
+                world.boss_facing
+            };
 
             (move_dir, aim_dir, dash_pressed)
         }

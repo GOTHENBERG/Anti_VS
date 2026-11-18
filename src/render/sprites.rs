@@ -171,16 +171,16 @@ fn draw_pillar(pos: Vec2) {
 
 /// Отрисовка Босса (Соло-героя: благородный Паладин в латах с плащом, мечом и анимацией)
 pub fn draw_boss(pos: Vec2, vel: Vec2, facing: Vec2, invulnerable: bool, skin: u8, time: f32, textures: &GameTextures) {
-    let facing_dir = if facing.length_squared() > 0.1 {
-        facing.normalize()
-    } else if vel.length_squared() > 1.0 {
+    let facing_dir = if vel.length_squared() > 4.0 {
         vel.normalize()
+    } else if facing.length_squared() > 0.05 {
+        facing.normalize()
     } else {
         Vec2::new(1.0, 0.0)
     };
     let normal_dir = Vec2::new(-facing_dir.y, facing_dir.x);
     let is_moving = vel.length_squared() > 4.0;
-    let flip_x = facing_dir.x < -0.1;
+    let flip_x = facing_dir.x < -0.05;
 
     // 1. Тень и золотая аура Паладина под ногами (гарантирует яркое выделение на любом полу)
     draw_ellipse(pos.x, pos.y + 14.0, 24.0, 11.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.55));
