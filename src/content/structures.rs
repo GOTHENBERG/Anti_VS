@@ -112,6 +112,59 @@ pub fn can_place_blood_altar(world: &World, requested: Vec2) -> bool {
         .any(|s| s.health.is_alive() && s.pos.distance_squared(requested) < min_spacing_sq)
 }
 
+/// Находит наилучшую клетку для постройки алтаря по алгоритму Maximin Distance от всех живых боссов.
+/// Для любого количества боссов (соло или кооп) находит валидную клетку,
+/// расстояние от которой до БЛИЖАЙШЕГО живого босса максимально.
+pub fn find_furthest_altar_spawn(world: &World) -> Option<Vec2> {
+    let mut living_boss_positions = Vec::with_capacity(world.coop_bosses.len() + 1);
+    if world.boss_health.is_alive() {
+        living_boss_positions.push(world.boss_pos);
+    }
+    for player in &world.coop_bosses {
+        if player.boss_health.is_alive() {
+            living_boss_positions.push(player.boss_pos);
+        }
+    }
+
+    if living_boss_positions.is_empty() {
+        let center = snap_to_build_grid(Vec2::new(crate::core::MAP_WIDTH * 0.5, crate::core::MAP_HEIGHT * 0.5));
+        return if can_place_blood_altar(world, center) { Some(center) } else { None };
+    }
+
+    let cols = (crate::core::MAP_WIDTH / BUILD_GRID_SIZE).floor() as usize; // 72
+    let rows = (crate::core::MAP_HEIGHT / BUILD_GRID_SIZE).floor() as usize; // 48
+
+    let mut best_pos: Option<Vec2> = None;
+    let mut max_min_dist_sq = -1.0f32;
+
+    for gy in 0..rows {
+        let py = (gy as f32 + 0.5) * BUILD_GRID_SIZE;
+        for gx in 0..cols {
+            let px = (gx as f32 + 0.5) * BUILD_GRID_SIZE;
+            let candidate = Vec2::new(px, py);
+
+            if !can_place_blood_altar(world, candidate) {
+                continue;
+            }
+
+            let mut min_dist_sq = f32::MAX;
+            for boss_pos in &living_boss_positions {
+                let d_sq = candidate.distance_squared(*boss_pos);
+                if d_sq < min_dist_sq {
+                    min_dist_sq = d_sq;
+                }
+            }
+
+            if min_dist_sq > max_min_dist_sq {
+                max_min_dist_sq = min_dist_sq;
+                best_pos = Some(candidate);
+            }
+        }
+    }
+
+    best_pos
+}
+
 /// Пытается построить алтарь в запрошенной точке.
 pub fn try_spawn_blood_altar(world: &mut World, requested: Vec2) -> bool {
     let requested = snap_to_build_grid(requested);

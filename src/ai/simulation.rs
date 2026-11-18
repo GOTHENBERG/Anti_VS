@@ -392,29 +392,30 @@ fn run_director_decision(
         let ctx = build_director_context(world);
         let decision = net.forward(&obs, &ctx);
 
-        // 1. Постройка Алтаря Крови: сначала проверяем валидность места,
-        //    чтобы не списывать души и кулдаун за неудачную постройку.
-        if decision.should_build_altar
-            && can_place_blood_altar(world, decision.altar_target_pos)
-        {
-            let altar_tier = decision.altar_tier;
-            let altar_cost = crate::content::structures::altar_cost(altar_tier);
-            let altar_cd = crate::content::structures::altar_cooldown(altar_tier);
-            let spent = world
-                .directors
-                .first_mut()
-                .map(|d| {
-                    if d.altar_cooldown_for_tier(altar_tier) <= 0.0 && d.spend_points(altar_cost) {
-                        d.set_altar_cooldown_for_tier(altar_tier, altar_cd);
-                        true
-                    } else {
-                        false
-                    }
-                })
-                .unwrap_or(false);
+        // 1. Постройка Алтаря Крови: выбираем максимально отдалённую точку от всех живых боссов
+        if decision.should_build_altar {
+            let target_pos = crate::content::structures::find_furthest_altar_spawn(world)
+                .unwrap_or(decision.altar_target_pos);
+            if can_place_blood_altar(world, target_pos) {
+                let altar_tier = decision.altar_tier;
+                let altar_cost = crate::content::structures::altar_cost(altar_tier);
+                let altar_cd = crate::content::structures::altar_cooldown(altar_tier);
+                let spent = world
+                    .directors
+                    .first_mut()
+                    .map(|d| {
+                        if d.altar_cooldown_for_tier(altar_tier) <= 0.0 && d.spend_points(altar_cost) {
+                            d.set_altar_cooldown_for_tier(altar_tier, altar_cd);
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
 
-            if spent && crate::content::structures::try_spawn_tier_altar(world, decision.altar_target_pos, altar_tier) {
-                *altars_built += 1;
+                if spent && crate::content::structures::try_spawn_tier_altar(world, target_pos, altar_tier) {
+                    *altars_built += 1;
+                }
             }
         }
 
