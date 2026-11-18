@@ -3,3 +3,5 @@
 /dist
 *.zip
 player_settings.json
+*.log
+
