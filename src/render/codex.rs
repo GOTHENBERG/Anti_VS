@@ -125,7 +125,7 @@ fn draw_tab_bestiary(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
     // Кнопка Страница 1 (Тир 1-8)
     draw_rectangle(p1_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 0 { Color::new(0.24, 0.18, 0.38, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
     draw_rectangle_lines(p1_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 0 { 2.0 } else { 1.0 }, if current_page == 0 { GOLD } else { GRAY });
-    fonts.draw_heading("⚔️ СТРАНИЦА 1: ОРДА (ТИР 1-8)", p1_x + 12.0, p_btn_y + 19.0, 11.5, if current_page == 0 { GOLD } else { LIGHTGRAY });
+    fonts.draw_heading("СТРАНИЦА 1: ОРДА (ТИР 1-8)", p1_x + 12.0, p_btn_y + 19.0, 11.5, if current_page == 0 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p1_hover {
         BESTIARY_PAGE.store(0, Ordering::Relaxed);
     }
@@ -133,7 +133,7 @@ fn draw_tab_bestiary(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
     // Кнопка Страница 2 (Тир 9-16)
     draw_rectangle(p2_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 1 { Color::new(0.38, 0.14, 0.22, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
     draw_rectangle_lines(p2_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 1 { 2.0 } else { 1.0 }, if current_page == 1 { GOLD } else { GRAY });
-    fonts.draw_heading("🔥 СТРАНИЦА 2: ЛЕГИОН (ТИР 9-16)", p2_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 1 { GOLD } else { LIGHTGRAY });
+    fonts.draw_heading("СТРАНИЦА 2: ЛЕГИОН (ТИР 9-16)", p2_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 1 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p2_hover {
         BESTIARY_PAGE.store(1, Ordering::Relaxed);
     }
@@ -340,8 +340,8 @@ fn draw_tab_bestiary(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
         // Отрисовка кнопки [i] Досье
         draw_rectangle(btn_x, btn_y, btn_w, btn_h, if is_btn_hover { Color::new(0.38, 0.18, 0.50, 0.95) } else { Color::new(0.16, 0.16, 0.22, 0.90) });
         draw_rectangle_lines(btn_x, btn_y, btn_w, btn_h, if is_btn_hover { 1.5 } else { 1.0 }, if is_btn_hover { GOLD } else { GRAY });
-        let blw = fonts.measure_heading("📖 Досье [i]", 11.0).width;
-        fonts.draw_heading("📖 Досье [i]", btn_x + (btn_w - blw) / 2.0, btn_y + 16.0, 11.0, if is_btn_hover { GOLD } else { WHITE });
+        let blw = fonts.measure_heading("Досье [i]", 11.0).width;
+        fonts.draw_heading("Досье [i]", btn_x + (btn_w - blw) / 2.0, btn_y + 16.0, 11.0, if is_btn_hover { GOLD } else { WHITE });
 
         // Иконка/спрайт моба слева
         if let Some(tex) = textures.get_mob_texture(*tier, 0) {
@@ -410,7 +410,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
     // Кнопка Страница 1 (1-10)
     draw_rectangle(p1_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 0 { Color::new(0.24, 0.18, 0.38, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
     draw_rectangle_lines(p1_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 0 { 2.0 } else { 1.0 }, if current_page == 0 { GOLD } else { GRAY });
-    fonts.draw_heading("⚔️ СТРАНИЦА 1: ОРУЖИЕ [1-10]", p1_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 0 { GOLD } else { LIGHTGRAY });
+    fonts.draw_heading("СТРАНИЦА 1: ОРУЖИЕ [1-10]", p1_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 0 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p1_hover {
         WEAPONS_PAGE.store(0, Ordering::Relaxed);
     }
@@ -418,7 +418,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
     // Кнопка Страница 2 (11-20)
     draw_rectangle(p2_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 1 { Color::new(0.38, 0.14, 0.22, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
     draw_rectangle_lines(p2_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 1 { 2.0 } else { 1.0 }, if current_page == 1 { GOLD } else { GRAY });
-    fonts.draw_heading("🔥 СТРАНИЦА 2: ОРУЖИЕ [11-20]", p2_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 1 { GOLD } else { LIGHTGRAY });
+    fonts.draw_heading("СТРАНИЦА 2: ОРУЖИЕ [11-20]", p2_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 1 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p2_hover {
         WEAPONS_PAGE.store(1, Ordering::Relaxed);
     }
@@ -426,7 +426,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
     // Кнопка Страница 3 (21-28)
     draw_rectangle(p3_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 2 { Color::new(0.18, 0.32, 0.44, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
     draw_rectangle_lines(p3_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 2 { 2.0 } else { 1.0 }, if current_page == 2 { GOLD } else { GRAY });
-    fonts.draw_heading("✨ СТРАНИЦА 3: ОРУЖИЕ [21-28]", p3_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 2 { GOLD } else { LIGHTGRAY });
+    fonts.draw_heading("СТРАНИЦА 3: ОРУЖИЕ [21-28]", p3_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 2 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p3_hover {
         WEAPONS_PAGE.store(2, Ordering::Relaxed);
     }
@@ -730,8 +730,8 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
         // Отрисовка кнопки [i] Рецепт
         draw_rectangle(btn_x, btn_y, btn_w, btn_h, if is_btn_hover { Color::new(0.38, 0.18, 0.50, 0.95) } else { Color::new(0.16, 0.16, 0.22, 0.90) });
         draw_rectangle_lines(btn_x, btn_y, btn_w, btn_h, if is_btn_hover { 1.5 } else { 1.0 }, if is_btn_hover { GOLD } else { GRAY });
-        let blw = fonts.measure_heading("✨ Синтез [i]", 10.5).width;
-        fonts.draw_heading("✨ Синтез [i]", btn_x + (btn_w - blw) / 2.0, btn_y + 15.0, 10.5, if is_btn_hover { GOLD } else { WHITE });
+        let blw = fonts.measure_heading("Синтез [i]", 10.5).width;
+        fonts.draw_heading("Синтез [i]", btn_x + (btn_w - blw) / 2.0, btn_y + 15.0, 10.5, if is_btn_hover { GOLD } else { WHITE });
 
         if is_mouse_button_pressed(MouseButton::Left) && (is_btn_hover || is_card_hover) {
             requested_action = Some(CodexResult::ItemInspection(ItemInspectionTarget::Weapon(*w_kind, 1, 0)));
@@ -784,7 +784,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
     // Кнопка Страница 1 (Базовые пассивки 1-14)
     draw_rectangle(p1_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 0 { Color::new(0.24, 0.18, 0.38, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
     draw_rectangle_lines(p1_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 0 { 2.0 } else { 1.0 }, if current_page == 0 { GOLD } else { GRAY });
-    fonts.draw_heading("🛡️ СТРАНИЦА 1: ПАССИВКИ [1-14]", p1_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 0 { GOLD } else { LIGHTGRAY });
+    fonts.draw_heading("СТРАНИЦА 1: ПАССИВКИ [1-14]", p1_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 0 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p1_hover {
         PASSIVES_PAGE.store(0, Ordering::Relaxed);
     }
@@ -792,7 +792,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
     // Кнопка Страница 2 (Легендарные реликвии 15-28)
     draw_rectangle(p2_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 1 { Color::new(0.38, 0.14, 0.22, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
     draw_rectangle_lines(p2_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 1 { 2.0 } else { 1.0 }, if current_page == 1 { GOLD } else { GRAY });
-    fonts.draw_heading("👑 СТРАНИЦА 2: РЕЛИКВИИ [15-28]", p2_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 1 { GOLD } else { LIGHTGRAY });
+    fonts.draw_heading("СТРАНИЦА 2: РЕЛИКВИИ [15-28]", p2_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 1 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p2_hover {
         PASSIVES_PAGE.store(1, Ordering::Relaxed);
     }
@@ -800,7 +800,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
     // Кнопка Страница 3 (Высшие артефакты 29-35)
     draw_rectangle(p3_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 2 { Color::new(0.18, 0.32, 0.44, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
     draw_rectangle_lines(p3_x, p_btn_y, p_btn_w, p_btn_h, if current_page == 2 { 2.0 } else { 1.0 }, if current_page == 2 { GOLD } else { GRAY });
-    fonts.draw_heading("🔮 СТРАНИЦА 3: АРТЕФАКТЫ [29-35]", p3_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 2 { GOLD } else { LIGHTGRAY });
+    fonts.draw_heading("СТРАНИЦА 3: АРТЕФАКТЫ [29-35]", p3_x + 10.0, p_btn_y + 19.0, 11.5, if current_page == 2 { GOLD } else { LIGHTGRAY });
     if is_mouse_button_pressed(MouseButton::Left) && p3_hover {
         PASSIVES_PAGE.store(2, Ordering::Relaxed);
     }
@@ -1133,8 +1133,8 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
         // Отрисовка кнопки [i] Инфо
         draw_rectangle(btn_x, btn_y, btn_w, btn_h, if is_btn_hover { Color::new(0.38, 0.18, 0.50, 0.95) } else { Color::new(0.16, 0.16, 0.22, 0.90) });
         draw_rectangle_lines(btn_x, btn_y, btn_w, btn_h, if is_btn_hover { 1.5 } else { 1.0 }, if is_btn_hover { GOLD } else { GRAY });
-        let blw = fonts.measure_heading("🔮 Инфо [i]", 10.0).width;
-        fonts.draw_heading("🔮 Инфо [i]", btn_x + (btn_w - blw) / 2.0, btn_y + 14.0, 10.0, if is_btn_hover { GOLD } else { WHITE });
+        let blw = fonts.measure_heading("Инфо [i]", 10.0).width;
+        fonts.draw_heading("Инфо [i]", btn_x + (btn_w - blw) / 2.0, btn_y + 14.0, 10.0, if is_btn_hover { GOLD } else { WHITE });
 
         if is_mouse_button_pressed(MouseButton::Left) && (is_btn_hover || is_card_hover) {
             requested_action = Some(CodexResult::ItemInspection(ItemInspectionTarget::Passive(*p_kind, 1)));
@@ -1172,18 +1172,18 @@ fn draw_tab_mechanics(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts) {
     let text_w = half_w - 24.0;
 
     // Карточка 1: Алтарь Крови
-    draw_card_box(x, y, half_w, card_h, "🏛️ АЛТАРЬ КРОВИ (ПКМ НА КАРТЕ)", fonts);
+    draw_card_box(x, y, half_w, card_h, "АЛТАРЬ КРОВИ (ПКМ НА КАРТЕ)", fonts);
     let mut cy1 = y + 40.0;
     cy1 = fonts.draw_text_wrapped("• Постройка: Клик Правой Кнопкой Мыши (ПКМ) в любой точке арены.", x + 12.0, cy1, 11.0, 14.5, text_w, WHITE) + 3.0;
     cy1 = fonts.draw_text_wrapped("• Стоимость: 50 Очков Душ. Здоровье: 650 HP (Броня 12, уязвим к Святости).", x + 12.0, cy1, 11.0, 14.5, text_w, GOLD) + 3.0;
     cy1 = fonts.draw_text_wrapped("• Пассивный доход: Каждый живой алтарь даёт +3.0 души каждые 2 секунды.", x + 12.0, cy1, 11.0, 14.5, text_w, GREEN) + 3.0;
     cy1 = fonts.draw_text_wrapped("• Аура исцеления: Каждые 3 сек лечит союзных мобов в 180 px на +35 HP.", x + 12.0, cy1, 11.0, 14.5, text_w, RED) + 3.0;
     cy1 = fonts.draw_text_wrapped("• ТАКТИКА: Босс распознаёт алтари как стратегическую угрозу и идёт их штурмовать!", x + 12.0, cy1, 11.0, 14.5, text_w, SKYBLUE) + 3.0;
-    fonts.draw_text_wrapped("⚠️ Защищайте алтари, иначе босс сломает их и получит +150 XP и Магнит!", x + 12.0, cy1, 11.0, 14.5, text_w, YELLOW);
+    fonts.draw_text_wrapped("[!] Защищайте алтари, иначе босс сломает их и получит +150 XP и Магнит!", x + 12.0, cy1, 11.0, 14.5, text_w, YELLOW);
 
     // Карточка 2: Экономика и Грейды Монстров
     let x2 = x + half_w + 16.0;
-    draw_card_box(x2, y, half_w, card_h, "📈 ЭКОНОМИКА И ГРЕЙДЫ МОБОВ [F, G, H]", fonts);
+    draw_card_box(x2, y, half_w, card_h, "ЭКОНОМИКА И ГРЕЙДЫ МОБОВ [F, G, H]", fonts);
     let mut cy2 = y + 40.0;
     cy2 = fonts.draw_text_wrapped("• Базовый доход: +8 Душ/2с. Разгон экономики: +2% от суммы каждой траты душ.", x2 + 12.0, cy2, 11.0, 14.5, text_w, WHITE) + 3.0;
     cy2 = fonts.draw_text_wrapped("• ГРЕЙД [F] Ярость Крови: +12% урон, +6% скорость всех мобов.", x2 + 12.0, cy2, 11.0, 14.5, text_w, RED) + 3.0;
@@ -1193,7 +1193,7 @@ fn draw_tab_mechanics(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts) {
 
     // Карточка 3: Интеллект Босса (Потенциальные поля и Dash)
     let y2 = y + card_h + 16.0;
-    draw_card_box(x, y2, half_w, card_h, "🧠 ТАКТИЧЕСКИЙ ИНТЕЛЛЕКТ БОССА", fonts);
+    draw_card_box(x, y2, half_w, card_h, "ТАКТИЧЕСКИЙ ИНТЕЛЛЕКТ БОССА", fonts);
     let mut cy3 = y2 + 40.0;
     cy3 = fonts.draw_text_wrapped("• Приоритеты огня: Оружие босса целится в культистов-стрелков и Алтари!", x + 12.0, cy3, 11.0, 14.5, text_w, WHITE) + 3.0;
     cy3 = fonts.draw_text_wrapped("• Анти-снайперский натиск: При накоплении дальников босс идёт на сближение.", x + 12.0, cy3, 11.0, 14.5, text_w, SKYBLUE) + 3.0;
@@ -1201,7 +1201,7 @@ fn draw_tab_mechanics(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts) {
     fonts.draw_text_wrapped("• Экстренный рывок (8-лучевой Context Steering Dash): Срабатывает при окружении или HP <30%. Рывок на 180 px наносит 80 урона по пути!", x + 12.0, cy3, 11.0, 14.5, text_w, GOLD);
 
     // Карточка 4: Анти-Пассивность (Медитация) и Сноуболл
-    draw_card_box(x2, y2, half_w, card_h, "🧘 АНТИ-ПАССИВНОСТЬ И LIMIT BREAK", fonts);
+    draw_card_box(x2, y2, half_w, card_h, "АНТИ-ПАССИВНОСТЬ И LIMIT BREAK", fonts);
     let mut cy4 = y2 + 40.0;
     cy4 = fonts.draw_text_wrapped("• МЕДИТАЦИЯ ПОКОЯ: Если босс стоит без движения > 1.2 сек, не получал урона последние 3 секунды и рядом нет врагов (в радиусе 300 px): восстанавливает +2% HP/с и +30 XP/с. Любой входящий урон сбивает медитацию на 3 сек!", x2 + 12.0, cy4, 10.5, 14.0, text_w, RED) + 3.0;
     cy4 = fonts.draw_text_wrapped("• СПОРОВЫЙ МИЦЕЛИЙ (Реликвия 29): Если босс находит грибницу, при остановке корни лечат его (+18 HP/с + 1.5% макс HP) вне зависимости от атак и урона!", x2 + 12.0, cy4, 10.5, 14.0, text_w, GREEN) + 3.0;

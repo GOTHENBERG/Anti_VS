@@ -39,7 +39,7 @@ pub fn draw_mob_dossier(
     draw_rectangle_lines(x, y, modal_w, 44.0, 1.5, DARKGRAY);
 
     let config = get_squad_config(tier);
-    let title = format!("📖 ТАКТИЧЕСКОЕ ДОСЬЕ: {} [ТИР {}]", config.name.to_uppercase(), tier);
+    let title = format!("ТАКТИЧЕСКОЕ ДОСЬЕ: {} [ТИР {}]", config.name.to_uppercase(), tier);
     fonts.draw_heading(&title, x + 24.0, y + 29.0, 16.0, GOLD);
 
     // Кнопка закрытия [ X ]
@@ -169,9 +169,9 @@ pub fn draw_mob_dossier(
     draw_rectangle_lines(s_btn_x, s_btn_y, s_btn_w, s_btn_h, 2.0, s_border);
 
     let btn_label = if !is_unlocked {
-        format!("🔒 ТРЕБУЕТ {:.0} ДУШ ТРАТ", config.unlock_spent_threshold)
+        format!("ТРЕБУЕТ {:.0} ДУШ ТРАТ", config.unlock_spent_threshold)
     } else if can_afford {
-        format!("⚔️ ПРИЗВАТЬ ОТРЯД [{}]", tier)
+        format!("ПРИЗВАТЬ ОТРЯД [{}]", tier)
     } else {
         format!("НЕДОСТАТОЧНО ДУШ ({:.0})", config.cost)
     };
@@ -188,7 +188,7 @@ pub fn draw_mob_dossier(
     draw_rectangle(right_x, content_y, right_w, stats_box_h, Color::new(0.09, 0.09, 0.13, 0.95));
     draw_rectangle_lines(right_x, content_y, right_w, stats_box_h, 1.5, Color::new(0.35, 0.4, 0.5, 0.8));
 
-    fonts.draw_heading("📊 БАЗОВЫЕ БОЕВЫЕ ХАРАКТЕРИСТИКИ И РЕЗИСТЫ", right_x + 16.0, content_y + 22.0, 14.0, GOLD);
+    fonts.draw_heading("БАЗОВЫЕ БОЕВЫЕ ХАРАКТЕРИСТИКИ И РЕЗИСТЫ", right_x + 16.0, content_y + 22.0, 14.0, GOLD);
 
     let (hp_val, spd_val, spd_note, dmg_val, dmg_t_name, atk_spd_str, atk_range_str, arm_val, kb_res_str, xp_drop) = match tier {
         1 => (32.0, 105.0, "(Босс: 115)", 7.0, "Физ. контакт", "1.0 уд/сек (7 DPS)", "24 px (Ближний бой)", 0.0, "0%", 8),
@@ -266,7 +266,7 @@ pub fn draw_mob_dossier(
     draw_rectangle(right_x, lore_box_y, right_w, lore_box_h, Color::new(0.08, 0.08, 0.12, 0.95));
     draw_rectangle_lines(right_x, lore_box_y, right_w, lore_box_h, 1.5, Color::new(0.4, 0.35, 0.5, 0.8));
 
-    fonts.draw_heading("📜 ТАКТИЧЕСКОЕ РУКОВОДСТВО И СИНЕРГИИ", right_x + 16.0, lore_box_y + 24.0, 14.0, GOLD);
+    fonts.draw_heading("ТАКТИЧЕСКОЕ РУКОВОДСТВО И СИНЕРГИИ", right_x + 16.0, lore_box_y + 24.0, 14.0, GOLD);
 
     let (strat1, strat2, strat3, lore_l1, lore_l2) = match tier {
         1 => (
@@ -392,13 +392,13 @@ pub fn draw_mob_dossier(
     draw_line(right_x + 16.0, cur_y + 4.0, right_x + right_w - 16.0, cur_y + 4.0, 1.0, DARKGRAY);
     cur_y += 20.0;
 
-    fonts.draw_heading("📖 ЭНЦИКЛОПЕДИЧЕСКАЯ СПРАВКА (WIKI LORE):", right_x + 16.0, cur_y, 12.0, GOLD);
+    fonts.draw_heading("ЭНЦИКЛОПЕДИЧЕСКАЯ СПРАВКА (WIKI LORE):", right_x + 16.0, cur_y, 12.0, GOLD);
     cur_y += 18.0;
 
     let full_lore = format!("{} {}", lore_l1, lore_l2);
     fonts.draw_text_wrapped(&full_lore, right_x + 16.0, cur_y, 11.5, 16.0, text_max_w, LIGHTGRAY);
 
-    let tip_text = "💡 Совет: Нажмите клавишу [Esc] или кликните [X], чтобы вернуться в бой";
+    let tip_text = "Совет: Нажмите клавишу [Esc] или кликните [X], чтобы вернуться в бой";
     fonts.draw_text(tip_text, right_x + 16.0, lore_box_y + lore_box_h - 14.0, 11.0, GRAY);
 
     DossierResult {

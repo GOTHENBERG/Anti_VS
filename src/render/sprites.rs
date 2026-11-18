@@ -672,6 +672,7 @@ pub fn draw_obelisk(
     state_timer: f32,
     time: f32,
     textures: &GameTextures,
+    fonts: &crate::render::font::GameFonts,
 ) {
     let size = 300.0;
     let half = size * 0.5;
@@ -725,11 +726,11 @@ pub fn draw_obelisk(
         draw_rectangle_lines(pos.x - bar_w * 0.5, bar_y, bar_w, bar_h, 1.8, GOLD);
 
         // Таймер обратного отсчета до Прорыва
-        let timer_str = format!("⚡ ПРОРЫВ: {:.1}с", state_timer.max(0.0));
+        let timer_str = format!("ПРОРЫВ: {:.1}с", state_timer.max(0.0));
         let timer_w = 110.0;
         draw_rectangle(pos.x - timer_w * 0.5, bar_y - 18.0, timer_w, 15.0, Color::new(0.08, 0.08, 0.14, 0.9));
         draw_rectangle_lines(pos.x - timer_w * 0.5, bar_y - 18.0, timer_w, 15.0, 1.2, GOLD);
-        draw_text(&timer_str, pos.x - timer_w * 0.5 + 6.0, bar_y - 6.0, 12.0, YELLOW);
+        fonts.draw_text(&timer_str, pos.x - timer_w * 0.5 + 6.0, bar_y - 6.0, 12.0, YELLOW);
     } else {
         // Дремлющий обелиск
         if let Some(tex) = textures.obelisk_dormant.as_ref() {

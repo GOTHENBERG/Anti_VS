@@ -35,7 +35,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     draw_rectangle(x, y, panel_w, 42.0, Color::new(0.12, 0.12, 0.18, 1.0));
     draw_rectangle_lines(x, y, panel_w, 42.0, 1.5, DARKGRAY);
 
-    let title = "⚙ НАСТРОЙКИ ЗВУКА И ПАУЗА";
+    let title = "НАСТРОЙКИ ЗВУКА И ПАУЗА";
     fonts.draw_heading(title, x + 20.0, y + 28.0, 16.0, GOLD);
 
     // Кнопка быстрого закрытия [ X ]
@@ -64,7 +64,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     draw_rectangle(x + 18.0, sfx_y, panel_w - 36.0, 64.0, Color::new(0.04, 0.05, 0.08, 0.95));
     draw_rectangle_lines(x + 18.0, sfx_y, panel_w - 36.0, 64.0, 1.0, Color::new(0.3, 0.35, 0.45, 0.8));
 
-    fonts.draw_heading("🔊 Громкость эффектов (SFX):", x + 30.0, sfx_y + 22.0, 12.5, WHITE);
+    fonts.draw_heading("Громкость эффектов (SFX):", x + 30.0, sfx_y + 22.0, 12.5, WHITE);
     let sfx_percent = (audio.sfx_volume * 100.0).round() as i32;
     let sfx_pct_str = format!("{}%", sfx_percent);
     fonts.draw_heading(&sfx_pct_str, x + panel_w - 80.0, sfx_y + 22.0, 14.5, GOLD);
@@ -123,7 +123,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     draw_rectangle(x + 18.0, music_y, panel_w - 36.0, 64.0, Color::new(0.04, 0.05, 0.08, 0.95));
     draw_rectangle_lines(x + 18.0, music_y, panel_w - 36.0, 64.0, 1.0, Color::new(0.3, 0.35, 0.45, 0.8));
 
-    fonts.draw_heading("🎵 Громкость боевой музыки (Music):", x + 30.0, music_y + 22.0, 12.5, WHITE);
+    fonts.draw_heading("Громкость боевой музыки (Music):", x + 30.0, music_y + 22.0, 12.5, WHITE);
     let music_percent = (audio.music_volume * 100.0).round() as i32;
     let music_pct_str = format!("{}%", music_percent);
     fonts.draw_heading(&music_pct_str, x + panel_w - 80.0, music_y + 22.0, 14.5, SKYBLUE);
@@ -183,7 +183,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
 
     let (track_curr, track_total) = audio.get_current_track_index_and_total();
     let track_title = audio.get_current_track_title();
-    let track_header = format!("🎶 Плейлист [{}/{}]: {}", track_curr, track_total, track_title);
+    let track_header = format!("Плейлист [{}/{}]: {}", track_curr, track_total, track_title);
     fonts.draw_heading(&track_header, x + 30.0, pl_y + 22.0, 12.0, GOLD);
 
     // Таймлайн трека (прогресс воспроизведения)
@@ -205,7 +205,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     draw_rectangle(prog_x, prog_y, prog_w * prog_ratio, prog_h, GOLD);
     draw_rectangle_lines(prog_x, prog_y, prog_w, prog_h, 1.0, DARKGRAY);
 
-    // Кнопки управления плейлистом: [◀ Пред [P]], [🔀 Микс], [След ▶ [N]]
+    // Кнопки управления плейлистом: [< Пред [P]], [~ Микс], [След > [N]]
     let c_btn_y = pl_y + 48.0;
     let c_btn_h = 30.0;
     let c_btn_gap = 10.0;
@@ -216,7 +216,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let prev_hover = mx >= prev_x && mx <= prev_x + c_btn_w && my >= c_btn_y && my <= c_btn_y + c_btn_h;
     draw_rectangle(prev_x, c_btn_y, c_btn_w, c_btn_h, if prev_hover { Color::new(0.20, 0.22, 0.35, 1.0) } else { Color::new(0.10, 0.12, 0.20, 0.95) });
     draw_rectangle_lines(prev_x, c_btn_y, c_btn_w, c_btn_h, 1.2, if prev_hover { SKYBLUE } else { GRAY });
-    let prev_lbl = "◀ Пред [P]";
+    let prev_lbl = "< Пред [P]";
     let pl_w = fonts.measure_heading(prev_lbl, 11.5).width;
     fonts.draw_heading(prev_lbl, prev_x + (c_btn_w - pl_w) / 2.0, c_btn_y + 19.0, 11.5, if prev_hover { WHITE } else { LIGHTGRAY });
     if is_clicked && prev_hover {
@@ -229,7 +229,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let shuf_hover = mx >= shuf_x && mx <= shuf_x + c_btn_w && my >= c_btn_y && my <= c_btn_y + c_btn_h;
     draw_rectangle(shuf_x, c_btn_y, c_btn_w, c_btn_h, if shuf_hover { Color::new(0.30, 0.20, 0.35, 1.0) } else { Color::new(0.14, 0.10, 0.18, 0.95) });
     draw_rectangle_lines(shuf_x, c_btn_y, c_btn_w, c_btn_h, 1.2, if shuf_hover { GOLD } else { GRAY });
-    let shuf_lbl = "🔀 Случайный";
+    let shuf_lbl = "~ Случайный";
     let sl_w = fonts.measure_heading(shuf_lbl, 11.5).width;
     fonts.draw_heading(shuf_lbl, shuf_x + (c_btn_w - sl_w) / 2.0, c_btn_y + 19.0, 11.5, if shuf_hover { GOLD } else { LIGHTGRAY });
     if is_clicked && shuf_hover {
@@ -242,7 +242,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let next_hover = mx >= next_x && mx <= next_x + c_btn_w && my >= c_btn_y && my <= c_btn_y + c_btn_h;
     draw_rectangle(next_x, c_btn_y, c_btn_w, c_btn_h, if next_hover { Color::new(0.20, 0.22, 0.35, 1.0) } else { Color::new(0.10, 0.12, 0.20, 0.95) });
     draw_rectangle_lines(next_x, c_btn_y, c_btn_w, c_btn_h, 1.2, if next_hover { SKYBLUE } else { GRAY });
-    let next_lbl = "След ▶ [N]";
+    let next_lbl = "След > [N]";
     let nl_w = fonts.measure_heading(next_lbl, 11.5).width;
     fonts.draw_heading(next_lbl, next_x + (c_btn_w - nl_w) / 2.0, c_btn_y + 19.0, 11.5, if next_hover { WHITE } else { LIGHTGRAY });
     if is_clicked && next_hover {
@@ -279,9 +279,9 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     );
 
     let mute_label = if audio.is_muted {
-        "🔇 ВСЕ ЗВУКИ ЗАГЛУШЕНЫ (Кликните или [M], чтобы включить)"
+        "[X] ВСЕ ЗВУКИ ЗАГЛУШЕНЫ (Кликните или [M], чтобы включить)"
     } else {
-        "🔊 ЗВУКИ И МУЗЫКА АКТИВНЫ (Кликните или [M], чтобы заглушить)"
+        "[V] ЗВУКИ И МУЗЫКА АКТИВНЫ (Кликните или [M], чтобы заглушить)"
     };
     let mlw = fonts.measure_heading(mute_label, 12.0).width;
     fonts.draw_heading(
@@ -306,7 +306,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let ctrl_hover = mx >= x + 18.0 && mx <= x + 18.0 + ctrl_btn_w && my >= ctrl_y && my <= ctrl_y + ctrl_btn_h;
     draw_rectangle(x + 18.0, ctrl_y, ctrl_btn_w, ctrl_btn_h, if ctrl_hover { Color::new(0.24, 0.18, 0.32, 1.0) } else { Color::new(0.10, 0.11, 0.18, 0.96) });
     draw_rectangle_lines(x + 18.0, ctrl_y, ctrl_btn_w, ctrl_btn_h, 1.2, if ctrl_hover { GOLD } else { Color::new(0.4, 0.45, 0.6, 0.8) });
-    let ctrl_label = format!("🎮 РЕЖИМ УПРАВЛЕНИЯ БОССОМ: {}  [Клик / F2]", settings.control_scheme.name_ru());
+    let ctrl_label = format!("РЕЖИМ УПРАВЛЕНИЯ БОССОМ: {}  [Клик / F2]", settings.control_scheme.name_ru());
     let clw = fonts.measure_heading(&ctrl_label, 11.0).width;
     fonts.draw_heading(&ctrl_label, x + 18.0 + (ctrl_btn_w - clw) / 2.0, ctrl_y + 20.0, 11.0, if ctrl_hover { GOLD } else { WHITE });
     if is_clicked && ctrl_hover {
@@ -330,8 +330,8 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let resume_hover = mx >= resume_x && mx <= resume_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(resume_x, actions_y, act_btn_w, act_btn_h, if resume_hover { Color::new(0.18, 0.45, 0.25, 1.0) } else { Color::new(0.12, 0.28, 0.18, 0.95) });
     draw_rectangle_lines(resume_x, actions_y, act_btn_w, act_btn_h, 1.5, if resume_hover { GREEN } else { DARKGRAY });
-    let rw = fonts.measure_heading("▶ В БОЙ", 11.0).width;
-    fonts.draw_heading("▶ В БОЙ", resume_x + (act_btn_w - rw) / 2.0, actions_y + 23.0, 11.0, WHITE);
+    let rw = fonts.measure_heading("> В БОЙ", 11.0).width;
+    fonts.draw_heading("> В БОЙ", resume_x + (act_btn_w - rw) / 2.0, actions_y + 23.0, 11.0, WHITE);
 
     if is_clicked && resume_hover {
         audio.handle_event(AudioEvent::UiClick);
@@ -343,8 +343,8 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let codex_hover = mx >= codex_x && mx <= codex_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(codex_x, actions_y, act_btn_w, act_btn_h, if codex_hover { Color::new(0.30, 0.25, 0.40, 1.0) } else { Color::new(0.16, 0.14, 0.24, 0.95) });
     draw_rectangle_lines(codex_x, actions_y, act_btn_w, act_btn_h, 1.5, if codex_hover { GOLD } else { DARKGRAY });
-    let cw = fonts.measure_heading("📖 КОДЕКС", 11.0).width;
-    fonts.draw_heading("📖 КОДЕКС", codex_x + (act_btn_w - cw) / 2.0, actions_y + 23.0, 11.0, WHITE);
+    let cw = fonts.measure_heading("КОДЕКС", 11.0).width;
+    fonts.draw_heading("КОДЕКС", codex_x + (act_btn_w - cw) / 2.0, actions_y + 23.0, 11.0, WHITE);
 
     if is_clicked && codex_hover {
         audio.handle_event(AudioEvent::BookOpen);
@@ -356,8 +356,8 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let restart_hover = mx >= restart_x && mx <= restart_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(restart_x, actions_y, act_btn_w, act_btn_h, if restart_hover { Color::new(0.40, 0.20, 0.15, 1.0) } else { Color::new(0.22, 0.12, 0.10, 0.95) });
     draw_rectangle_lines(restart_x, actions_y, act_btn_w, act_btn_h, 1.5, if restart_hover { ORANGE } else { DARKGRAY });
-    let rtw = fonts.measure_heading("🔄 ЗАНОВО", 11.0).width;
-    fonts.draw_heading("🔄 ЗАНОВО", restart_x + (act_btn_w - rtw) / 2.0, actions_y + 23.0, 11.0, WHITE);
+    let rtw = fonts.measure_heading("ЗАНОВО", 11.0).width;
+    fonts.draw_heading("ЗАНОВО", restart_x + (act_btn_w - rtw) / 2.0, actions_y + 23.0, 11.0, WHITE);
 
     if is_clicked && restart_hover {
         audio.handle_event(AudioEvent::UiClick);
@@ -369,8 +369,8 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let menu_hover = mx >= menu_x && mx <= menu_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(menu_x, actions_y, act_btn_w, act_btn_h, if menu_hover { Color::new(0.35, 0.15, 0.18, 1.0) } else { Color::new(0.20, 0.10, 0.12, 0.95) });
     draw_rectangle_lines(menu_x, actions_y, act_btn_w, act_btn_h, 1.5, if menu_hover { RED } else { DARKGRAY });
-    let mw = fonts.measure_heading("🚪 В МЕНЮ", 11.0).width;
-    fonts.draw_heading("🚪 В МЕНЮ", menu_x + (act_btn_w - mw) / 2.0, actions_y + 23.0, 11.0, WHITE);
+    let mw = fonts.measure_heading("В МЕНЮ", 11.0).width;
+    fonts.draw_heading("В МЕНЮ", menu_x + (act_btn_w - mw) / 2.0, actions_y + 23.0, 11.0, WHITE);
 
     if is_clicked && menu_hover {
         audio.handle_event(AudioEvent::UiClick);

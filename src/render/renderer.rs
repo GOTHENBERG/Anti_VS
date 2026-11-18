@@ -162,7 +162,7 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
                 draw_wall(structure.pos, structure.health.current, structure.health.max, structure.lifetime, structure.max_lifetime, textures);
             }
             crate::content::structures::STRUCTURE_OBELISK => {
-                draw_obelisk(structure.pos, structure.health.current, structure.health.max, structure.is_active, structure.state_timer, time, textures);
+                draw_obelisk(structure.pos, structure.health.current, structure.health.max, structure.is_active, structure.state_timer, time, textures, fonts);
             }
             _ => {}
         }

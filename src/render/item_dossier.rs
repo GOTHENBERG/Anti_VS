@@ -106,14 +106,14 @@ pub fn draw_item_inspection_modal(
         ItemInspectionTarget::Weapon(w, lvl, lb) => {
             let def = get_weapon_def(w);
             if lb > 0 {
-                (format!("⚔️ ДОСЬЕ ОРУЖИЯ: {} [ВОЗВЫШЕНИЕ +{}]", def.name.to_uppercase(), lb), GOLD)
+                (format!("ДОСЬЕ ОРУЖИЯ: {} [ВОЗВЫШЕНИЕ +{}]", def.name.to_uppercase(), lb), GOLD)
             } else {
-                (format!("⚔️ ДОСЬЕ ОРУЖИЯ: {} [УРОВЕНЬ {}/8]", def.name.to_uppercase(), lvl), SKYBLUE)
+                (format!("ДОСЬЕ ОРУЖИЯ: {} [УРОВЕНЬ {}/8]", def.name.to_uppercase(), lvl), SKYBLUE)
             }
         }
         ItemInspectionTarget::Passive(p, lvl) => {
             let def = get_passive_def(p);
-            (format!("🔮 ДОСЬЕ РЕЛИКВИИ: {} [УРОВЕНЬ {}/5]", def.name.to_uppercase(), lvl), Color::new(0.85, 0.55, 1.0, 1.0))
+            (format!("ДОСЬЕ РЕЛИКВИИ: {} [УРОВЕНЬ {}/5]", def.name.to_uppercase(), lvl), Color::new(0.85, 0.55, 1.0, 1.0))
         }
     };
     fonts.draw_heading(&modal_title, x + 24.0, y + 28.0, 16.0, title_color);
@@ -190,19 +190,19 @@ pub fn draw_item_inspection_modal(
             draw_line(desc_x, content_y + 84.0, content_x + content_w - 16.0, content_y + 84.0, 1.0, DARKGRAY);
 
             if lb > 0 {
-                fonts.draw_heading("⚡ СВЕРХ-ВОЗВЫШЕНИЕ (LIMIT BREAK):", desc_x, content_y + 106.0, 13.0, GOLD);
+                fonts.draw_heading("СВЕРХ-ВОЗВЫШЕНИЕ (LIMIT BREAK):", desc_x, content_y + 106.0, 13.0, GOLD);
                 fonts.draw_text(&format!("• Текущий бонус возвышения: +{}% урона, +{} снарядов к каждому залпу", lb * 10, (lb / 3) + 1), desc_x, content_y + 124.0, 12.0, GREEN);
                 fonts.draw_text("• Каждый следующий уровень возвышения увеличивает урон на +10% и сокращает кулдаун атак!", desc_x, content_y + 144.0, 11.5, YELLOW);
             } else if level >= 8 {
-                fonts.draw_heading("⭐ МАКСИМАЛЬНЫЙ БАЗОВЫЙ УРОВЕНЬ (8/8):", desc_x, content_y + 106.0, 13.0, GOLD);
+                fonts.draw_heading("МАКСИМАЛЬНЫЙ БАЗОВЫЙ УРОВЕНЬ (8/8):", desc_x, content_y + 106.0, 13.0, GOLD);
                 fonts.draw_text("• Оружие готово к Синтезу Эволюции! При наличии парной пассивной реликвии при следующем Level-Up", desc_x, content_y + 124.0, 12.0, GREEN);
                 fonts.draw_text("  вам будет предложена карта совершенного оружия. После эволюции откроется Limit Break!", desc_x, content_y + 144.0, 11.5, YELLOW);
             } else {
-                fonts.draw_heading("📈 ПРОГРЕСС УЛУЧШЕНИЙ:", desc_x, content_y + 106.0, 13.0, SKYBLUE);
+                fonts.draw_heading("ПРОГРЕСС УЛУЧШЕНИЙ:", desc_x, content_y + 106.0, 13.0, SKYBLUE);
                 let next_dmg = def.base_damage * (1.0 + (level as f32) * 0.15);
                 let cur_dmg = def.base_damage * (1.0 + (level as f32 - 1.0) * 0.15);
                 let next_cd = (def.base_cooldown - (level as f32 * 0.04)).max(0.20);
-                fonts.draw_text(&format!("• Текущий урон: {:.0} ➔ Следующий уровень (Ур. {}): {:.0} (+15%) | Откат: {:.2}с", cur_dmg, level + 1, next_dmg, next_cd), desc_x, content_y + 124.0, 12.0, GREEN);
+                fonts.draw_text(&format!("• Текущий урон: {:.0} -> Следующий уровень (Ур. {}): {:.0} (+15%) | Откат: {:.2}с", cur_dmg, level + 1, next_dmg, next_cd), desc_x, content_y + 124.0, 12.0, GREEN);
                 fonts.draw_text("• На 8 уровне полностью открывается рецепт трансформации в Совершенный Артефакт!", desc_x, content_y + 144.0, 11.5, YELLOW);
             }
         }
@@ -214,7 +214,7 @@ pub fn draw_item_inspection_modal(
 
             draw_line(desc_x, content_y + 84.0, content_x + content_w - 16.0, content_y + 84.0, 1.0, DARKGRAY);
 
-            fonts.draw_heading("📈 ЭФФЕКТИВНОСТЬ ПРОКАЧКИ:", desc_x, content_y + 106.0, 13.0, GOLD);
+            fonts.draw_heading("ЭФФЕКТИВНОСТЬ ПРОКАЧКИ:", desc_x, content_y + 106.0, 13.0, GOLD);
             let cur_bonus = format_passive_bonus(p, level);
             let next_bonus = format_passive_bonus(p, (level + 1).min(5));
             if level >= 5 {
@@ -236,7 +236,7 @@ pub fn draw_item_inspection_modal(
     // Заголовок древа синтеза
     draw_rectangle(content_x, bot_y, content_w, 32.0, Color::new(0.12, 0.10, 0.18, 0.95));
     draw_rectangle_lines(content_x, bot_y, content_w, 32.0, 1.0, DARKGRAY);
-    fonts.draw_heading("🔮 ДРЕВО СИНТЕЗА ЭВОЛЮЦИИ (РЕЦЕПТ СБОРКИ АРТЕФАКТА)", content_x + 16.0, bot_y + 22.0, 13.0, GOLD);
+    fonts.draw_heading("ДРЕВО СИНТЕЗА ЭВОЛЮЦИИ (РЕЦЕПТ СБОРКИ АРТЕФАКТА)", content_x + 16.0, bot_y + 22.0, 13.0, GOLD);
 
     // Определяем рецепт в зависимости от выбранного предмета
     let maybe_recipe = match target {
@@ -259,7 +259,7 @@ pub fn draw_item_inspection_modal(
         );
     } else {
         // Если это чистая легендарная реликвия без оружейного рецепта
-        fonts.draw_heading("👑 АВТОНОМНАЯ ЛЕГЕНДАРНАЯ РЕЛИКВИЯ", content_x + 30.0, bot_y + 70.0, 15.0, GOLD);
+        fonts.draw_heading("АВТОНОМНАЯ ЛЕГЕНДАРНАЯ РЕЛИКВИЯ", content_x + 30.0, bot_y + 70.0, 15.0, GOLD);
         fonts.draw_text("Этот предмет является уникальным сокровищем и не требует базового оружия для активации.", content_x + 30.0, bot_y + 98.0, 12.5, WHITE);
         fonts.draw_text("Он напрямую усиливает пассивные характеристики Босса, добавляя вампиризм, воскрешение,", content_x + 30.0, bot_y + 118.0, 12.5, LIGHTGRAY);
         fonts.draw_text("непрерывную регенерацию при остановке (Мицелий) или цепные электрические разряды.", content_x + 30.0, bot_y + 138.0, 12.5, LIGHTGRAY);
@@ -327,18 +327,18 @@ fn draw_synthesis_recipe_tree(
     };
     draw_component_card(c2_x, y, card_w, card_h, "КОМПОНЕНТ 2 (КАТАЛИЗАТОР)", pass_def.name, &c2_status, c2_col, textures.get_passive_icon(req_p), c2_border, fonts);
 
-    // Стрелка `➔`
+    // Стрелка `->`
     let arrow_x = c2_x + card_w + 12.0;
-    fonts.draw_heading("➔", arrow_x, y + card_h / 2.0 + 8.0, 26.0, if is_ready_to_evolve { GOLD } else { GRAY });
+    fonts.draw_heading("->", arrow_x, y + card_h / 2.0 + 8.0, 24.0, if is_ready_to_evolve { GOLD } else { GRAY });
 
     // 3. КАРТОЧКА: РЕЗУЛЬТАТ (СОВЕРШЕННОЕ ОРУЖИЕ)
     let c3_x = arrow_x + 36.0;
     let (c3_border, c3_status, c3_col) = if is_already_evolved {
-        (GOLD, "⭐ СИНТЕЗИРОВАНО В БОЮ!".to_string(), GOLD)
+        (GOLD, "СИНТЕЗИРОВАНО В БОЮ!".to_string(), GOLD)
     } else if is_ready_to_evolve {
-        (GREEN, "✨ ГОТОВО К ЭВОЛЮЦИИ!".to_string(), GREEN)
+        (GREEN, "ГОТОВО К ЭВОЛЮЦИИ!".to_string(), GREEN)
     } else {
-        (DARKGRAY, "🔒 ЗАБЛОКИРОВАНО".to_string(), LIGHTGRAY)
+        (DARKGRAY, "ЗАБЛОКИРОВАНО".to_string(), LIGHTGRAY)
     };
     draw_component_card(c3_x, y, card_w, card_h, "РЕЗУЛЬТАТ: ЭВОЛЮЦИЯ", evo_def.name, &c3_status, c3_col, textures.get_weapon_icon(evo_w), c3_border, fonts);
 

@@ -64,7 +64,7 @@ pub fn render_ui(
     draw_rectangle(timer_box_x, timer_box_y, timer_box_w, timer_box_h, Color::new(0.06, 0.07, 0.11, 0.95));
     draw_rectangle_lines(timer_box_x, timer_box_y, timer_box_w, timer_box_h, 1.8, Color::new(0.4, 0.45, 0.55, 0.9));
 
-    fonts.draw_text("⏱ ОСТАЛОСЬ ВРЕМЕНИ", timer_box_x + 12.0, timer_box_y + 14.0, 10.0, Color::new(0.8, 0.75, 0.5, 0.9));
+    fonts.draw_text("ОСТАЛОСЬ ВРЕМЕНИ", timer_box_x + 12.0, timer_box_y + 14.0, 10.0, Color::new(0.8, 0.75, 0.5, 0.9));
     let timer_text = clock.formatted_remaining();
     fonts.draw_heading(&timer_text, timer_box_x + 12.0, timer_box_y + 36.0, 22.0, WHITE);
 
@@ -79,7 +79,7 @@ pub fn render_ui(
     }
     draw_rectangle(pause_btn_x, pause_btn_y, pause_btn_w, pause_btn_h, if pause_hover { Color::new(0.32, 0.22, 0.12, 1.0) } else { Color::new(0.12, 0.11, 0.10, 0.95) });
     draw_rectangle_lines(pause_btn_x, pause_btn_y, pause_btn_w, pause_btn_h, 1.5, if pause_hover { GOLD } else { GRAY });
-    let p_label = "⏸ Пауза [Esc]";
+    let p_label = "Пауза [Esc]";
     let pw = fonts.measure_heading(p_label, 12.0).width;
     fonts.draw_heading(p_label, pause_btn_x + (pause_btn_w - pw) / 2.0, pause_btn_y + 18.0, 12.0, if pause_hover { GOLD } else { WHITE });
 
@@ -117,7 +117,7 @@ pub fn render_ui(
     }
     draw_rectangle(track_btn_x, track_btn_y, track_btn_w, track_btn_h, if track_hover { Color::new(0.20, 0.25, 0.38, 1.0) } else { Color::new(0.10, 0.11, 0.15, 0.95) });
     draw_rectangle_lines(track_btn_x, track_btn_y, track_btn_w, track_btn_h, 1.2, if track_hover { SKYBLUE } else { DARKGRAY });
-    let t_label = "🎵 Трек [N] ▶";
+    let t_label = "Трек [N] >";
     let tw = fonts.measure_heading(t_label, 11.0).width;
     fonts.draw_heading(t_label, track_btn_x + (track_btn_w - tw) / 2.0, track_btn_y + 16.0, 11.0, if track_hover { GOLD } else { SKYBLUE });
 
@@ -153,12 +153,12 @@ pub fn render_ui(
     draw_rectangle_lines(bar_x, bar_y, bar_w, bar_h, 2.0, Color::new(0.9, 0.8, 0.5, 1.0));
 
     let poison_tag = if world.boss_poison_timer > 0.0 {
-        format!(" | ☣️ ЯД (-{:.0}/с)", world.boss_poison_dps)
+        format!(" | ЯД (-{:.0}/с)", world.boss_poison_dps)
     } else {
         String::new()
     };
     let hp_text = format!(
-        "👑 ВЕРХОВНЫЙ ПАЛАДИН (Ур. {}) | {:.0} / {:.0} HP | Броня: {:.1}{}",
+        "ВЕРХОВНЫЙ ПАЛАДИН (Ур. {}) | {:.0} / {:.0} HP | Броня: {:.1}{}",
         world.boss_inventory.level,
         world.boss_health.current,
         world.boss_health.max,
@@ -184,7 +184,7 @@ pub fn render_ui(
     let wep_field_x = bar_x;
     draw_rectangle(wep_field_x, field_y, field_w, field_h, Color::new(0.07, 0.08, 0.12, 0.95));
     draw_rectangle_lines(wep_field_x, field_y, field_w, field_h, 1.5, Color::new(0.35, 0.50, 0.70, 0.85));
-    fonts.draw_heading("⚔️ ОРУЖИЕ БОССА", wep_field_x + 8.0, field_y + 14.0, 11.0, SKYBLUE);
+    fonts.draw_heading("ОРУЖИЕ БОССА", wep_field_x + 8.0, field_y + 14.0, 11.0, SKYBLUE);
 
     let wep_slots_start_x = wep_field_x + 4.0;
     let wep_slots_y = field_y + 22.0;
@@ -270,7 +270,7 @@ pub fn render_ui(
     let pas_field_x = bar_x + bar_w - field_w;
     draw_rectangle(pas_field_x, field_y, field_w, field_h, Color::new(0.08, 0.06, 0.12, 0.95));
     draw_rectangle_lines(pas_field_x, field_y, field_w, field_h, 1.5, Color::new(0.60, 0.35, 0.75, 0.85));
-    fonts.draw_heading("🔮 ПАССИВНЫЕ РЕЛИКВИИ", pas_field_x + 8.0, field_y + 14.0, 11.0, Color::new(0.85, 0.55, 1.0, 1.0));
+    fonts.draw_heading("ПАССИВНЫЕ РЕЛИКВИИ", pas_field_x + 8.0, field_y + 14.0, 11.0, Color::new(0.85, 0.55, 1.0, 1.0));
 
     let p_slot_s = 26.0;
     let p_slot_gap = 5.0;
@@ -363,7 +363,7 @@ pub fn render_ui(
     }
     draw_rectangle(codex_btn_x, codex_btn_y, codex_btn_w, codex_btn_h, if codex_hover { Color::new(0.24, 0.16, 0.35, 1.0) } else { Color::new(0.12, 0.10, 0.18, 0.95) });
     draw_rectangle_lines(codex_btn_x, codex_btn_y, codex_btn_w, codex_btn_h, 1.5, if codex_hover { GOLD } else { GRAY });
-    fonts.draw_heading("📖 Кодекс [I]", codex_btn_x + 14.0, codex_btn_y + 22.0, 14.0, if codex_hover { GOLD } else { WHITE });
+    fonts.draw_heading("Кодекс [I]", codex_btn_x + 14.0, codex_btn_y + 22.0, 14.0, if codex_hover { GOLD } else { WHITE });
 
     if is_mouse_button_pressed(MouseButton::Left) && codex_hover {
         interaction.clicked_codex = true;
@@ -446,9 +446,9 @@ pub fn render_ui(
         let div1_x = panel_x + 37.0 + points_w;
         draw_line(div1_x, panel_y + 8.0, div1_x, panel_y + panel_h - 8.0, 1.0, DARKGRAY);
 
-        // 3. Индикатор Дохода (в одну строку рядом с числом душ): ▲ +X.X [иконка душ] / 2с
+        // 3. Индикатор Дохода (в одну строку рядом с числом душ): +X.X [иконка душ] / 2с
         let inc_start_x = div1_x + 7.0;
-        let inc_val_text = format!("▲ +{:.1}", total_income);
+        let inc_val_text = format!("+{:.1}", total_income);
         fonts.draw_heading(&inc_val_text, inc_start_x, panel_y + 26.0, 12.5, GREEN);
         let inc_w = fonts.measure_heading(&inc_val_text, 12.5).width;
 
@@ -479,7 +479,7 @@ pub fn render_ui(
         draw_line(div2_x, panel_y + 8.0, div2_x, panel_y + panel_h - 8.0, 1.0, DARKGRAY);
 
         // 4. Число алтарей
-        let altar_str = format!("🏛️{}", altar_count);
+        let altar_str = format!("Алтари: {}", altar_count);
         fonts.draw_heading(&altar_str, div2_x + 6.0, panel_y + 25.0, 11.5, PURPLE);
 
         // Виджет стены остаётся отдельным; алтари выбираются на карточках мобов.
@@ -611,7 +611,7 @@ pub fn render_ui(
         // Кнопка Страница 1
         draw_rectangle(p1_x, g_y, page_tab_w, page_tab_h, if p1_active { Color::new(0.24, 0.18, 0.38, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
         draw_rectangle_lines(p1_x, g_y, page_tab_w, page_tab_h, if p1_active { 2.0 } else { 1.0 }, if p1_active { GOLD } else { GRAY });
-        fonts.draw_heading("⚔️ ОРДА [1]", p1_x + 12.0, g_y + 13.0, 11.0, if p1_active { GOLD } else { LIGHTGRAY });
+        fonts.draw_heading("ОРДА [1]", p1_x + 12.0, g_y + 13.0, 11.0, if p1_active { GOLD } else { LIGHTGRAY });
         fonts.draw_text("Базовые [Tab]", p1_x + 12.0, g_y + 25.0, 9.5, if p1_active { WHITE } else { GRAY });
         if is_mouse_button_pressed(MouseButton::Left) && p1_hover {
             interaction.set_mob_page = Some(0);
@@ -620,7 +620,7 @@ pub fn render_ui(
         // Кнопка Страница 2
         draw_rectangle(p2_x, g_y, page_tab_w, page_tab_h, if p2_active { Color::new(0.38, 0.14, 0.22, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
         draw_rectangle_lines(p2_x, g_y, page_tab_w, page_tab_h, if p2_active { 2.0 } else { 1.0 }, if p2_active { GOLD } else { GRAY });
-        fonts.draw_heading("🔥 ЛЕГИОН [2]", p2_x + 8.0, g_y + 13.0, 11.0, if p2_active { GOLD } else { LIGHTGRAY });
+        fonts.draw_heading("ЛЕГИОН [2]", p2_x + 8.0, g_y + 13.0, 11.0, if p2_active { GOLD } else { LIGHTGRAY });
         fonts.draw_text("Высшие [Tab]", p2_x + 8.0, g_y + 25.0, 9.5, if p2_active { WHITE } else { GRAY });
         if is_mouse_button_pressed(MouseButton::Left) && p2_hover {
             interaction.set_mob_page = Some(1);
@@ -1039,17 +1039,17 @@ pub fn render_boss_ui(
     // Строка 2: Броня с формулой физ. резиста, Рывок, Оповещение о Level-Up
     let armor_val = world.boss_resistances.flat_armor;
     let armor_pct = world.boss_resistances.physical_reduction_from_armor() * 100.0;
-    let armor_str = format!("🛡️ Броня: {:.1} ({:.1}% физ. защиты)", armor_val, armor_pct);
+    let armor_str = format!("Броня: {:.1} ({:.1}% физ. защиты)", armor_val, armor_pct);
     fonts.draw_text(&armor_str, panel_x + 12.0, panel_y + 35.0, 11.0, Color::new(0.85, 0.88, 0.95, 1.0));
 
     let dash_ready = world.boss_dash_cooldown <= 0.0;
-    let dash_str = if dash_ready { "⚡ Рывок: ГОТОВ [Пробел]".to_string() } else { format!("⚡ Рывок: {:.1}с", world.boss_dash_cooldown) };
-    fonts.draw_text(&format!("{}   ⏱️ {}", dash_str, clock.formatted_elapsed()), panel_x + 245.0, panel_y + 35.0, 11.0, if dash_ready { GOLD } else { Color::new(0.7, 0.7, 0.8, 1.0) });
+    let dash_str = if dash_ready { "Рывок: ГОТОВ [Пробел]".to_string() } else { format!("Рывок: {:.1}с", world.boss_dash_cooldown) };
+    fonts.draw_text(&format!("{}   T: {}", dash_str, clock.formatted_elapsed()), panel_x + 245.0, panel_y + 35.0, 11.0, if dash_ready { GOLD } else { Color::new(0.7, 0.7, 0.8, 1.0) });
 
     if world.boss_pending_level_ups > 0 {
         let pulse = (get_time() as f32 * 6.0).sin().abs();
         let lvlup_col = Color::new(1.0, 0.7 + pulse * 0.3, 0.1, 1.0);
-        fonts.draw_heading(&format!("⚡ LEVEL UP! (x{})", world.boss_pending_level_ups), panel_x + 460.0, panel_y + 35.0, 11.5, lvlup_col);
+        fonts.draw_heading(&format!("LEVEL UP! (x{})", world.boss_pending_level_ups), panel_x + 460.0, panel_y + 35.0, 11.5, lvlup_col);
     }
 
     // Строка 3: Инвентарь Оружия (6 слотов) и Пассивок (6 слотов)
@@ -1170,7 +1170,7 @@ pub fn render_boss_ui(
     let sound_hover = contains_rect(sound, mx, my);
     draw_rectangle(pause.x, pause.y, pause.w, pause.h, if pause_hover { Color::new(0.30, 0.19, 0.10, 1.0) } else { Color::new(0.10, 0.11, 0.16, 0.96) });
     draw_rectangle_lines(pause.x, pause.y, pause.w, pause.h, 1.0, if pause_hover { GOLD } else { GRAY });
-    fonts.draw_heading("⏸ Пауза [Esc]", pause.x + 20.0, pause.y + 19.0, 11.0, WHITE);
+    fonts.draw_heading("Пауза [Esc]", pause.x + 20.0, pause.y + 19.0, 11.0, WHITE);
 
     draw_rectangle(sound.x, sound.y, sound.w, sound.h, if sound_hover { Color::new(0.18, 0.20, 0.29, 1.0) } else { Color::new(0.08, 0.09, 0.14, 0.96) });
     draw_rectangle_lines(sound.x, sound.y, sound.w, sound.h, 1.0, if sound_hover { SKYBLUE } else { DARKGRAY });
@@ -1189,8 +1189,8 @@ pub fn render_boss_ui(
     draw_rectangle(mode_btn.x, mode_btn.y, mode_btn.w, mode_btn.h, if mode_hover { Color::new(0.24, 0.18, 0.28, 1.0) } else { Color::new(0.08, 0.09, 0.14, 0.96) });
     draw_rectangle_lines(mode_btn.x, mode_btn.y, mode_btn.w, mode_btn.h, 1.0, if mode_hover { GOLD } else { DARKGRAY });
     let mode_label = match control_scheme {
-        crate::render::main_menu::BossControlScheme::DirectKeyboard => "🎮 WASD [F2]",
-        crate::render::main_menu::BossControlScheme::MouseRts => "🖱️ ПКМ RTS [F2]",
+        crate::render::main_menu::BossControlScheme::DirectKeyboard => "WASD [F2]",
+        crate::render::main_menu::BossControlScheme::MouseRts => "ПКМ RTS [F2]",
     };
     fonts.draw_heading(mode_label, mode_btn.x + 12.0, mode_btn.y + 17.0, 10.0, if mode_hover { GOLD } else { WHITE });
 
@@ -1220,7 +1220,7 @@ pub fn render_boss_ui(
         // Полупрозрачный фон
         draw_rectangle(0.0, 0.0, w, h, Color::new(0.02, 0.02, 0.06, 0.88));
 
-        let title = "⚡ НОВЫЙ УРОВЕНЬ! ВЫБЕРИТЕ УЛУЧШЕНИЕ ⚡";
+        let title = "НОВЫЙ УРОВЕНЬ! ВЫБЕРИТЕ УЛУЧШЕНИЕ";
         let title_y = panel_y + panel_h + 24.0;
         let tw = fonts.measure_heading(title, 22.0).width;
         fonts.draw_heading(title, (w - tw) / 2.0, title_y, 22.0, GOLD);
@@ -1258,15 +1258,15 @@ pub fn render_boss_ui(
             let (category, title_str, desc_str, lvl_tag, is_evo, wep_kind, pas_kind) = match choice {
                 crate::ecs::components::inventory::PerkChoice::EvolveWeapon { to, .. } => {
                     let def = get_weapon_def(*to);
-                    ("⚡ ЭВОЛЮЦИЯ СИНТЕЗА", def.name.to_string(), def.description.to_string(), "МАКСИМУМ".to_string(), true, Some(*to), None)
+                    ("ЭВОЛЮЦИЯ СИНТЕЗА", def.name.to_string(), def.description.to_string(), "МАКСИМУМ".to_string(), true, Some(*to), None)
                 }
                 crate::ecs::components::inventory::PerkChoice::UpgradeWeapon(kind) => {
                     let def = get_weapon_def(*kind);
                     let existing = world.boss_inventory.weapons.iter().find(|w| w.kind == *kind);
                     let (cat, lvl) = if let Some(w) = existing {
-                        ("⚔️ УЛУЧШЕНИЕ ОРУЖИЯ", format!("Ур. {} ➔ {}", w.level, w.level + 1))
+                        ("УЛУЧШЕНИЕ ОРУЖИЯ", format!("Ур. {} -> {}", w.level, w.level + 1))
                     } else {
-                        ("⚔️ НОВОЕ ОРУЖИЕ", "НОВОЕ".to_string())
+                        ("НОВОЕ ОРУЖИЕ", "НОВОЕ".to_string())
                     };
                     (cat, def.name.to_string(), def.description.to_string(), lvl, false, Some(*kind), None)
                 }
@@ -1274,29 +1274,29 @@ pub fn render_boss_ui(
                     let def = get_passive_def(*kind);
                     let existing = world.boss_inventory.passives.iter().find(|p| p.kind == *kind);
                     let (cat, lvl) = if let Some(p) = existing {
-                        ("🔮 УЛУЧШЕНИЕ РЕЛИКВИИ", format!("Ур. {} ➔ {}", p.level, p.level + 1))
+                        ("УЛУЧШЕНИЕ РЕЛИКВИИ", format!("Ур. {} -> {}", p.level, p.level + 1))
                     } else {
-                        ("🔮 НОВАЯ РЕЛИКВИЯ", "НОВАЯ".to_string())
+                        ("НОВАЯ РЕЛИКВИЯ", "НОВАЯ".to_string())
                     };
                     (cat, def.name.to_string(), def.description.to_string(), lvl, false, None, Some(*kind))
                 }
                 crate::ecs::components::inventory::PerkChoice::LimitBreakDamage { name, .. } => {
-                    ("🔥 ВОЗВЫШЕНИЕ", format!("Урон: {}", name), "+12% к урону этого оружия".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                    ("ВОЗВЫШЕНИЕ", format!("Урон: {}", name), "+12% к урону этого оружия".to_string(), "LIMIT BREAK".to_string(), true, None, None)
                 }
                 crate::ecs::components::inventory::PerkChoice::LimitBreakCooldown { name, .. } => {
-                    ("🔥 ВОЗВЫШЕНИЕ", format!("Скорость: {}", name), "-6% времени перезарядки".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                    ("ВОЗВЫШЕНИЕ", format!("Скорость: {}", name), "-6% времени перезарядки".to_string(), "LIMIT BREAK".to_string(), true, None, None)
                 }
                 crate::ecs::components::inventory::PerkChoice::LimitBreakProjectiles { name, .. } => {
-                    ("🔥 ВОЗВЫШЕНИЕ", format!("Снаряды: {}", name), "+1 снаряд к каждому залпу".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                    ("ВОЗВЫШЕНИЕ", format!("Снаряды: {}", name), "+1 снаряд к каждому залпу".to_string(), "LIMIT BREAK".to_string(), true, None, None)
                 }
                 crate::ecs::components::inventory::PerkChoice::LimitBreakTitanVigor => {
-                    ("🔥 ВОЗВЫШЕНИЕ", "Сила Титана".to_string(), "+150 Макс HP, +25% эффективности лечения".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                    ("ВОЗВЫШЕНИЕ", "Сила Титана".to_string(), "+150 Макс HP, +25% эффективности лечения".to_string(), "LIMIT BREAK".to_string(), true, None, None)
                 }
                 crate::ecs::components::inventory::PerkChoice::LimitBreakAdaptiveArmor => {
-                    ("🔥 ВОЗВЫШЕНИЕ", "Адаптивная Броня".to_string(), "+2.0 Брони, +3% ко всем сопротивлениям".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                    ("ВОЗВЫШЕНИЕ", "Адаптивная Броня".to_string(), "+2.0 Брони, +3% ко всем сопротивлениям".to_string(), "LIMIT BREAK".to_string(), true, None, None)
                 }
                 crate::ecs::components::inventory::PerkChoice::LimitBreakPredatorSpeed => {
-                    ("🔥 ВОЗВЫШЕНИЕ", "Скорость Хищника".to_string(), "+6% к скорости перемещения".to_string(), "LIMIT BREAK".to_string(), true, None, None)
+                    ("ВОЗВЫШЕНИЕ", "Скорость Хищника".to_string(), "+6% к скорости перемещения".to_string(), "LIMIT BREAK".to_string(), true, None, None)
                 }
             };
 
@@ -1362,7 +1362,8 @@ pub fn render_boss_ui(
                     );
                 }
             } else {
-                fonts.draw_heading("⚡", icon_box_x + 22.0, icon_box_y + 42.0, 26.0, GOLD);
+                draw_circle(icon_box_x + icon_box_s * 0.5, icon_box_y + icon_box_s * 0.5, 14.0, GOLD);
+                draw_circle_lines(icon_box_x + icon_box_s * 0.5, icon_box_y + icon_box_s * 0.5, 14.0, 2.0, WHITE);
             }
 
             // Название
@@ -1587,7 +1588,7 @@ fn draw_souls_plaque_tooltip(
     draw_rectangle(card_x, card_y, card_w, card_h, Color::new(0.06, 0.06, 0.12, 0.96));
     draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, GOLD);
 
-    fonts.draw_heading("👑 КАЗНА И ЭКОНОМИКА ДИРЕКТОРА", card_x + 12.0, card_y + 22.0, 15.0, GOLD);
+    fonts.draw_heading("КАЗНА И ЭКОНОМИКА ДИРЕКТОРА", card_x + 12.0, card_y + 22.0, 15.0, GOLD);
     let altar_count = world.structures.iter().filter(|s| crate::content::structures::is_altar_structure_type(s.structure_type) && s.health.is_alive()).count();
     let total_income = director.income_rate + (altar_count as f32 * 3.0);
     fonts.draw_text(&format!("• Текущий баланс: {:.0} Очков Душ", director.points), card_x + 12.0, card_y + 44.0, 12.5, WHITE);
@@ -1608,7 +1609,7 @@ fn draw_wall_widget_tooltip(ww_x: f32, ww_y: f32, screen_w: f32, fonts: &GameFon
     draw_rectangle(card_x, card_y, card_w, card_h, Color::new(0.06, 0.06, 0.12, 0.96));
     draw_rectangle_lines(card_x, card_y, card_w, card_h, 2.0, Color::new(0.4, 0.7, 0.9, 0.95));
 
-    fonts.draw_heading("🧱 БАРРИКАДА (50x50 px)", card_x + 12.0, card_y + 22.0, 15.0, GOLD);
+    fonts.draw_heading("БАРРИКАДА (50x50 px)", card_x + 12.0, card_y + 22.0, 15.0, GOLD);
     fonts.draw_text("• Постройка: Клик [ЛКМ] или клавиша [B], затем [ЛКМ] на арене", card_x + 12.0, card_y + 44.0, 11.0, WHITE);
     let cost_str = format!("• Стоимость: {:.0} Душ | Кулдаун: {:.1} сек | Время жизни: 60 сек", crate::content::structures::WALL_COST, crate::content::structures::WALL_MAX_COOLDOWN);
     fonts.draw_text(&cost_str, card_x + 12.0, card_y + 64.0, 11.0, YELLOW);
@@ -1689,7 +1690,7 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
         (format!("Эволюция (Ур. 8 + {}): -> {}", req_passive, evo_weapon), YELLOW)
     };
     fonts.draw_text(&evo_str, card_x + 12.0, card_y + 92.0, 11.5, evo_col);
-    fonts.draw_text("💡 Кликните на слот или значок [i] для детального Древа Синтеза!", card_x + 12.0, card_y + 114.0, 10.5, GOLD);
+    fonts.draw_text("Кликните на слот или значок [i] для детального Древа Синтеза!", card_x + 12.0, card_y + 114.0, 10.5, GOLD);
 }
 
 /// Всплывающая подсказка для пассивного предмета Босса
