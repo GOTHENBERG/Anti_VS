@@ -410,6 +410,50 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         }
     }
 
+    // Орбитальный Гримуар / Инфернальная Литургия: вращающиеся книги/скрижали
+    let has_scriptures = world.boss_inventory.has_weapon(WeaponType::SacredScriptures);
+    let has_liturgy = world.boss_inventory.has_weapon(WeaponType::InfernalLiturgy);
+    if has_scriptures || has_liturgy {
+        let book_count = (if has_liturgy { 4 } else { 2 }) + world.boss_inventory.get_duplicator_projectiles();
+        let radius = if has_liturgy { 110.0 } else { 88.0 };
+        let book_col = if has_liturgy { ORANGE } else { GOLD };
+        for i in 0..book_count {
+            let angle = world.boss_inventory.scriptures_orbit_angle + (i as f32) * std::f32::consts::PI * 2.0 / (book_count as f32);
+            let p_pos = Vec2::new(bx + angle.cos() * radius, by + angle.sin() * radius);
+            if let Some(b_tex) = textures.icon_cooldown_tome.as_ref().or(textures.icon_book.as_ref()) {
+                draw_texture_ex(
+                    b_tex,
+                    p_pos.x - 14.0,
+                    p_pos.y - 14.0,
+                    book_col,
+                    DrawTextureParams {
+                        dest_size: Some(Vec2::new(28.0, 28.0)),
+                        rotation: angle + std::f32::consts::PI / 2.0,
+                        pivot: Some(p_pos),
+                        ..Default::default()
+                    },
+                );
+            } else {
+                draw_circle(p_pos.x, p_pos.y, 8.0, book_col);
+                draw_circle_lines(p_pos.x, p_pos.y, 8.0, 2.0, WHITE);
+            }
+        }
+    }
+
+    // Защитный барьер Астрального Савана / Савана Кровавого Императора
+    if world.boss_inventory.astral_cloak_charges > 0 {
+        let charges = world.boss_inventory.astral_cloak_charges;
+        let is_shroud = world.boss_inventory.has_weapon(WeaponType::BloodEmperorShroud);
+        let ring_col = if is_shroud {
+            Color::new(0.9, 0.15, 0.25, 0.75 + (time * 4.0).sin() * 0.2)
+        } else {
+            Color::new(0.3, 0.8, 1.0, 0.7 + (time * 4.0).sin() * 0.2)
+        };
+        let barrier_rad = 36.0 + (charges as f32 * 4.0);
+        draw_circle_lines(bx, by, barrier_rad, 2.5, ring_col);
+        draw_circle_lines(bx, by, barrier_rad + 4.0, 1.0, Color::new(ring_col.r, ring_col.g, ring_col.b, 0.35));
+    }
+
     // Тело и экипировка Босса
     if world.boss_health.is_alive() {
         draw_boss(

@@ -72,6 +72,14 @@ pub fn weapon_archetypes(kind: WeaponType) -> &'static [usize] {
         WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver | WeaponType::BloodDaggers | WeaponType::BloodHarvest | WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => &[4],
         WeaponType::CelestialBow | WeaponType::StarfallBarrage | WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage | WeaponType::DivineBell | WeaponType::CathedralAura | WeaponType::SoulPhantoms | WeaponType::BansheeWail => &[5],
         WeaponType::IceShards | WeaponType::BlizzardStorm => &[1, 2],
+        WeaponType::SacredScriptures | WeaponType::InfernalLiturgy => &[0, 2],
+        WeaponType::FaithBoomerang | WeaponType::HeavenlyJudgment => &[2, 5],
+        WeaponType::CursedChalice | WeaponType::BloodDeluge => &[0, 4],
+        WeaponType::VampiricAura | WeaponType::SoulFeast => &[4],
+        WeaponType::RunicPrism | WeaponType::SpatialShatter => &[3, 5],
+        WeaponType::AbyssalBeam | WeaponType::ApocalypseCascade => &[3],
+        WeaponType::ChronoStasis | WeaponType::InfiniteDilation => &[1],
+        WeaponType::AstralCloak | WeaponType::BloodEmperorShroud => &[2],
     }
 }
 
@@ -79,11 +87,11 @@ pub fn passive_archetypes(kind: PassiveType) -> &'static [usize] {
     match kind {
         PassiveType::Pyromaniac | PassiveType::BloodStone | PassiveType::SolarRelic => &[0],
         PassiveType::TeslaCoil | PassiveType::StaticCore | PassiveType::UkuleleResonance | PassiveType::ChronoHourglass => &[1],
-        PassiveType::LightArmor | PassiveType::TitanAegis | PassiveType::ImmortalAegis | PassiveType::SiegeMortar => &[2],
-        PassiveType::ColossalEye | PassiveType::CooldownTome | PassiveType::PrismaticFocus | PassiveType::ArchmageShard => &[3],
-        PassiveType::OctarineCore | PassiveType::SoulHarvester | PassiveType::CorrosiveFlask => &[4],
-        PassiveType::EagleScope | PassiveType::BlessedHeart | PassiveType::DivinityAura | PassiveType::SpeedGloves => &[5],
-        PassiveType::GiantHeart | PassiveType::SporeMushroom => &[0, 2],
+        PassiveType::LightArmor | PassiveType::TitanAegis | PassiveType::ImmortalAegis | PassiveType::SiegeMortar | PassiveType::TitanBloodArmor => &[2],
+        PassiveType::ColossalEye | PassiveType::CooldownTome | PassiveType::PrismaticFocus | PassiveType::ArchmageShard | PassiveType::CandelabraOfFury => &[3],
+        PassiveType::OctarineCore | PassiveType::SoulHarvester | PassiveType::CorrosiveFlask | PassiveType::AbyssalCurseStone => &[4],
+        PassiveType::EagleScope | PassiveType::BlessedHeart | PassiveType::DivinityAura | PassiveType::SpeedGloves | PassiveType::DuplicatorRelic | PassiveType::GoldenSeal => &[5],
+        PassiveType::GiantHeart | PassiveType::SporeMushroom | PassiveType::SilverTears => &[0, 2],
         PassiveType::CloverOfFate | PassiveType::FateWeaver => &[1, 4],
         PassiveType::DivineRapier => &[4, 5],
         PassiveType::FrostRing => &[1, 2],
@@ -99,6 +107,7 @@ pub fn default_weapon_priorities() -> Vec<f32> {
     vec![
         1.2, 1.4, 1.5, 1.3, 1.3, 1.1, 1.4, 1.3, 1.5, 1.4, // 1..10
         1.5, 1.4, 1.6, 1.5, 1.5, 1.6, 1.4, 1.7, 1.6, 1.8, // 11..20
+        1.7, 1.6, 1.5, 1.6, 1.8, 1.9, 1.7, 1.8,             // 21..28 (Новый мета-арсенал)
     ]
 }
 
@@ -106,7 +115,8 @@ pub fn default_passive_priorities() -> Vec<f32> {
     vec![
         1.3, 1.5, 1.4, 1.4, 1.2, 1.2, 1.5, 1.3, 1.3, 1.4, 1.5, 1.6, 1.4, 1.5, // 1..14 (Базовые пассивки)
         1.8, 1.7, 1.6, 1.8, 2.0, 1.6, 1.5, 1.7, 1.6, 1.6, 1.7, 1.5, 1.6, 1.7, // 15..28 (Легендарные реликвии)
-        1.6, // 29: Споровый Мицелий
+        1.6,                                                                   // 29: Споровый Мицелий
+        1.9, 1.7, 1.8, 1.8, 1.9, 1.7,                                         // 30..35 (Дупликатор, Канделябр, Проклятие, Слеза, Печать, Кровавый Титан)
     ]
 }
 

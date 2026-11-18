@@ -35,6 +35,14 @@ pub fn get_weapon_synthesis_recipe(w: WeaponType) -> Option<(WeaponType, Passive
         WeaponType::AegisOrbiters | WeaponType::InvincibleBastion => Some((WeaponType::AegisOrbiters, PassiveType::ImmortalAegis, WeaponType::InvincibleBastion)),
         WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => Some((WeaponType::ChaosMeteor, PassiveType::Pyromaniac, WeaponType::ArmageddonStorm)),
         WeaponType::VoidRift | WeaponType::SingularityCollapse => Some((WeaponType::VoidRift, PassiveType::OctarineCore, WeaponType::SingularityCollapse)),
+        WeaponType::SacredScriptures | WeaponType::InfernalLiturgy => Some((WeaponType::SacredScriptures, PassiveType::ChronoHourglass, WeaponType::InfernalLiturgy)),
+        WeaponType::FaithBoomerang | WeaponType::HeavenlyJudgment => Some((WeaponType::FaithBoomerang, PassiveType::CloverOfFate, WeaponType::HeavenlyJudgment)),
+        WeaponType::CursedChalice | WeaponType::BloodDeluge => Some((WeaponType::CursedChalice, PassiveType::PrismaticFocus, WeaponType::BloodDeluge)),
+        WeaponType::VampiricAura | WeaponType::SoulFeast => Some((WeaponType::VampiricAura, PassiveType::BloodStone, WeaponType::SoulFeast)),
+        WeaponType::RunicPrism | WeaponType::SpatialShatter => Some((WeaponType::RunicPrism, PassiveType::DuplicatorRelic, WeaponType::SpatialShatter)),
+        WeaponType::AbyssalBeam | WeaponType::ApocalypseCascade => Some((WeaponType::AbyssalBeam, PassiveType::CooldownTome, WeaponType::ApocalypseCascade)),
+        WeaponType::ChronoStasis | WeaponType::InfiniteDilation => Some((WeaponType::ChronoStasis, PassiveType::SilverTears, WeaponType::InfiniteDilation)),
+        WeaponType::AstralCloak | WeaponType::BloodEmperorShroud => Some((WeaponType::AstralCloak, PassiveType::TitanAegis, WeaponType::BloodEmperorShroud)),
     }
 }
 
@@ -61,6 +69,8 @@ pub fn get_passive_synthesis_recipe(p: PassiveType) -> Option<(WeaponType, Passi
         PassiveType::ImmortalAegis => Some((WeaponType::AegisOrbiters, p, WeaponType::InvincibleBastion)),
         PassiveType::Pyromaniac => Some((WeaponType::ChaosMeteor, p, WeaponType::ArmageddonStorm)),
         PassiveType::OctarineCore => Some((WeaponType::VoidRift, p, WeaponType::SingularityCollapse)),
+        PassiveType::DuplicatorRelic => Some((WeaponType::RunicPrism, p, WeaponType::SpatialShatter)),
+        PassiveType::SilverTears => Some((WeaponType::ChronoStasis, p, WeaponType::InfiniteDilation)),
         _ => None,
     }
 }
@@ -420,5 +430,11 @@ fn format_passive_bonus(p: PassiveType, lvl: u8) -> String {
         PassiveType::FateWeaver => "Все вероятностные проверки бросаются дважды".to_string(),
         PassiveType::SiegeMortar => "Прямые попадания вызывают взрывы 55px (50% урона)".to_string(),
         PassiveType::SporeMushroom => format!("+{:.0} HP/сек (+{:.1}% макс HP) при остановке", lvl as f32 * 18.0, lvl as f32 * 1.5),
+        PassiveType::DuplicatorRelic => format!("+{} дополнительных снаряда ко всем атакам", lvl),
+        PassiveType::CandelabraOfFury => format!("+{}% к радиусу всех взрывов, аур и луж", lvl * 20),
+        PassiveType::AbyssalCurseStone => format!("+{}% к опыту босса, +{}% к общему урону", lvl * 35, lvl * 25),
+        PassiveType::SilverTears => format!("+{:.1} HP/сек регенерации, +{}% сопротивления стихиям", lvl as f32 * 3.0, lvl * 15),
+        PassiveType::GoldenSeal => format!("+{}% урона, +{}% крит, +{}px радиус сбора душ", lvl * 20, lvl * 10, lvl * 35),
+        PassiveType::TitanBloodArmor => format!("+{:.0} к броне, +{}% урона за каждые 10% потерянного HP", lvl as f32 * 12.0, lvl * 8),
     }
 }

@@ -1659,6 +1659,14 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
             WeaponType::AegisOrbiters => ("Эгида Бессмертия", "Несокрушимая Крепость"),
             WeaponType::ChaosMeteor => ("Сердце Пироманта", "Шторм Армагеддона"),
             WeaponType::VoidRift => ("Оккультная Призма", "Коллапс Сверхновой"),
+            WeaponType::SacredScriptures => ("Песочные Часы", "Инфернальная Литургия"),
+            WeaponType::FaithBoomerang => ("Клевер Судьбы", "Небесный Вердикт"),
+            WeaponType::CursedChalice => ("Призматический Фокус", "Кровавый Потоп"),
+            WeaponType::VampiricAura => ("Кровавый Камень", "Пиршество Душ"),
+            WeaponType::RunicPrism => ("Зеркальный Дупликатор", "Искривление Пространства"),
+            WeaponType::AbyssalBeam => ("Фолиант Времени", "Каскад Апокалипсиса"),
+            WeaponType::ChronoStasis => ("Серебряная Слеза", "Бесконечная Дилатация"),
+            WeaponType::AstralCloak => ("Черный Эгис", "Саван Кровавого Императора"),
             _ => ("-", "-"),
         };
         (format!("Эволюция (Ур. 8 + {}): -> {}", req_passive, evo_weapon), YELLOW)
@@ -1711,6 +1719,12 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::FateWeaver => "Текущий бонус: Все шансы эффектов проверяются дважды в пользу босса".to_string(),
         PassiveType::SiegeMortar => "Текущий бонус: Взрывы 55px при каждом попадании снаряда (50% урона)".to_string(),
         PassiveType::SporeMushroom => format!("Текущий бонус: +{:.0} HP/сек (+{:.1}% макс HP) при остановке", p.level as f32 * 18.0, p.level as f32 * 1.5),
+        PassiveType::DuplicatorRelic => format!("Текущий бонус: +{} доп. снаряда(ов) ко всем способностям", p.level),
+        PassiveType::CandelabraOfFury => format!("Текущий бонус: +{}% к радиусу всех взрывов, аур и луж", p.level * 20),
+        PassiveType::AbyssalCurseStone => format!("Текущий бонус: +{}% к опыту босса, +{}% к общему урону", p.level * 35, p.level * 25),
+        PassiveType::SilverTears => format!("Текущий бонус: +{:.1} HP/с реген, +{}% сопротивления стихиям", p.level as f32 * 3.0, p.level * 15),
+        PassiveType::GoldenSeal => format!("Текущий бонус: +{}% урон, +{}% крит, +{}px радиус сбора", p.level * 20, p.level * 10, p.level * 35),
+        PassiveType::TitanBloodArmor => format!("Текущий бонус: +{:.0} к броне, +{}% урона при потере HP", p.level as f32 * 12.0, p.level * 8),
     };
     fonts.draw_text(&bonus_text, card_x + 12.0, card_y + 44.0, 12.0, GREEN);
 
@@ -1746,6 +1760,12 @@ fn draw_passive_tooltip(p: &PassiveSlot, sx: f32, sy: f32, screen_w: f32, fonts:
         PassiveType::FateWeaver => "Связка для синергии: Удваивает удачу для всех критов и проков",
         PassiveType::SiegeMortar => "Связка для синергии: Добавляет взрывы по площади ко всем атакам",
         PassiveType::SporeMushroom => "Связка для выживания: Безусловная регенерация даже под градом ударов",
+        PassiveType::DuplicatorRelic => "Связка для эволюции: Руническая Призма -> Искривление Пространства",
+        PassiveType::CandelabraOfFury => "Связка для синергии: Колоссальное расширение радиуса поражения всех AoE",
+        PassiveType::AbyssalCurseStone => "Связка для синергии: Экстремальный разгон прокачки уровня и урона",
+        PassiveType::SilverTears => "Связка для эволюции: Хроно-Стазис -> Бесконечная Дилатация",
+        PassiveType::GoldenSeal => "Связка для синергии: Урон, шанс критического удара и глобальный сбор душ",
+        PassiveType::TitanBloodArmor => "Связка для синергии: Непробиваемая броня и ярость возмездия при низком HP",
     };
     fonts.draw_text(evo_synergy, card_x + 12.0, card_y + 92.0, 11.5, YELLOW);
 }

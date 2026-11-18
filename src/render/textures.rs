@@ -462,6 +462,22 @@ impl GameTextures {
             WeaponType::ArmageddonStorm => self.icon_cinder_heart.as_ref().or(self.icon_chaos_meteor.as_ref()),
             WeaponType::VoidRift => self.icon_void_rift.as_ref().or(self.icon_singularity.as_ref()),
             WeaponType::SingularityCollapse => self.icon_octarine_core.as_ref().or(self.icon_void_rift.as_ref()),
+            WeaponType::SacredScriptures => self.icon_cooldown_tome.as_ref().or(self.icon_book.as_ref()),
+            WeaponType::InfernalLiturgy => self.icon_cinder_heart.as_ref().or(self.icon_cooldown_tome.as_ref()),
+            WeaponType::FaithBoomerang => self.icon_wind_blade.as_ref().or(self.icon_sword.as_ref()),
+            WeaponType::HeavenlyJudgment => self.icon_evo_blade_storm.as_ref().or(self.icon_clover.as_ref()),
+            WeaponType::CursedChalice => self.icon_corrosive_flask.as_ref().or(self.icon_bottle.as_ref()),
+            WeaponType::BloodDeluge => self.icon_blood_stone.as_ref().or(self.icon_corrosive_flask.as_ref()),
+            WeaponType::VampiricAura => self.icon_fire_aura.as_ref().or(self.icon_ring.as_ref()),
+            WeaponType::SoulFeast => self.icon_spectral_jar.as_ref().or(self.icon_fire_aura.as_ref()),
+            WeaponType::RunicPrism => self.icon_prismatic.as_ref().or(self.icon_jewel.as_ref()),
+            WeaponType::SpatialShatter => self.icon_octarine_core.as_ref().or(self.icon_prismatic.as_ref()),
+            WeaponType::AbyssalBeam => self.icon_void_rift.as_ref().or(self.icon_magic_wand.as_ref()),
+            WeaponType::ApocalypseCascade => self.icon_chaos_meteor.as_ref().or(self.icon_void_rift.as_ref()),
+            WeaponType::ChronoStasis => self.icon_chrono_hourglass.as_ref().or(self.icon_hourglass.as_ref()),
+            WeaponType::InfiniteDilation => self.icon_singularity.as_ref().or(self.icon_chrono_hourglass.as_ref()),
+            WeaponType::AstralCloak => self.icon_aegis.as_ref().or(self.icon_shield.as_ref()),
+            WeaponType::BloodEmperorShroud => self.icon_immortal_aegis.as_ref().or(self.icon_aegis.as_ref()),
         }
     }
 
@@ -496,6 +512,12 @@ impl GameTextures {
             PassiveType::UkuleleResonance => self.icon_resonant_strings.as_ref().or(self.icon_bow.as_ref()),
             PassiveType::FateWeaver => self.icon_fate_weaver.as_ref().or(self.icon_clover.as_ref()),
             PassiveType::SiegeMortar => self.icon_calamity_mortar.as_ref().or(self.icon_missiles.as_ref()),
+            PassiveType::DuplicatorRelic => self.icon_prismatic.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::CandelabraOfFury => self.icon_cinder_heart.as_ref().or(self.icon_fire_aura.as_ref()),
+            PassiveType::AbyssalCurseStone => self.icon_blood_stone.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::SilverTears => self.icon_frost_ring.as_ref().or(self.icon_ring.as_ref()),
+            PassiveType::GoldenSeal => self.icon_solar_relic.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::TitanBloodArmor => self.icon_aegis.as_ref().or(self.icon_armor.as_ref()),
         }
     }
 

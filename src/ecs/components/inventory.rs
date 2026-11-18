@@ -29,8 +29,16 @@ pub enum WeaponType {
     AegisOrbiters,    // 18. Орбитальные Бастионы (Shield Orbiters)
     ChaosMeteor,      // 19. Хаотический Метеор (Astral Cataclysm)
     VoidRift,         // 20. Разрыв Бездны (Spatial Rift)
+    SacredScriptures, // 21. Орбитальный Гримуар (Вращающиеся фолианты)
+    FaithBoomerang,   // 22. Клинок Веры (Возвращающийся крестообразный бумеранг)
+    CursedChalice,    // 23. Осквернённая Чаша (Священный огонь, разливающийся в лужи)
+    VampiricAura,     // 24. Аура Вампиризма (Тёмное кольцо похищения жизни)
+    RunicPrism,       // 25. Руническая Призма (Рикошетящие лучи-осколки)
+    AbyssalBeam,      // 26. Столп Бездны (Вертикальный луч небесного гнева)
+    ChronoStasis,     // 27. Хроно-Стазис (Конус временной заморозки)
+    AstralCloak,      // 28. Астральный Саван (Защитный поглощающий кокон)
 
-    // Эволюции (20 эволюций)
+    // Эволюции (28 эволюций)
     BladeStorm,       // 1. Буря Клинков (Клинок Ветра + Перчатка Скорости)
     Hellfire,         // 2. Адское Пекло (Огненная Аура + Сердце Гиганта)
     DeathRay,         // 3. Луч Смерти (Магический Жезл + Фолиант Времени)
@@ -51,6 +59,14 @@ pub enum WeaponType {
     InvincibleBastion,// 18. Несокрушимая Крепость (Орбитальные Бастионы + Эгида Бессмертия)
     ArmageddonStorm,  // 19. Шторм Армагеддона (Хаотический Метеор + Сердце Пироманта)
     SingularityCollapse,// 20. Коллапс Сверхновой (Разрыв Бездны + Оккультная Призма)
+    InfernalLiturgy,  // 21. Инфернальная Литургия (Орбитальный Гримуар + Песочные Часы)
+    HeavenlyJudgment, // 22. Небесный Вердикт (Клинок Веры + Клевер Судьбы)
+    BloodDeluge,      // 23. Кровавый Потоп (Осквернённая Чаша + Призматический Фокус)
+    SoulFeast,        // 24. Пиршество Душ (Аура Вампиризма + Кровавый Камень)
+    SpatialShatter,   // 25. Искривление Пространства (Руническая Призма + Зеркальный Дупликатор)
+    ApocalypseCascade,// 26. Каскад Апокалипсиса (Столп Бездны + Фолиант Времени)
+    InfiniteDilation, // 27. Бесконечная Дилатация (Хроно-Стазис + Серебряная Слеза)
+    BloodEmperorShroud,// 28. Саван Кровавого Императора (Астральный Саван + Черный Эгис)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -71,7 +87,7 @@ pub enum PassiveType {
     PrismaticFocus,   // 13. Призматический Фокус (+радиус поражения AoE)
     TitanAegis,       // 14. Черный Эгис (плоское снижение входящего урона)
 
-    // Легендарные реликвии и кросс-синергетические предметы (14 видов)
+    // Легендарные реликвии и кросс-синергетические предметы (21 вид)
     ImmortalAegis,    // 15. Эгида Бессмертия (Воскрешение с 65% HP + ударная волна)
     ArchmageShard,    // 16. Осколок Архимага (+1 рикошет, -15% кд, +20% AoE всем скиллам)
     DivineRapier,     // 17. Священная Рапира (+60% общий урон, но +15% входящий урон)
@@ -87,6 +103,12 @@ pub enum PassiveType {
     FateWeaver,       // 27. Ткач Судьбы (57-листный клевер: все шансы проков бросаются дважды)
     SiegeMortar,      // 28. Осадный Бегемот (Все попадания детонируют в радиусе 55px на 50% урона)
     SporeMushroom,    // 29. Споровый Мицелий (Целебные грибы при остановке)
+    DuplicatorRelic,  // 30. Зеркальный Дупликатор (+1/+2/+3 снаряда ко всем скиллам)
+    CandelabraOfFury, // 31. Канделябр Ярости (+20%/40%/60% к радиусу AoE атак и луж)
+    AbyssalCurseStone,// 32. Проклятый Камень Бездны (+35% XP, +25% урон босса)
+    SilverTears,      // 33. Серебряная Слеза (+3.0 HP/сек реген, +15% резисты)
+    GoldenSeal,       // 34. Имперская Печать (+20% урон, +10% крит, +30px сбор)
+    TitanBloodArmor,  // 35. Доспех Кровавого Титана (Бонус урона и брони от потерянного HP)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -249,6 +271,14 @@ pub struct BossInventory {
     // Механика однократного воскрешения от Эгиды Бессмертия
     pub has_used_aegis_revive: bool,
     pub bonus_move_speed_multiplier: f32, // Множитель скорости бега (от SpeedGloves и Возвышения)
+
+    // Защитные механики Астрального Савана / Савана Кровавого Императора
+    pub astral_cloak_charges: u8,
+    pub astral_cloak_timer: f32,
+    // Таймер глобальной дилатации времени (Хроно-Стазис / Бесконечная Дилатация)
+    pub infinite_dilation_timer: f32,
+    // Угол вращения Орбитального Гримуара
+    pub scriptures_orbit_angle: f32,
 }
 
 impl BossInventory {
@@ -276,6 +306,10 @@ impl BossInventory {
             perk_announcement_timer: 0.0,
             has_used_aegis_revive: false,
             bonus_move_speed_multiplier: 1.0,
+            astral_cloak_charges: 3,
+            astral_cloak_timer: 0.0,
+            infinite_dilation_timer: 10.0,
+            scriptures_orbit_angle: 0.0,
         }
     }
 
@@ -385,6 +419,30 @@ impl BossInventory {
             WeaponType::VoidRift if self.has_passive(PassiveType::OctarineCore) => {
                 Some(WeaponType::SingularityCollapse)
             }
+            WeaponType::SacredScriptures if self.has_passive(PassiveType::ChronoHourglass) => {
+                Some(WeaponType::InfernalLiturgy)
+            }
+            WeaponType::FaithBoomerang if self.has_passive(PassiveType::CloverOfFate) => {
+                Some(WeaponType::HeavenlyJudgment)
+            }
+            WeaponType::CursedChalice if self.has_passive(PassiveType::PrismaticFocus) => {
+                Some(WeaponType::BloodDeluge)
+            }
+            WeaponType::VampiricAura if self.has_passive(PassiveType::BloodStone) => {
+                Some(WeaponType::SoulFeast)
+            }
+            WeaponType::RunicPrism if self.has_passive(PassiveType::DuplicatorRelic) => {
+                Some(WeaponType::SpatialShatter)
+            }
+            WeaponType::AbyssalBeam if self.has_passive(PassiveType::CooldownTome) => {
+                Some(WeaponType::ApocalypseCascade)
+            }
+            WeaponType::ChronoStasis if self.has_passive(PassiveType::SilverTears) => {
+                Some(WeaponType::InfiniteDilation)
+            }
+            WeaponType::AstralCloak if self.has_passive(PassiveType::TitanAegis) => {
+                Some(WeaponType::BloodEmperorShroud)
+            }
             _ => None,
         }
     }
@@ -412,8 +470,32 @@ impl BossInventory {
             WeaponType::AegisOrbiters => Some(PassiveType::ImmortalAegis),
             WeaponType::ChaosMeteor => Some(PassiveType::Pyromaniac),
             WeaponType::VoidRift => Some(PassiveType::OctarineCore),
+            WeaponType::SacredScriptures => Some(PassiveType::ChronoHourglass),
+            WeaponType::FaithBoomerang => Some(PassiveType::CloverOfFate),
+            WeaponType::CursedChalice => Some(PassiveType::PrismaticFocus),
+            WeaponType::VampiricAura => Some(PassiveType::BloodStone),
+            WeaponType::RunicPrism => Some(PassiveType::DuplicatorRelic),
+            WeaponType::AbyssalBeam => Some(PassiveType::CooldownTome),
+            WeaponType::ChronoStasis => Some(PassiveType::SilverTears),
+            WeaponType::AstralCloak => Some(PassiveType::TitanAegis),
             _ => None,
         }
+    }
+
+    pub fn get_duplicator_projectiles(&self) -> usize {
+        self.get_passive_level(PassiveType::DuplicatorRelic) as usize
+    }
+
+    pub fn get_candelabra_area_multiplier(&self) -> f32 {
+        1.0 + (self.get_passive_level(PassiveType::CandelabraOfFury) as f32 * 0.20)
+    }
+
+    pub fn get_curse_stone_xp_multiplier(&self) -> f32 {
+        1.0 + (self.get_passive_level(PassiveType::AbyssalCurseStone) as f32 * 0.35)
+    }
+
+    pub fn get_silver_tears_regen(&self) -> f32 {
+        self.get_passive_level(PassiveType::SilverTears) as f32 * 3.0
     }
 
     /// Проверяет, является ли пассивка ключом к эволюции для указанного оружия
@@ -439,26 +521,32 @@ impl BossInventory {
         ((lvl as f32 * 0.12) + static_core).min(0.75)
     }
 
-    /// Шанс критического удара от CloverOfFate (Клевер Судьбы)
+    /// Шанс критического удара от CloverOfFate (Клевер Судьбы) и GoldenSeal
     pub fn get_crit_chance(&self) -> f32 {
         let lvl = self.get_passive_level(PassiveType::CloverOfFate);
-        (lvl as f32 * 0.12).min(0.60)
+        let mut chance = (lvl as f32 * 0.12).min(0.60);
+        if self.has_passive(PassiveType::GoldenSeal) {
+            chance += 0.10;
+        }
+        chance.min(0.85)
     }
 
-    /// Множитель размера области поражения AoE от PrismaticFocus и ArchmageShard
+    /// Множитель размера области поражения AoE от PrismaticFocus, CandelabraOfFury и ArchmageShard
     pub fn get_aoe_multiplier(&self) -> f32 {
         let lvl = self.get_passive_level(PassiveType::PrismaticFocus);
         let shard_bonus = if self.has_passive(PassiveType::ArchmageShard) { 0.20 } else { 0.0 };
-        1.0 + (lvl as f32 * 0.15) + shard_bonus
+        let candelabra_bonus = self.get_passive_level(PassiveType::CandelabraOfFury) as f32 * 0.20;
+        1.0 + (lvl as f32 * 0.15) + shard_bonus + candelabra_bonus
     }
 
-    /// Плоское снижение любого входящего урона от TitanAegis
+    /// Плоское снижение любого входящего урона от TitanAegis и TitanBloodArmor
     pub fn get_flat_damage_reduction(&self) -> f32 {
         let lvl = self.get_passive_level(PassiveType::TitanAegis);
-        lvl as f32 * 2.5
+        let titan_armor = self.get_passive_level(PassiveType::TitanBloodArmor) as f32 * 3.5;
+        (lvl as f32 * 2.5) + titan_armor
     }
 
-    /// Множитель урона от BloodStone, DivineRapier, ColossalEye, BlessedHeart
+    /// Множитель урона от BloodStone, DivineRapier, ColossalEye, BlessedHeart, AbyssalCurseStone, GoldenSeal
     pub fn get_damage_multiplier(&self) -> f32 {
         let blood_stone = self.get_passive_level(PassiveType::BloodStone);
         let mut mult = 1.0 + (blood_stone as f32 * 0.12);
@@ -471,6 +559,12 @@ impl BossInventory {
         if self.has_passive(PassiveType::BlessedHeart) {
             mult += 0.35; // +35% от Благословенного Сердца
         }
+        if self.has_passive(PassiveType::AbyssalCurseStone) {
+            mult += 0.25; // +25% от Проклятого Камня
+        }
+        if self.has_passive(PassiveType::GoldenSeal) {
+            mult += 0.20; // +20% от Имперской Печати
+        }
         mult
     }
 
@@ -480,11 +574,12 @@ impl BossInventory {
         1.0 + (eagle_scope as f32 * 0.20)
     }
 
-    /// Регенерация HP в секунду от BloodStone и GiantHeart
+    /// Регенерация HP в секунду от BloodStone, GiantHeart и SilverTears
     pub fn get_hp_regen(&self) -> f32 {
         let blood_stone = self.get_passive_level(PassiveType::BloodStone);
         let giant_heart = self.get_passive_level(PassiveType::GiantHeart);
-        (blood_stone as f32 * 2.5) + (giant_heart as f32 * 3.0)
+        let silver_tears = self.get_passive_level(PassiveType::SilverTears);
+        (blood_stone as f32 * 2.5) + (giant_heart as f32 * 3.0) + (silver_tears as f32 * 3.0)
     }
 
     /// Вампиризм от Оккультной Призмы (Octarine Core)
@@ -496,10 +591,11 @@ impl BossInventory {
         }
     }
 
-    /// Эффективный радиус сбора опыта от MagnetSphere
+    /// Эффективный радиус сбора опыта от MagnetSphere и GoldenSeal
     pub fn get_effective_magnet_radius(&self) -> f32 {
         let magnet_sphere = self.get_passive_level(PassiveType::MagnetSphere);
-        self.magnet_radius + (magnet_sphere as f32 * 45.0)
+        let seal_bonus = if self.has_passive(PassiveType::GoldenSeal) { 35.0 } else { 0.0 };
+        self.magnet_radius + (magnet_sphere as f32 * 45.0) + seal_bonus
     }
 
     /// Множитель скорости перезарядки от пассивок

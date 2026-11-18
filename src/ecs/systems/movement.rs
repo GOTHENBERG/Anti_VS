@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 use rayon::prelude::*;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction};
-use crate::ecs::components::inventory::DamageSourceKind;
+use crate::ecs::components::inventory::{DamageSourceKind, WeaponType};
 use crate::ecs::world::World;
 
 #[inline(always)]
@@ -217,6 +217,28 @@ pub fn update_movement(world: &mut World, dt: f32) {
                         let new_dir = current_dir.lerp(target_dir, turn_factor).normalize_or_zero();
                         proj.vel = new_dir * current_speed;
                     }
+                }
+            }
+        }
+
+        // Механика бумеранга (FaithBoomerang и HeavenlyJudgment):
+        // После первой фазы полета плавно возвращается к боссу
+        if let Some(src) = proj.source_weapon {
+            if (src == WeaponType::FaithBoomerang || src == WeaponType::HeavenlyJudgment) && proj.lifetime < 1.9 {
+                let to_boss = (boss_pos - proj.pos).normalize_or_zero();
+                let current_spd = proj.vel.length().max(280.0);
+                proj.vel = proj.vel.lerp(to_boss * current_spd, (5.0 * dt).min(1.0));
+            }
+
+            // Механика рикошета от стен арены (RunicPrism и SpatialShatter)
+            if src == WeaponType::RunicPrism || src == WeaponType::SpatialShatter {
+                let map_w = crate::core::MAP_WIDTH;
+                let map_h = crate::core::MAP_HEIGHT;
+                if (proj.pos.x <= 25.0 && proj.vel.x < 0.0) || (proj.pos.x >= map_w - 25.0 && proj.vel.x > 0.0) {
+                    proj.vel.x = -proj.vel.x;
+                }
+                if (proj.pos.y <= 25.0 && proj.vel.y < 0.0) || (proj.pos.y >= map_h - 25.0 && proj.vel.y > 0.0) {
+                    proj.vel.y = -proj.vel.y;
                 }
             }
         }

@@ -471,10 +471,26 @@ pub fn weapon_type_to_index(w: WeaponType) -> usize {
         WeaponType::InvincibleBastion => 37,
         WeaponType::ArmageddonStorm => 38,
         WeaponType::SingularityCollapse => 39,
+        WeaponType::SacredScriptures => 40,
+        WeaponType::FaithBoomerang => 41,
+        WeaponType::CursedChalice => 42,
+        WeaponType::VampiricAura => 43,
+        WeaponType::RunicPrism => 44,
+        WeaponType::AbyssalBeam => 45,
+        WeaponType::ChronoStasis => 46,
+        WeaponType::AstralCloak => 47,
+        WeaponType::InfernalLiturgy => 48,
+        WeaponType::HeavenlyJudgment => 49,
+        WeaponType::BloodDeluge => 50,
+        WeaponType::SoulFeast => 51,
+        WeaponType::SpatialShatter => 52,
+        WeaponType::ApocalypseCascade => 53,
+        WeaponType::InfiniteDilation => 54,
+        WeaponType::BloodEmperorShroud => 55,
     }
 }
 
-/// Преобразует тип пассивки/реликвии Босса в фиксированный индекс [0..28]
+/// Преобразует тип пассивки/реликвии Босса в фиксированный индекс [0..34]
 pub fn passive_type_to_index(p: PassiveType) -> usize {
     match p {
         PassiveType::SpeedGloves => 0,
@@ -506,6 +522,12 @@ pub fn passive_type_to_index(p: PassiveType) -> usize {
         PassiveType::FateWeaver => 26,
         PassiveType::SiegeMortar => 27,
         PassiveType::SporeMushroom => 28,
+        PassiveType::DuplicatorRelic => 29,
+        PassiveType::CandelabraOfFury => 30,
+        PassiveType::AbyssalCurseStone => 31,
+        PassiveType::SilverTears => 32,
+        PassiveType::GoldenSeal => 33,
+        PassiveType::TitanBloodArmor => 34,
     }
 }
 

@@ -153,5 +153,35 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Споровый Мицелий",
             description: "Пускает целебные корни при остановке. Восстанавливает HP даже в гуще врагов и под градом ударов!",
         },
+        PassiveType::DuplicatorRelic => PassiveDefinition {
+            kind,
+            name: "Зеркальный Дупликатор",
+            description: "+1/+2/+3 дополнительных снаряда/луча/книги ко ВСЕМ способностям босса. Нужен для Искривления Пространства.",
+        },
+        PassiveType::CandelabraOfFury => PassiveDefinition {
+            kind,
+            name: "Канделябр Ярости",
+            description: "+20%/40%/60% к радиусу и площади (AoE) всех заклинаний, луж, аур и взрывов босса.",
+        },
+        PassiveType::AbyssalCurseStone => PassiveDefinition {
+            kind,
+            name: "Проклятый Камень Бездны",
+            description: "+35% к получаемому опыту и +25% к наносимому урону босса за счет усиления натиска вражеских полчищ.",
+        },
+        PassiveType::SilverTears => PassiveDefinition {
+            kind,
+            name: "Серебряная Слеза",
+            description: "+3.0 HP/сек регенерация и +15% сопротивления холоду, яду и магии. Нужна для Бесконечной Дилатации.",
+        },
+        PassiveType::GoldenSeal => PassiveDefinition {
+            kind,
+            name: "Имперская Печать",
+            description: "+20% к общему урону, +10% шанс критического удара и +30px к радиусу притяжения кристаллов душ.",
+        },
+        PassiveType::TitanBloodArmor => PassiveDefinition {
+            kind,
+            name: "Доспех Кровавого Титана",
+            description: "Преобразует потерянное здоровье в несокрушимую плоскую броню (+до 25) и яростный урон (+до 50%).",
+        },
     }
 }

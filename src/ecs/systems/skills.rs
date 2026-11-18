@@ -187,8 +187,10 @@ pub fn update_skills(world: &mut World, dt: f32) {
     let armor_pen = world.boss_inventory.get_armor_penetration();
     let dmg_mult = world.boss_inventory.get_damage_multiplier();
     let spd_mult = world.boss_inventory.get_projectile_speed_multiplier();
+    let aoe_mult = world.boss_inventory.get_aoe_multiplier();
+    let extra_proj = world.boss_inventory.get_duplicator_projectiles();
 
-    // Вращение орбит для Бури Клинков и Праведного Щита
+    // Вращение орбит для Бури Клинков, Праведного Щита и Орбитального Гримуара
     // Shared match time advances once, even when co-op actors are evaluated through
     // the legacy single-Boss context swap.
     if world.active_boss_id == 1 {
@@ -196,6 +198,22 @@ pub fn update_skills(world: &mut World, dt: f32) {
     }
     world.blade_storm_angle = (world.blade_storm_angle + dt * 6.0) % (std::f32::consts::PI * 2.0);
     world.divine_shield_angle = (world.divine_shield_angle + dt * 4.0) % (std::f32::consts::PI * 2.0);
+    world.boss_inventory.scriptures_orbit_angle = (world.boss_inventory.scriptures_orbit_angle + dt * 4.5) % (std::f32::consts::PI * 2.0);
+
+    // Пассивная перезарядка зарядов Астрального Савана / Савана Кровавого Императора
+    let has_cloak = world.boss_inventory.has_weapon(WeaponType::AstralCloak);
+    let has_shroud = world.boss_inventory.has_weapon(WeaponType::BloodEmperorShroud);
+    if has_cloak || has_shroud {
+        let max_charges = if has_shroud { 4 } else { 3 };
+        let recharge_cd = if has_shroud { 6.0 } else { 10.0 };
+        world.boss_inventory.astral_cloak_timer += dt;
+        if world.boss_inventory.astral_cloak_timer >= recharge_cd {
+            world.boss_inventory.astral_cloak_timer = 0.0;
+            if world.boss_inventory.astral_cloak_charges < max_charges {
+                world.boss_inventory.astral_cloak_charges += 1;
+            }
+        }
+    }
 
     // Таймер активного Луча Смерти
     if let Some((_, _, ref mut timer)) = world.death_ray_active {
@@ -264,6 +282,30 @@ pub fn update_skills(world: &mut World, dt: f32) {
                 }
                 WeaponType::VoidRift | WeaponType::SingularityCollapse => {
                     Some(crate::audio::AudioEvent::LaserBeam)
+                }
+                WeaponType::SacredScriptures | WeaponType::InfernalLiturgy => {
+                    Some(crate::audio::AudioEvent::MagicWand)
+                }
+                WeaponType::FaithBoomerang | WeaponType::HeavenlyJudgment => {
+                    Some(crate::audio::AudioEvent::BladeSlash)
+                }
+                WeaponType::CursedChalice | WeaponType::BloodDeluge => {
+                    Some(crate::audio::AudioEvent::FireBlast)
+                }
+                WeaponType::VampiricAura | WeaponType::SoulFeast => {
+                    Some(crate::audio::AudioEvent::MagicWand)
+                }
+                WeaponType::RunicPrism | WeaponType::SpatialShatter => {
+                    Some(crate::audio::AudioEvent::LaserBeam)
+                }
+                WeaponType::AbyssalBeam | WeaponType::ApocalypseCascade => {
+                    Some(crate::audio::AudioEvent::LaserBeam)
+                }
+                WeaponType::ChronoStasis | WeaponType::InfiniteDilation => {
+                    Some(crate::audio::AudioEvent::IceFreeze)
+                }
+                WeaponType::AstralCloak | WeaponType::BloodEmperorShroud => {
+                    Some(crate::audio::AudioEvent::BladeSlash)
                 }
             };
             if let Some(ev) = sfx {
@@ -1225,6 +1267,379 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         });
                     }
                     world.spawn_particles(boss_pos, 50, MAGENTA, 320.0);
+                }
+
+                // 1.41 Орбитальный Гримуар: вращающиеся вокруг босса священные фолианты
+                WeaponType::SacredScriptures => {
+                    let count = 2 + weapon.bonus_projectiles as usize + extra_proj;
+                    for i in 0..count {
+                        let base_angle = world.boss_inventory.scriptures_orbit_angle + (i as f32 * std::f32::consts::PI * 2.0 / count as f32);
+                        let dir = Vec2::new(base_angle.cos(), base_angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos + dir * (95.0 * aoe_mult),
+                            vel: dir * (170.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Holy,
+                            armor_penetration: armor_pen + 0.25,
+                            lifetime: 2.6,
+                            radius: 18.0 * aoe_mult,
+                            pierce: 18,
+                            faction: Faction::Boss,
+                            homing_strength: 0.0,
+                            source_weapon: Some(WeaponType::SacredScriptures),
+                        });
+                    }
+                    world.spawn_particles(boss_pos, 16, GOLD, 140.0);
+                }
+
+                // 1.42 Инфернальная Литургия (ЭВОЛЮЦИЯ): адские фолианты с бесконечным пробитием
+                WeaponType::InfernalLiturgy => {
+                    let count = 4 + weapon.bonus_projectiles as usize + extra_proj;
+                    for i in 0..count {
+                        let base_angle = world.boss_inventory.scriptures_orbit_angle + (i as f32 * std::f32::consts::PI * 2.0 / count as f32);
+                        let dir = Vec2::new(base_angle.cos(), base_angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos + dir * (120.0 * aoe_mult),
+                            vel: dir * (240.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Fire,
+                            armor_penetration: armor_pen + 0.45,
+                            lifetime: 3.5,
+                            radius: 24.0 * aoe_mult,
+                            pierce: 99,
+                            faction: Faction::Boss,
+                            homing_strength: 0.0,
+                            source_weapon: Some(WeaponType::InfernalLiturgy),
+                        });
+                    }
+                    world.spawn_particles(boss_pos, 35, ORANGE, 220.0);
+                }
+
+                // 1.43 Клинок Веры: крестообразный бумеранг, прорезающий ряды врагов и возвращающийся назад
+                WeaponType::FaithBoomerang => {
+                    let base_dir = tactical_target_pos
+                        .map(|tp| (tp - boss_pos).normalize_or_zero())
+                        .unwrap_or(Vec2::new(1.0, 0.0));
+                    let count = 1 + weapon.bonus_projectiles as usize + extra_proj;
+                    for i in 0..count {
+                        let spread = if count > 1 {
+                            (i as f32 - (count - 1) as f32 / 2.0) * 0.25
+                        } else { 0.0 };
+                        let angle = base_dir.y.atan2(base_dir.x) + spread;
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos + dir * 25.0,
+                            vel: dir * (360.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Physical,
+                            armor_penetration: armor_pen + 0.30,
+                            lifetime: 2.8,
+                            radius: 17.0 * aoe_mult,
+                            pierce: 25,
+                            faction: Faction::Boss,
+                            homing_strength: 0.0,
+                            source_weapon: Some(WeaponType::FaithBoomerang),
+                        });
+                    }
+                }
+
+                // 1.44 Небесный Вердикт (ЭВОЛЮЦИЯ): 4 священных клинка во все стороны с гарантированным критом
+                WeaponType::HeavenlyJudgment => {
+                    let count = 4 + weapon.bonus_projectiles as usize + extra_proj;
+                    for i in 0..count {
+                        let angle = (i as f32) * std::f32::consts::PI * 2.0 / (count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos + dir * 30.0,
+                            vel: dir * (420.0 * spd_mult),
+                            damage: effective_damage * 1.4,
+                            damage_type: DamageType::Holy,
+                            armor_penetration: armor_pen + 0.50,
+                            lifetime: 3.2,
+                            radius: 24.0 * aoe_mult,
+                            pierce: 99,
+                            faction: Faction::Boss,
+                            homing_strength: 0.0,
+                            source_weapon: Some(WeaponType::HeavenlyJudgment),
+                        });
+                    }
+                    world.spawn_particles(boss_pos, 40, YELLOW, 260.0);
+                }
+
+                // 1.45 Осквернённая Чаша: бросок кубка с разливающейся лужей священного пламени
+                WeaponType::CursedChalice => {
+                    let count = 1 + weapon.bonus_projectiles as usize + extra_proj;
+                    for _ in 0..count {
+                        let offset = if let Some(target_pos) = cluster_target_pos {
+                            let jitter = Vec2::new(crate::core::rand::gen_range(-40.0, 40.0), crate::core::rand::gen_range(-40.0, 40.0));
+                            (target_pos - boss_pos + jitter).clamp_length_max(320.0)
+                        } else {
+                            Vec2::new(crate::core::rand::gen_range(-140.0, 140.0), crate::core::rand::gen_range(-140.0, 140.0))
+                        };
+                        new_acid_pools.push(AcidPoolEntity {
+                            pos: boss_pos + offset,
+                            radius: 65.0 * aoe_mult,
+                            lifetime: 4.5,
+                            dps: effective_damage * 0.85,
+                            corrosive: false,
+                            is_director_source: false,
+                        });
+                    }
+                }
+
+                // 1.46 Кровавый Потоп (ЭВОЛЮЦИЯ): каскад огромных кровавых гейзеров с вампиризмом
+                WeaponType::BloodDeluge => {
+                    let count = 2 + weapon.bonus_projectiles as usize + extra_proj;
+                    for _ in 0..count {
+                        let offset = if let Some(target_pos) = cluster_target_pos {
+                            let jitter = Vec2::new(crate::core::rand::gen_range(-60.0, 60.0), crate::core::rand::gen_range(-60.0, 60.0));
+                            (target_pos - boss_pos + jitter).clamp_length_max(380.0)
+                        } else {
+                            Vec2::new(crate::core::rand::gen_range(-180.0, 180.0), crate::core::rand::gen_range(-180.0, 180.0))
+                        };
+                        new_acid_pools.push(AcidPoolEntity {
+                            pos: boss_pos + offset,
+                            radius: 110.0 * aoe_mult,
+                            lifetime: 6.5,
+                            dps: effective_damage * 1.25,
+                            corrosive: true,
+                            is_director_source: false,
+                        });
+                    }
+                    world.boss_health.heal(effective_damage * 0.15);
+                    world.spawn_particles(boss_pos, 30, RED, 200.0);
+                }
+
+                // 1.47 Аура Вампиризма: пульсирующее кольцо, вытягивающее жизнь врагов
+                WeaponType::VampiricAura => {
+                    let aura_radius = (140.0 + (weapon.level as f32 * 10.0)) * aoe_mult;
+                    let mobs_in_range = world.spatial_grid.query_nearby(boss_pos, aura_radius);
+                    let mut total_drain = 0.0f32;
+                    for idx in mobs_in_range {
+                        if let Some(mob) = world.mobs.get_mut(idx) {
+                            if mob.pos.distance_squared(boss_pos) < aura_radius * aura_radius {
+                                world.damage_queue.push(DamagePacket {
+                                    source_id: Some(0),
+                                    target_id: mob.id,
+                                    amount: effective_damage,
+                                    damage_type: DamageType::True,
+                                    armor_penetration: 1.0,
+                                });
+                                total_drain += effective_damage * 0.12;
+                            }
+                        }
+                    }
+                    if total_drain > 0.0 {
+                        world.boss_health.heal(total_drain.min(45.0));
+                    }
+                    world.spawn_particles(boss_pos, 18, PURPLE, aura_radius);
+                }
+
+                // 1.48 Пиршество Душ (ЭВОЛЮЦИЯ): колоссальная аура некротического поглощения
+                WeaponType::SoulFeast => {
+                    let aura_radius = 230.0 * aoe_mult;
+                    let mobs_in_range = world.spatial_grid.query_nearby(boss_pos, aura_radius);
+                    let mut total_drain = 0.0f32;
+                    for idx in mobs_in_range {
+                        if let Some(mob) = world.mobs.get_mut(idx) {
+                            if mob.pos.distance_squared(boss_pos) < aura_radius * aura_radius {
+                                world.damage_queue.push(DamagePacket {
+                                    source_id: Some(0),
+                                    target_id: mob.id,
+                                    amount: effective_damage * 1.4,
+                                    damage_type: DamageType::True,
+                                    armor_penetration: 1.0,
+                                });
+                                total_drain += effective_damage * 0.25;
+                            }
+                        }
+                    }
+                    if total_drain > 0.0 {
+                        world.boss_health.heal(total_drain.min(95.0));
+                    }
+                    world.spawn_particles(boss_pos, 45, DARKPURPLE, aura_radius);
+                }
+
+                // 1.49 Руническая Призма: рикошетящие лучи-осколки
+                WeaponType::RunicPrism => {
+                    let count = 2 + weapon.bonus_projectiles as usize + extra_proj;
+                    let base_angle = crate::core::rand::gen_range(0.0, std::f32::consts::PI * 2.0);
+                    for i in 0..count {
+                        let angle = base_angle + (i as f32 * std::f32::consts::PI * 2.0 / count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos + dir * 25.0,
+                            vel: dir * (380.0 * spd_mult),
+                            damage: effective_damage,
+                            damage_type: DamageType::Holy,
+                            armor_penetration: armor_pen + 0.35,
+                            lifetime: 3.5,
+                            radius: 14.0 * aoe_mult,
+                            pierce: 6,
+                            faction: Faction::Boss,
+                            homing_strength: 0.0,
+                            source_weapon: Some(WeaponType::RunicPrism),
+                        });
+                    }
+                }
+
+                // 1.50 Искривление Пространства (ЭВОЛЮЦИЯ): каскад расщепляющихся призм с чистым уроном
+                WeaponType::SpatialShatter => {
+                    let count = 4 + weapon.bonus_projectiles as usize + extra_proj;
+                    let base_angle = crate::core::rand::gen_range(0.0, std::f32::consts::PI * 2.0);
+                    for i in 0..count {
+                        let angle = base_angle + (i as f32 * std::f32::consts::PI * 2.0 / count as f32);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        new_projectiles.push(ProjectileEntity {
+                            id: 0,
+                            pos: boss_pos + dir * 30.0,
+                            vel: dir * (460.0 * spd_mult),
+                            damage: effective_damage * 1.35,
+                            damage_type: DamageType::True,
+                            armor_penetration: 1.0,
+                            lifetime: 4.2,
+                            radius: 18.0 * aoe_mult,
+                            pierce: 16,
+                            faction: Faction::Boss,
+                            homing_strength: 0.0,
+                            source_weapon: Some(WeaponType::SpatialShatter),
+                        });
+                    }
+                    world.spawn_particles(boss_pos, 35, SKYBLUE, 250.0);
+                }
+
+                // 1.51 Столп Бездны: вертикальный карающий луч Бездны
+                WeaponType::AbyssalBeam => {
+                    let count = 1 + weapon.bonus_projectiles as usize + extra_proj;
+                    for _ in 0..count {
+                        let target = tactical_target_pos.unwrap_or_else(|| {
+                            boss_pos + Vec2::new(crate::core::rand::gen_range(-250.0, 250.0), crate::core::rand::gen_range(-250.0, 250.0))
+                        });
+                        let beam_rad = 60.0 * aoe_mult;
+                        let nearby = world.spatial_grid.query_nearby(target, beam_rad);
+                        for idx in nearby {
+                            if let Some(mob) = world.mobs.get_mut(idx) {
+                                if mob.pos.distance_squared(target) < beam_rad * beam_rad {
+                                    world.damage_queue.push(DamagePacket {
+                                        source_id: Some(0),
+                                        target_id: mob.id,
+                                        amount: effective_damage,
+                                        damage_type: DamageType::True,
+                                        armor_penetration: 1.0,
+                                    });
+                                }
+                            }
+                        }
+                        for st in &world.structures {
+                            if st.pos.distance_squared(target) < (st.radius + beam_rad).powi(2) {
+                                world.damage_queue.push(DamagePacket {
+                                    source_id: Some(0),
+                                    target_id: st.id,
+                                    amount: effective_damage * 1.5,
+                                    damage_type: DamageType::True,
+                                    armor_penetration: 1.0,
+                                });
+                            }
+                        }
+                        world.spawn_particles(target, 40, DARKPURPLE, beam_rad * 1.5);
+                    }
+                }
+
+                // 1.52 Каскад Апокалипсиса (ЭВОЛЮЦИЯ): 5 сверхмассивных столпов погибели
+                WeaponType::ApocalypseCascade => {
+                    let count = 5 + weapon.bonus_projectiles as usize + extra_proj;
+                    let base_target = cluster_target_pos.unwrap_or(boss_pos);
+                    for i in 0..count {
+                        let offset = Vec2::new((i as f32 - (count - 1) as f32 / 2.0) * 110.0, crate::core::rand::gen_range(-60.0, 60.0));
+                        let strike_pt = base_target + offset;
+                        let beam_rad = 85.0 * aoe_mult;
+                        let nearby = world.spatial_grid.query_nearby(strike_pt, beam_rad);
+                        for idx in nearby {
+                            if let Some(mob) = world.mobs.get_mut(idx) {
+                                if mob.pos.distance_squared(strike_pt) < beam_rad * beam_rad {
+                                    world.damage_queue.push(DamagePacket {
+                                        source_id: Some(0),
+                                        target_id: mob.id,
+                                        amount: effective_damage * 1.5,
+                                        damage_type: DamageType::True,
+                                        armor_penetration: 1.0,
+                                    });
+                                }
+                            }
+                        }
+                        for st in &world.structures {
+                            if st.pos.distance_squared(strike_pt) < (st.radius + beam_rad).powi(2) {
+                                world.damage_queue.push(DamagePacket {
+                                    source_id: Some(0),
+                                    target_id: st.id,
+                                    amount: effective_damage * 2.0,
+                                    damage_type: DamageType::True,
+                                    armor_penetration: 1.0,
+                                });
+                            }
+                        }
+                        world.spawn_particles(strike_pt, 50, MAGENTA, beam_rad * 1.8);
+                    }
+                }
+
+                // 1.53 Хроно-Стазис: кольцо заморозки времени
+                WeaponType::ChronoStasis => {
+                    let radius = 240.0 * aoe_mult;
+                    let mobs_in_range = world.spatial_grid.query_nearby(boss_pos, radius);
+                    for idx in mobs_in_range {
+                        if let Some(mob) = world.mobs.get_mut(idx) {
+                            if mob.pos.distance_squared(boss_pos) < radius * radius {
+                                mob.status.apply_freeze(3.0);
+                                world.damage_queue.push(DamagePacket {
+                                    source_id: Some(0),
+                                    target_id: mob.id,
+                                    amount: effective_damage,
+                                    damage_type: DamageType::Ice,
+                                    armor_penetration: armor_pen + 0.3,
+                                });
+                            }
+                        }
+                    }
+                    world.spawn_particles(boss_pos, 30, BLUE, radius);
+                }
+
+                // 1.54 Бесконечная Дилатация (ЭВОЛЮЦИЯ): глобальный срез 35% HP всех мобов и тотальный стазис
+                WeaponType::InfiniteDilation => {
+                    for mob in &mut world.mobs {
+                        if mob.health.is_alive() {
+                            let cut_damage = (mob.health.current * 0.35).max(effective_damage);
+                            mob.status.apply_freeze(4.0);
+                            world.damage_queue.push(DamagePacket {
+                                source_id: Some(0),
+                                target_id: mob.id,
+                                amount: cut_damage,
+                                damage_type: DamageType::True,
+                                armor_penetration: 1.0,
+                            });
+                        }
+                    }
+                    world.spawn_particles(boss_pos, 70, SKYBLUE, 400.0);
+                }
+
+                // 1.55 Астральный Саван: генерация защитных барьеров
+                WeaponType::AstralCloak => {
+                    if world.boss_inventory.astral_cloak_charges < 3 {
+                        world.boss_inventory.astral_cloak_charges += 1;
+                        world.spawn_particles(boss_pos, 25, BLANK, 60.0);
+                    }
+                }
+
+                // 1.56 Саван Кровавого Императора (ЭВОЛЮЦИЯ): до 4 барьеров и усиленная защита
+                WeaponType::BloodEmperorShroud => {
+                    if world.boss_inventory.astral_cloak_charges < 4 {
+                        world.boss_inventory.astral_cloak_charges += 1;
+                        world.spawn_particles(boss_pos, 35, MAROON, 80.0);
+                    }
                 }
             }
         }

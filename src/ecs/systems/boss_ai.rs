@@ -321,6 +321,14 @@ fn get_weapon_index(kind: WeaponType) -> usize {
         WeaponType::VoidRift | WeaponType::SingularityCollapse => 17,
         WeaponType::SoulPhantoms | WeaponType::BansheeWail => 18,
         WeaponType::DivineBell | WeaponType::CathedralAura => 19,
+        WeaponType::SacredScriptures | WeaponType::InfernalLiturgy => 20,
+        WeaponType::FaithBoomerang | WeaponType::HeavenlyJudgment => 21,
+        WeaponType::CursedChalice | WeaponType::BloodDeluge => 22,
+        WeaponType::VampiricAura | WeaponType::SoulFeast => 23,
+        WeaponType::RunicPrism | WeaponType::SpatialShatter => 24,
+        WeaponType::AbyssalBeam | WeaponType::ApocalypseCascade => 25,
+        WeaponType::ChronoStasis | WeaponType::InfiniteDilation => 26,
+        WeaponType::AstralCloak | WeaponType::BloodEmperorShroud => 27,
     }
 }
 
@@ -355,6 +363,12 @@ fn get_passive_index(kind: PassiveType) -> usize {
         PassiveType::FateWeaver => 26,
         PassiveType::SiegeMortar => 27,
         PassiveType::SporeMushroom => 28,
+        PassiveType::DuplicatorRelic => 29,
+        PassiveType::CandelabraOfFury => 30,
+        PassiveType::AbyssalCurseStone => 31,
+        PassiveType::SilverTears => 32,
+        PassiveType::GoldenSeal => 33,
+        PassiveType::TitanBloodArmor => 34,
     }
 }
 
@@ -520,6 +534,14 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             WeaponType::AegisOrbiters,
             WeaponType::ChaosMeteor,
             WeaponType::VoidRift,
+            WeaponType::SacredScriptures,
+            WeaponType::FaithBoomerang,
+            WeaponType::CursedChalice,
+            WeaponType::VampiricAura,
+            WeaponType::RunicPrism,
+            WeaponType::AbyssalBeam,
+            WeaponType::ChronoStasis,
+            WeaponType::AstralCloak,
         ];
         for bw in base_weapons {
             if !inventory.has_weapon(bw) {
@@ -544,6 +566,14 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
                     WeaponType::AegisOrbiters => inventory.has_passive(PassiveType::ImmortalAegis),
                     WeaponType::ChaosMeteor => inventory.has_passive(PassiveType::Pyromaniac),
                     WeaponType::VoidRift => inventory.has_passive(PassiveType::OctarineCore),
+                    WeaponType::SacredScriptures => inventory.has_passive(PassiveType::ChronoHourglass),
+                    WeaponType::FaithBoomerang => inventory.has_passive(PassiveType::CloverOfFate),
+                    WeaponType::CursedChalice => inventory.has_passive(PassiveType::PrismaticFocus),
+                    WeaponType::VampiricAura => inventory.has_passive(PassiveType::BloodStone),
+                    WeaponType::RunicPrism => inventory.has_passive(PassiveType::DuplicatorRelic),
+                    WeaponType::AbyssalBeam => inventory.has_passive(PassiveType::CooldownTome),
+                    WeaponType::ChronoStasis => inventory.has_passive(PassiveType::SilverTears),
+                    WeaponType::AstralCloak => inventory.has_passive(PassiveType::TitanAegis),
                     _ => false,
                 };
                 let weight = if has_pair { 180.0 } else { 45.0 };
@@ -560,7 +590,7 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
         }
     }
 
-    // 5. Добавление новых пассивок (28 видов)
+    // 5. Добавление новых пассивок (35 видов)
     if inventory.passives.len() < MAX_PASSIVE_SLOTS {
         let all_passives = [
             PassiveType::SpeedGloves,
@@ -592,24 +622,30 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             PassiveType::FateWeaver,
             PassiveType::SiegeMortar,
             PassiveType::SporeMushroom,
+            PassiveType::DuplicatorRelic,
+            PassiveType::CandelabraOfFury,
+            PassiveType::AbyssalCurseStone,
+            PassiveType::SilverTears,
+            PassiveType::GoldenSeal,
+            PassiveType::TitanBloodArmor,
         ];
         for ap in all_passives {
             if !inventory.has_passive(ap) {
                 let has_pair = match ap {
                     PassiveType::SpeedGloves => inventory.has_weapon(WeaponType::WindBlade),
                     PassiveType::GiantHeart => inventory.has_weapon(WeaponType::FireAura),
-                    PassiveType::CooldownTome => inventory.has_weapon(WeaponType::MagicWand),
+                    PassiveType::CooldownTome => inventory.has_weapon(WeaponType::MagicWand) || inventory.has_weapon(WeaponType::AbyssalBeam),
                     PassiveType::LightArmor => inventory.has_weapon(WeaponType::HolyHammer),
                     PassiveType::FrostRing => inventory.has_weapon(WeaponType::IceShards),
                     PassiveType::CorrosiveFlask => inventory.has_weapon(WeaponType::PoisonOrbs),
-                    PassiveType::BloodStone => inventory.has_weapon(WeaponType::ExecutionerAxe),
+                    PassiveType::BloodStone => inventory.has_weapon(WeaponType::ExecutionerAxe) || inventory.has_weapon(WeaponType::VampiricAura),
                     PassiveType::EagleScope => inventory.has_weapon(WeaponType::CelestialBow),
-                    PassiveType::ChronoHourglass => inventory.has_weapon(WeaponType::ThunderOrb),
+                    PassiveType::ChronoHourglass => inventory.has_weapon(WeaponType::ThunderOrb) || inventory.has_weapon(WeaponType::SacredScriptures),
                     PassiveType::MagnetSphere => inventory.has_weapon(WeaponType::BloodDaggers),
                     PassiveType::TeslaCoil => inventory.has_weapon(WeaponType::SingularityOrb),
-                    PassiveType::CloverOfFate => inventory.has_weapon(WeaponType::ChainFrost),
-                    PassiveType::PrismaticFocus => inventory.has_weapon(WeaponType::BrimstoneRay),
-                    PassiveType::TitanAegis => inventory.has_weapon(WeaponType::MissileSwarm),
+                    PassiveType::CloverOfFate => inventory.has_weapon(WeaponType::ChainFrost) || inventory.has_weapon(WeaponType::FaithBoomerang),
+                    PassiveType::PrismaticFocus => inventory.has_weapon(WeaponType::BrimstoneRay) || inventory.has_weapon(WeaponType::CursedChalice),
+                    PassiveType::TitanAegis => inventory.has_weapon(WeaponType::MissileSwarm) || inventory.has_weapon(WeaponType::AstralCloak),
                     PassiveType::ImmortalAegis => inventory.has_weapon(WeaponType::AegisOrbiters),
                     PassiveType::ArchmageShard => inventory.has_weapon(WeaponType::MagicWand) || inventory.has_weapon(WeaponType::ChainLightning),
                     PassiveType::DivineRapier => inventory.has_weapon(WeaponType::WindBlade) || inventory.has_weapon(WeaponType::ExecutionerAxe),
@@ -625,6 +661,12 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
                     PassiveType::FateWeaver => inventory.has_passive(PassiveType::CloverOfFate),
                     PassiveType::SiegeMortar => inventory.has_weapon(WeaponType::MissileSwarm) || inventory.has_weapon(WeaponType::ChaosMeteor),
                     PassiveType::SporeMushroom => true,
+                    PassiveType::DuplicatorRelic => inventory.has_weapon(WeaponType::RunicPrism) || inventory.weapons.len() >= 2,
+                    PassiveType::CandelabraOfFury => inventory.has_weapon(WeaponType::CursedChalice) || inventory.has_weapon(WeaponType::FireAura),
+                    PassiveType::AbyssalCurseStone => true,
+                    PassiveType::SilverTears => inventory.has_weapon(WeaponType::ChronoStasis),
+                    PassiveType::GoldenSeal => true,
+                    PassiveType::TitanBloodArmor => inventory.has_weapon(WeaponType::VampiricAura) || inventory.has_passive(PassiveType::BloodStone),
                 };
                 let weight = if has_pair { 180.0 } else { 40.0 };
                 available.push((PerkChoice::UpgradePassive(ap), weight));
@@ -820,6 +862,28 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                 PassiveType::SporeMushroom => {
                     world.boss_health.max += 30.0;
                     world.boss_health.heal(50.0);
+                }
+                PassiveType::DuplicatorRelic => {
+                    for w in &mut world.boss_inventory.weapons {
+                        w.bonus_projectiles += 1;
+                    }
+                }
+                PassiveType::SilverTears => {
+                    world.boss_resistances.poison_res = (world.boss_resistances.poison_res + 0.12).min(0.85);
+                    world.boss_resistances.ice_res = (world.boss_resistances.ice_res + 0.12).min(0.85);
+                    world.boss_health.heal(60.0);
+                }
+                PassiveType::TitanBloodArmor => {
+                    world.boss_resistances.flat_armor += 3.0;
+                    world.boss_resistances.physical_res = (world.boss_resistances.physical_res + 0.05).min(0.75);
+                }
+                PassiveType::GoldenSeal => {
+                    world.boss_inventory.magnet_radius += 35.0;
+                    world.boss_health.max += 100.0;
+                    world.boss_health.heal(100.0);
+                }
+                PassiveType::AbyssalCurseStone => {
+                    world.boss_inventory.xp_to_next_level = (world.boss_inventory.xp_to_next_level * 0.90).max(20.0);
                 }
                 _ => {}
             }

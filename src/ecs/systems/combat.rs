@@ -4,6 +4,54 @@ use crate::ecs::components::combat::{DamagePacket, DamageType, Faction};
 use crate::ecs::components::inventory::{DamageSourceKind, PassiveType, WeaponType};
 use crate::ecs::world::{SoulGemEntity, World};
 
+fn apply_damage_to_boss(
+    world: &mut World,
+    mut amount: f32,
+    damage_type: DamageType,
+    source_kind: DamageSourceKind,
+) {
+    if amount <= 0.0 {
+        return;
+    }
+
+    // 1. Проверка защитных зарядов Астрального Савана (AstralCloak) и Савана Кровавого Императора (BloodEmperorShroud)
+    let has_shroud = world.boss_inventory.has_weapon(WeaponType::BloodEmperorShroud);
+    if world.boss_inventory.astral_cloak_charges > 0 {
+        world.boss_inventory.astral_cloak_charges -= 1;
+        world.add_floating_text(world.boss_pos, "🛡️ БАРЬЕР".to_string(), SKYBLUE, 1.0);
+
+        if has_shroud {
+            // Ответная волна крови при срабатывании барьера
+            let boss_pos = world.boss_pos;
+            world.spawn_particles(boss_pos, 35, RED, 220.0);
+            for mob in &mut world.mobs {
+                if mob.pos.distance_squared(boss_pos) < 220.0 * 220.0 {
+                    mob.health.take_damage(200.0);
+                }
+            }
+        }
+        return;
+    }
+
+    // 2. Саван Кровавого Императора: ограничение любого входящего удара максимумом в 12 урона + контратака
+    if has_shroud {
+        amount = amount.min(12.0);
+        let boss_pos = world.boss_pos;
+        world.spawn_particles(boss_pos, 15, MAROON, 150.0);
+        for mob in &mut world.mobs {
+            if mob.pos.distance_squared(boss_pos) < 150.0 * 150.0 {
+                mob.health.take_damage(75.0);
+            }
+        }
+    }
+
+    world.boss_health.take_damage(amount);
+    world.boss_inventory.record_damage_taken(amount, damage_type, source_kind);
+    world.total_damage_dealt_to_boss += amount;
+    world.boss_damage_taken_timer = 3.0;
+    world.boss_still_time = 0.0;
+}
+
 pub fn update_combat(world: &mut World, dt: f32) {
     let boss_pos = world.boss_pos;
     let boss_radius = 24.0;
@@ -16,8 +64,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let has_octarine_core = world.boss_inventory.has_passive(PassiveType::OctarineCore);
     let has_pyromaniac = world.boss_inventory.has_passive(PassiveType::Pyromaniac);
     let has_immortal_aegis = world.boss_inventory.has_passive(PassiveType::ImmortalAegis);
+    let has_soul_feast = world.boss_inventory.has_weapon(WeaponType::SoulFeast);
+    let curse_xp_mult = world.boss_inventory.get_curse_stone_xp_multiplier();
 
     let mut kamikaze_explosions = Vec::new();
+    let mut boss_contact_hits = Vec::new();
 
     // 1. Коллизии мобов с Боссом и контактный урон
     let mut contact_kamikaze_blast = false;
@@ -42,13 +93,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                         armor_penetration: 0.0,
                     };
                     let actual_dmg = world.boss_resistances.calculate_damage(&packet, false);
-                    world.boss_health.take_damage(actual_dmg);
-                    world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, DamageSourceKind::Melee);
-                    world.total_damage_dealt_to_boss += actual_dmg;
-                    if actual_dmg > 0.0 {
-                        world.boss_damage_taken_timer = 3.0;
-                        world.boss_still_time = 0.0;
-                    }
+                    boss_contact_hits.push((actual_dmg, packet.damage_type));
 
                     // Чумные Споры Директора: шанс отравить босса при контактной атаке
                     let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
@@ -102,6 +147,10 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 world.boss_health.heal(dmg * 0.05);
             }
         }
+    }
+
+    for (actual_dmg, dmg_type) in boss_contact_hits {
+        apply_damage_to_boss(world, actual_dmg, dmg_type, DamageSourceKind::Melee);
     }
 
     if contact_kamikaze_blast {
@@ -229,18 +278,12 @@ pub fn update_combat(world: &mut World, dt: f32) {
         if packet.target_id == 0 {
             if !is_boss_invulnerable {
                 let actual_dmg = world.boss_resistances.calculate_damage(&packet, false);
-                world.boss_health.take_damage(actual_dmg);
                 let source_kind = if packet.source_id.is_none() {
                     DamageSourceKind::Hazard
                 } else {
                     DamageSourceKind::Melee
                 };
-                world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, source_kind);
-                world.total_damage_dealt_to_boss += actual_dmg;
-                if actual_dmg > 0.0 {
-                    world.boss_damage_taken_timer = 3.0;
-                    world.boss_still_time = 0.0;
-                }
+                apply_damage_to_boss(world, actual_dmg, packet.damage_type, source_kind);
             }
         } else if let Some(&mob_idx) = mob_index.get(&packet.target_id) {
             if let Some(mob) = world.mobs.get_mut(mob_idx) {
@@ -399,14 +442,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                         armor_penetration: proj.armor_penetration,
                     };
                     let actual_dmg = world.boss_resistances.calculate_damage(&packet, false);
-                    world.boss_health.take_damage(actual_dmg);
-                    world.boss_inventory.record_damage_taken(actual_dmg, packet.damage_type, DamageSourceKind::Ranged);
-                    world.total_damage_dealt_to_boss += actual_dmg;
-                    boss_hits.push(actual_dmg);
-                    if actual_dmg > 0.0 {
-                        world.boss_damage_taken_timer = 3.0;
-                        world.boss_still_time = 0.0;
-                    }
+                    boss_hits.push((actual_dmg, packet.damage_type));
 
                     // Чумные Споры Директора: шанс отравить босса стрелами культистов
                     let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
@@ -430,7 +466,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
     }
 
     // Применяем собранные эффекты по боссу и частицы
-    for actual_dmg in boss_hits {
+    for (actual_dmg, dmg_type) in boss_hits {
+        apply_damage_to_boss(world, actual_dmg, dmg_type, DamageSourceKind::Ranged);
         world.add_floating_text(boss_pos, format!("-{:.0}", actual_dmg), RED, 1.1);
         world.spawn_particles(boss_pos, 8, RED, 70.0);
     }
@@ -479,6 +516,13 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
             if mob.is_elite {
                 xp_value *= 2.5;
+            }
+
+            xp_value *= curse_xp_mult;
+
+            if has_soul_feast {
+                world.boss_health.heal(3.5);
+                xp_value *= 1.25;
             }
 
             // Высокоуровневые титаны (Тир 8 Жнецы) дропают триплет гигантских сияющих кристаллов!
