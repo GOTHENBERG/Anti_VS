@@ -7,7 +7,8 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
     // 1. Базовый фон
     clear_background(Color::new(0.07, 0.07, 0.10, 1.0));
 
-    let tile_size = 64.0;
+    // Размер плиты пола 100x100 px: в одном квадрате пола помещаются ровно 4 клетки игры 50x50 px
+    let tile_size = 100.0;
     let cols = (map_w / tile_size) as usize;
     let rows = (map_h / tile_size) as usize;
 
@@ -45,13 +46,20 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
                     },
                 );
 
+                // Внутренние разделительные линии 4 клеток игры 50x50 внутри 100x100 плиты
+                let sub_grid_col = Color::new(0.18, 0.16, 0.24, 0.40);
+                draw_line(px + 50.0, py, px + 50.0, py + tile_size, 1.0, sub_grid_col);
+                draw_line(px, py + 50.0, px + tile_size, py + 50.0, 1.0, sub_grid_col);
+                // Внешний шов каменной плиты 100x100
+                draw_rectangle_lines(px, py, tile_size, tile_size, 1.5, Color::new(0.10, 0.08, 0.14, 0.85));
+
                 // Случайные мелкие булыжники и осколки камня на полу
                 if hash == 42 || hash == 88 {
                     draw_circle(px + 22.0, py + 38.0, 3.5, Color::new(0.12, 0.10, 0.15, 0.9));
                     draw_circle(px + 21.0, py + 37.0, 2.5, Color::new(0.35, 0.30, 0.40, 0.9));
                 } else if hash == 73 {
-                    draw_circle(px + 44.0, py + 18.0, 2.5, Color::new(0.12, 0.10, 0.15, 0.8));
-                    draw_circle(px + 43.0, py + 17.0, 1.8, Color::new(0.32, 0.28, 0.38, 0.8));
+                    draw_circle(px + 74.0, py + 28.0, 2.5, Color::new(0.12, 0.10, 0.15, 0.8));
+                    draw_circle(px + 73.0, py + 27.0, 1.8, Color::new(0.32, 0.28, 0.38, 0.8));
                 }
             }
         }
@@ -79,29 +87,30 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
                     },
                 );
 
+                // Внутренние разделительные линии 4 клеток игры 50x50 внутри 100x100 плиты
+                let sub_grid_col = Color::new(0.18, 0.16, 0.24, 0.40);
+                draw_line(px + 50.0, py, px + 50.0, py + tile_size, 1.0, sub_grid_col);
+                draw_line(px, py + 50.0, px + tile_size, py + 50.0, 1.0, sub_grid_col);
+                draw_rectangle_lines(px, py, tile_size, tile_size, 1.5, Color::new(0.10, 0.08, 0.14, 0.85));
+
                 // Случайные кровавые руны и трещины
                 if hash == 7 {
-                    draw_circle_lines(px + 32.0, py + 32.0, 12.0, 1.5, Color::new(0.6, 0.08, 0.15, 0.6));
+                    draw_circle_lines(px + 50.0, py + 50.0, 18.0, 1.5, Color::new(0.6, 0.08, 0.15, 0.6));
                 }
             }
         }
     } else {
         // Процедурная сетка (fallback)
-        let grid_color = Color::new(0.11, 0.11, 0.15, 1.0);
-        let crack_color = Color::new(0.18, 0.12, 0.14, 0.6);
+        let grid_color = Color::new(0.18, 0.16, 0.24, 0.5);
+        let tile_border = Color::new(0.10, 0.08, 0.14, 0.95);
 
         for y in 0..rows {
             let py = (y as f32) * tile_size;
-            draw_line(0.0, py, map_w, py, 1.0, grid_color);
             for x in 0..cols {
                 let px = (x as f32) * tile_size;
-                if y == 0 {
-                    draw_line(px, 0.0, px, map_h, 1.0, grid_color);
-                }
-                let hash = ((x * 73856093) ^ (y * 19349663)) % 100;
-                if hash < 8 {
-                    draw_line(px + 15.0, py + 15.0, px + 55.0, py + 45.0, 1.5, crack_color);
-                }
+                draw_rectangle_lines(px, py, tile_size, tile_size, 1.8, tile_border);
+                draw_line(px + 50.0, py, px + 50.0, py + tile_size, 1.0, grid_color);
+                draw_line(px, py + 50.0, px + tile_size, py + 50.0, 1.0, grid_color);
             }
         }
     }
@@ -543,6 +552,24 @@ pub fn draw_blood_altar(pos: Vec2, current_hp: f32, max_hp: f32, tier: u8, time:
         draw_circle(px, py, 2.5 + sp, Color::new(0.9, 0.2, 0.3, 0.65));
     }
 
+    // 0. Границы фундамента Алтаря (100x100 px = 2x2 клетки 50x50):
+    let fp_w = 100.0;
+    let fp_h = 100.0;
+    let fp_x = pos.x - fp_w * 0.5;
+    let fp_y = pos.y - fp_h * 0.5;
+    draw_rectangle(fp_x, fp_y, fp_w, fp_h, Color::new(0.12, 0.08, 0.16, 0.65));
+    draw_rectangle_lines(fp_x, fp_y, fp_w, fp_h, 2.0, Color::new(0.65, 0.25, 0.75, 0.85));
+    let marker_len = 12.0;
+    let mcol = Color::new(0.9, 0.4, 1.0, 0.95);
+    draw_line(fp_x, fp_y, fp_x + marker_len, fp_y, 2.5, mcol);
+    draw_line(fp_x, fp_y, fp_x, fp_y + marker_len, 2.5, mcol);
+    draw_line(fp_x + fp_w, fp_y, fp_x + fp_w - marker_len, fp_y, 2.5, mcol);
+    draw_line(fp_x + fp_w, fp_y, fp_x + fp_w, fp_y + marker_len, 2.5, mcol);
+    draw_line(fp_x, fp_y + fp_h, fp_x + marker_len, fp_y + fp_h, 2.5, mcol);
+    draw_line(fp_x, fp_y + fp_h, fp_x, fp_y + fp_h - marker_len, 2.5, mcol);
+    draw_line(fp_x + fp_w, fp_y + fp_h, fp_x + fp_w - marker_len, fp_y + fp_h, 2.5, mcol);
+    draw_line(fp_x + fp_w, fp_y + fp_h, fp_x + fp_w, fp_y + fp_h - marker_len, 2.5, mcol);
+
     if let Some(altar_tex) = textures.altar.as_ref() {
         draw_ellipse(pos.x, pos.y + 18.0, 28.0, 10.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.55));
         let pulse = (time * 4.0).sin() * 2.0;
@@ -648,6 +675,24 @@ pub fn draw_obelisk(
 ) {
     let size = 300.0;
     let half = size * 0.5;
+
+    // Границы фундамента Обелиска (300x300 px = 6x6 клеток по 50px):
+    let fp_w = 300.0;
+    let fp_h = 300.0;
+    let fp_x = pos.x - fp_w * 0.5;
+    let fp_y = pos.y - fp_h * 0.5;
+    draw_rectangle(fp_x, fp_y, fp_w, fp_h, Color::new(0.08, 0.06, 0.12, 0.65));
+    draw_rectangle_lines(fp_x, fp_y, fp_w, fp_h, 2.0, if is_active { GOLD } else { Color::new(0.4, 0.35, 0.55, 0.75) });
+    let mlen = 24.0;
+    let mcol = if is_active { GOLD } else { Color::new(0.6, 0.5, 0.8, 0.85) };
+    draw_line(fp_x, fp_y, fp_x + mlen, fp_y, 3.0, mcol);
+    draw_line(fp_x, fp_y, fp_x, fp_y + mlen, 3.0, mcol);
+    draw_line(fp_x + fp_w, fp_y, fp_x + fp_w - mlen, fp_y, 3.0, mcol);
+    draw_line(fp_x + fp_w, fp_y, fp_x + fp_w, fp_y + mlen, 3.0, mcol);
+    draw_line(fp_x, fp_y + fp_h, fp_x + mlen, fp_y + fp_h, 3.0, mcol);
+    draw_line(fp_x, fp_y + fp_h, fp_x, fp_y + fp_h - mlen, 3.0, mcol);
+    draw_line(fp_x + fp_w, fp_y + fp_h, fp_x + fp_w - mlen, fp_y + fp_h, 3.0, mcol);
+    draw_line(fp_x + fp_w, fp_y + fp_h, fp_x + fp_w, fp_y + fp_h - mlen, 3.0, mcol);
 
     if is_active {
         // Активный разлом: вращающийся пульсирующий круг Бездны под обелиском

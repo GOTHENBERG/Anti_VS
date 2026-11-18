@@ -272,6 +272,10 @@ async fn main() {
                     Err(error) => menu.set_notice(error),
                 }
             }
+            if std::env::args().any(|a| a == "--menu-screenshot") && frame_count >= 10 {
+                get_screen_data().export_png("screenshot_menu.png");
+                break;
+            }
             last_mouse_pos = current_mpos;
             next_frame().await;
             continue;
@@ -410,31 +414,6 @@ async fn main() {
         if is_key_pressed(KeyCode::P) {
             audio.prev_track();
             audio.handle_event(crate::audio::AudioEvent::UiClick);
-        }
-
-        if is_key_pressed(KeyCode::R) && !net_driver.is_network_client() {
-            let duration_secs = clock.duration_secs;
-            world = World::new();
-            world.boss_model = boss_model.clone();
-            world.match_duration_secs = duration_secs;
-            apply_player_profile(&mut world, &menu.settings, game_role);
-            clock = GameClock::with_duration(duration_secs);
-            cam_pos = world.boss_pos;
-            follow_boss = true;
-            spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
-            spawn_corner_obelisks(&mut world);
-            for command in net_driver.rejoin_commands() {
-                execute_command(&mut world, command);
-            }
-            is_paused = false;
-            placement_mode = PlacementMode::None;
-            show_codex = false;
-            active_dossier_tier = None;
-            active_item_inspection = None;
-            opened_item_from_codex = false;
-            opened_dossier_from_codex = false;
-            boss_death_sound_played = false;
-            audio.shuffle_start();
         }
 
         // 1. Управление камерой на большой карте: WASD + колесо мыши + центрирование по C
@@ -902,6 +881,33 @@ async fn main() {
         } else if is_game_over {
             let victory = !world.any_boss_alive();
             draw_game_over(&world, &clock, victory, &fonts);
+            if is_key_pressed(KeyCode::Space) && !net_driver.is_network_client() {
+                let duration_secs = clock.duration_secs;
+                world = World::new();
+                world.boss_model = boss_model.clone();
+                world.match_duration_secs = duration_secs;
+                apply_player_profile(&mut world, &menu.settings, game_role);
+                clock = GameClock::with_duration(duration_secs);
+                cam_pos = world.boss_pos;
+                follow_boss = true;
+                spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
+                spawn_corner_obelisks(&mut world);
+                for command in net_driver.rejoin_commands() {
+                    execute_command(&mut world, command);
+                }
+                is_paused = false;
+                placement_mode = PlacementMode::None;
+                show_codex = false;
+                active_dossier_tier = None;
+                active_item_inspection = None;
+                opened_item_from_codex = false;
+                opened_dossier_from_codex = false;
+                boss_death_sound_played = false;
+                audio.shuffle_start();
+            } else if is_key_pressed(KeyCode::Escape) {
+                show_main_menu = true;
+                show_mouse(true);
+            }
         }
 
         // 8. Отрисовка тематичного курсора Повелителя поверх всех окон
@@ -1400,7 +1406,7 @@ fn draw_game_over(world: &World, clock: &GameClock, victory: bool, fonts: &GameF
     }
 
     // Подсказка перезапуска
-    let restart_prompt = "Нажмите [ R ] для перезапуска сражения";
-    let rw = fonts.measure_text(restart_prompt, 26.0).width;
-    fonts.draw_text(restart_prompt, (screen_w - rw) / 2.0, screen_h * 0.78, 26.0, GOLD);
+    let restart_prompt = "Нажмите [ Пробел ] для перезапуска сражения | [ Esc ] в меню";
+    let rw = fonts.measure_text(restart_prompt, 22.0).width;
+    fonts.draw_text(restart_prompt, (screen_w - rw) / 2.0, screen_h * 0.78, 22.0, GOLD);
 }
