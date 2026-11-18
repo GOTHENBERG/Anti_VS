@@ -403,7 +403,7 @@ async fn main() {
             get_screen_data().export_png("screenshot.png");
         }
 
-        // Перезапуск игры по R
+        // Проверка окончания матча
         let boss_team_alive = world.any_boss_alive();
         let is_game_over = !boss_team_alive || clock.is_time_up();
         if !boss_team_alive && !boss_death_sound_played {
@@ -884,6 +884,11 @@ async fn main() {
                     show_codex = true;
                     active_dossier_tier = None;
                     active_item_inspection = None;
+                }
+                crate::render::settings::SettingsAction::MainMenu => {
+                    is_paused = false;
+                    show_main_menu = true;
+                    show_mouse(true);
                 }
                 crate::render::settings::SettingsAction::None => {}
             }

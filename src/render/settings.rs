@@ -8,6 +8,7 @@ pub enum SettingsAction {
     Resume,
     Restart,
     OpenCodex,
+    MainMenu,
 }
 
 pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager) -> SettingsAction {
@@ -300,7 +301,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager) -> Setti
     // СЕКЦИЯ 5: КНОПКИ ДЕЙСТВИЙ (ВНИЗУ)
     // -------------------------------------------------------------
     let actions_y = mute_y + 44.0;
-    let act_btn_w = (panel_w - 52.0) / 3.0;
+    let act_btn_w = (panel_w - 60.0) / 4.0;
     let act_btn_h = 36.0;
 
     // 1. Продолжить бой
@@ -308,8 +309,8 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager) -> Setti
     let resume_hover = mx >= resume_x && mx <= resume_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(resume_x, actions_y, act_btn_w, act_btn_h, if resume_hover { Color::new(0.18, 0.45, 0.25, 1.0) } else { Color::new(0.12, 0.28, 0.18, 0.95) });
     draw_rectangle_lines(resume_x, actions_y, act_btn_w, act_btn_h, 1.5, if resume_hover { GREEN } else { DARKGRAY });
-    let rw = fonts.measure_heading("▶ В БОЙ [Esc]", 12.0).width;
-    fonts.draw_heading("▶ В БОЙ [Esc]", resume_x + (act_btn_w - rw) / 2.0, actions_y + 23.0, 12.0, WHITE);
+    let rw = fonts.measure_heading("▶ В БОЙ", 11.0).width;
+    fonts.draw_heading("▶ В БОЙ", resume_x + (act_btn_w - rw) / 2.0, actions_y + 23.0, 11.0, WHITE);
 
     if is_clicked && resume_hover {
         audio.handle_event(AudioEvent::UiClick);
@@ -321,8 +322,8 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager) -> Setti
     let codex_hover = mx >= codex_x && mx <= codex_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(codex_x, actions_y, act_btn_w, act_btn_h, if codex_hover { Color::new(0.30, 0.25, 0.40, 1.0) } else { Color::new(0.16, 0.14, 0.24, 0.95) });
     draw_rectangle_lines(codex_x, actions_y, act_btn_w, act_btn_h, 1.5, if codex_hover { GOLD } else { DARKGRAY });
-    let cw = fonts.measure_heading("📖 КОДЕКС [I]", 12.0).width;
-    fonts.draw_heading("📖 КОДЕКС [I]", codex_x + (act_btn_w - cw) / 2.0, actions_y + 23.0, 12.0, WHITE);
+    let cw = fonts.measure_heading("📖 КОДЕКС", 11.0).width;
+    fonts.draw_heading("📖 КОДЕКС", codex_x + (act_btn_w - cw) / 2.0, actions_y + 23.0, 11.0, WHITE);
 
     if is_clicked && codex_hover {
         audio.handle_event(AudioEvent::BookOpen);
@@ -334,12 +335,25 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager) -> Setti
     let restart_hover = mx >= restart_x && mx <= restart_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(restart_x, actions_y, act_btn_w, act_btn_h, if restart_hover { Color::new(0.40, 0.20, 0.15, 1.0) } else { Color::new(0.22, 0.12, 0.10, 0.95) });
     draw_rectangle_lines(restart_x, actions_y, act_btn_w, act_btn_h, 1.5, if restart_hover { ORANGE } else { DARKGRAY });
-    let rtw = fonts.measure_heading("🔄 ЗАНОВО [R]", 12.0).width;
-    fonts.draw_heading("🔄 ЗАНОВО [R]", restart_x + (act_btn_w - rtw) / 2.0, actions_y + 23.0, 12.0, WHITE);
+    let rtw = fonts.measure_heading("🔄 ЗАНОВО", 11.0).width;
+    fonts.draw_heading("🔄 ЗАНОВО", restart_x + (act_btn_w - rtw) / 2.0, actions_y + 23.0, 11.0, WHITE);
 
     if is_clicked && restart_hover {
         audio.handle_event(AudioEvent::UiClick);
         return SettingsAction::Restart;
+    }
+
+    // 4. Главное меню
+    let menu_x = restart_x + act_btn_w + 8.0;
+    let menu_hover = mx >= menu_x && mx <= menu_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
+    draw_rectangle(menu_x, actions_y, act_btn_w, act_btn_h, if menu_hover { Color::new(0.35, 0.15, 0.18, 1.0) } else { Color::new(0.20, 0.10, 0.12, 0.95) });
+    draw_rectangle_lines(menu_x, actions_y, act_btn_w, act_btn_h, 1.5, if menu_hover { RED } else { DARKGRAY });
+    let mw = fonts.measure_heading("🚪 В МЕНЮ", 11.0).width;
+    fonts.draw_heading("🚪 В МЕНЮ", menu_x + (act_btn_w - mw) / 2.0, actions_y + 23.0, 11.0, WHITE);
+
+    if is_clicked && menu_hover {
+        audio.handle_event(AudioEvent::UiClick);
+        return SettingsAction::MainMenu;
     }
 
     SettingsAction::None
