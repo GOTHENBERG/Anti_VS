@@ -1501,6 +1501,19 @@ pub fn update_world_structures(world: &mut World, dt: f32) {
                     GOLD,
                     3.0,
                 );
+
+                // Спавн элитных стражей Разлома вокруг активированного обелиска
+                let guard_tier = match world.boss_player_count() {
+                    1 => 4, // Голем (Tier 4)
+                    2 => 6, // Демон теней (Tier 6)
+                    _ => 8, // Жнец Смерти (Tier 8)
+                };
+                let guard_count = (2 * world.boss_player_count()).clamp(2, 8);
+                for i in 0..guard_count {
+                    let angle = (i as f32 / guard_count as f32) * std::f32::consts::TAU;
+                    let guard_pos = pos + Vec2::new(angle.cos(), angle.sin()) * 115.0;
+                    crate::content::mobs::spawn_elite_guard_at_pos(world, guard_tier, guard_pos);
+                }
             }
         }
     }

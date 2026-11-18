@@ -310,8 +310,8 @@ fn boss_target_positions(world: &World) -> Vec<(u8, Vec2)> {
     positions
 }
 
-/// Точечный спавн одного юнита в указанных координатах (например, скелета от Алтаря Крови)
-pub fn spawn_single_mob_at_pos(world: &mut World, tier: u8, pos: Vec2) {
+/// Точечный спавн одного юнита в указанных координатах с возможностью форсировать статус элиты
+pub fn spawn_single_mob_at_pos_with_elite(world: &mut World, tier: u8, pos: Vec2, force_elite: bool) {
     let map_w = crate::core::MAP_WIDTH;
     let map_h = crate::core::MAP_HEIGHT;
     let clamped_pos = Vec2::new(
@@ -323,7 +323,19 @@ pub fn spawn_single_mob_at_pos(world: &mut World, tier: u8, pos: Vec2) {
         1 => (32.0, 105.0, 7.0, 10.0, 0.0, 0.05, 0.0, 0.0, true, false), // Скелет
         2 => (50.0, 160.0, 12.0, 11.0, 1.0, 0.10, 0.0, 0.0, false, false), // Чёрная гончая
         3 => (75.0, 80.0, 16.0, 13.0, 2.0, 0.15, 0.0, 0.0, true, false), // Культист
-        _ => (32.0, 105.0, 7.0, 10.0, 0.0, 0.05, 0.0, 0.0, true, false),
+        4 => (380.0, 52.0, 32.0, 22.0, 14.0, 0.35, 1.0, -0.50, false, true), // Голем
+        5 => (130.0, 185.0, 0.0, 15.0, 2.0, 0.10, 0.0, 0.0, true, false), // Камикадзе
+        6 => (550.0, 140.0, 42.0, 18.0, 8.0, 0.25, 0.20, 0.20, false, false), // Демон теней
+        7 => (850.0, 95.0, 55.0, 20.0, 10.0, 0.20, -0.40, 1.00, false, false), // Огненный элементаль
+        8 => (2800.0, 68.0, 95.0, 28.0, 24.0, 0.45, 0.30, 0.30, true, true), // Жнец Смерти (Титан)
+        9 => (120.0, 115.0, 24.0, 12.0, 6.0, 0.25, 0.10, 0.10, true, true), // Дред-Фаланга
+        10 => (190.0, 180.0, 38.0, 14.0, 4.0, 0.20, 0.0, 0.50, false, false), // Адские Гончие
+        11 => (320.0, 90.0, 48.0, 15.0, 6.0, 0.25, 0.10, 0.10, true, false), // Архикультисты Бездны
+        12 => (1450.0, 58.0, 85.0, 26.0, 30.0, 0.55, 0.80, -0.30, false, true), // Обсидиановые Колоссы
+        13 => (650.0, 205.0, 0.0, 18.0, 8.0, 0.20, 0.10, 0.10, true, false), // Проклятые Мучители
+        14 => (1800.0, 155.0, 110.0, 22.0, 16.0, 0.40, 0.30, 0.30, false, false), // Призрачные Ловчие
+        15 => (2600.0, 110.0, 140.0, 24.0, 22.0, 0.35, -0.20, 1.00, false, false), // Солнечные Архонты
+        _ => (8500.0, 75.0, 280.0, 34.0, 45.0, 0.65, 0.50, 0.50, true, true), // Аватар Забвения (Колосс)
     };
 
     let (fury_lvl, carapace_lvl) = if let Some(d) = world.directors.first() {
@@ -337,7 +349,7 @@ pub fn spawn_single_mob_at_pos(world: &mut World, tier: u8, pos: Vec2) {
     flat_armor += carapace_lvl as f32 * 2.5;
     phys_res = (phys_res + (carapace_lvl as f32 * 0.05)).min(0.70);
 
-    let is_elite = rand::gen_range(0.0, 1.0) < 0.12;
+    let is_elite = force_elite || rand::gen_range(0.0, 1.0) < 0.12;
     let mut hp = base_hp;
     let mut radius = base_rad;
     if is_elite {
@@ -349,7 +361,7 @@ pub fn spawn_single_mob_at_pos(world: &mut World, tier: u8, pos: Vec2) {
 
     world.mobs.push(MobEntity {
         id,
-            target_boss_id: None,
+        target_boss_id: None,
         pos: clamped_pos,
         vel: Vec2::ZERO,
         speed,
@@ -376,4 +388,14 @@ pub fn spawn_single_mob_at_pos(world: &mut World, tier: u8, pos: Vec2) {
     if let Some(director) = world.directors.first_mut() {
         director.total_mobs_spawned += 1;
     }
+}
+
+/// Точечный спавн одного юнита в указанных координатах (например, скелета от Алтаря Крови)
+pub fn spawn_single_mob_at_pos(world: &mut World, tier: u8, pos: Vec2) {
+    spawn_single_mob_at_pos_with_elite(world, tier, pos, false);
+}
+
+/// Спавн элитного стража (гарантированный золотой статус, усиленные HP и урон)
+pub fn spawn_elite_guard_at_pos(world: &mut World, tier: u8, pos: Vec2) {
+    spawn_single_mob_at_pos_with_elite(world, tier, pos, true);
 }

@@ -19,6 +19,8 @@ pub const WALL_LIFETIME: f32 = 60.0;
 pub const WALL_RADIUS: f32 = 25.0; // 50x50 px баррикада
 pub const OBELISK_RADIUS: f32 = 75.0; // 300x300 px визуальный размер
 pub const OBELISK_FOOTPRINT_HALF_EXTENT: f32 = OBELISK_RADIUS * 2.0;
+pub const OBELISK_REWARD_BASE_XP: f32 = 350.0;
+pub const OBELISK_REWARD_NEXT_LEVEL_PERCENT: f32 = 0.25; // +25% от шкалы опыта следующего уровня
 
 pub fn structure_type_for_altar_tier(tier: u8) -> u8 {
     let tier = tier.clamp(1, MAX_ALTAR_TIER);

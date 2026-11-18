@@ -90,6 +90,11 @@ pub fn run_headless_simulation_with_boss_count(
     world.is_headless = true;
     world.boss_model = Some(boss_model.clone());
     let boss_count = boss_count.clamp(1, 8);
+    if boss_count > 1 {
+        let angle = 0.0f32;
+        let offset = Vec2::new(angle.cos(), angle.sin()) * 140.0;
+        world.boss_pos = Vec2::new(MAP_WIDTH * 0.5, MAP_HEIGHT * 0.5) + offset;
+    }
     for player_index in 1..boss_count {
         let angle = player_index as f32 * std::f32::consts::TAU / boss_count as f32;
         let offset = Vec2::new(angle.cos(), angle.sin()) * 140.0;

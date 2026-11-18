@@ -1,9 +1,9 @@
 {
-  "total_generations": 1468,
-  "total_matches_played": 12000,
-  "best_boss_survival_time": 1020.0245,
-  "best_boss_level": 45,
-  "best_director_kill_time": 93.69812,
-  "timestamp": "2026-11-17T21:08:06Z",
+  "total_generations": 1340,
+  "total_matches_played": 15,
+  "best_boss_survival_time": 30.049828,
+  "best_boss_level": 5,
+  "best_director_kill_time": 30.049828,
+  "timestamp": "2026-11-18T07:37:47Z",
   "fitness_formula": "zero-sum: Boss = -DirectorUtility; Director = +DirectorUtility (time 600 + kill 400 + damage 200 + altar uptime 150 + economy 50 - boss level 100)"
 }

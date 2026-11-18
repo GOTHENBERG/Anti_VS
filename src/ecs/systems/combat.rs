@@ -563,25 +563,65 @@ pub fn update_combat(world: &mut World, dt: f32) {
             }
             crate::content::structures::STRUCTURE_OBELISK => {
                 world.boss_obelisks_deactivated_total += 1;
+                let base_xp = crate::content::structures::OBELISK_REWARD_BASE_XP;
+                let pct = crate::content::structures::OBELISK_REWARD_NEXT_LEVEL_PERCENT;
+
                 if let Some(contributors) = world.obelisk_contributors.remove(&st_id) {
-                    for contributor_id in contributors {
-                        world.grant_boss_player_xp(contributor_id, 350.0);
+                    for contributor_id in &contributors {
+                        // Обелиск даёт +N XP + процент XP для следующего уровня прокачки
+                        let next_req = if world.active_boss_id == *contributor_id {
+                            world.boss_inventory.xp_to_next_level
+                        } else if let Some(p) = world.coop_bosses.iter().find(|p| p.id == *contributor_id) {
+                            p.boss_inventory.xp_to_next_level
+                        } else {
+                            40.0
+                        };
+                        let reward = (base_xp + next_req * pct).round();
+                        world.grant_boss_player_xp(*contributor_id, reward);
+
+                        // Восстановление 15% HP и персональный текст награды каждому участнику
+                        if world.active_boss_id == *contributor_id {
+                            if world.boss_health.is_alive() {
+                                let heal_bonus = world.boss_health.max * 0.15;
+                                world.boss_health.heal(heal_bonus);
+                            }
+                            world.add_floating_text(
+                                world.boss_pos,
+                                format!("+{} XP (Разлом +{:.0}%)", reward as u32, pct * 100.0),
+                                GOLD,
+                                2.2,
+                            );
+                        } else if let Some(player) = world.coop_bosses.iter_mut().find(|p| p.id == *contributor_id) {
+                            if player.boss_health.is_alive() {
+                                let heal_bonus = player.boss_health.max * 0.15;
+                                player.boss_health.heal(heal_bonus);
+                            }
+                            let player_pos = player.boss_pos;
+                            world.add_floating_text(
+                                player_pos,
+                                format!("+{} XP (Разлом +{:.0}%)", reward as u32, pct * 100.0),
+                                GOLD,
+                                2.2,
+                            );
+                        }
                     }
                 }
                 world.screen_shake = 25.0;
                 world.spawn_particles(st_pos, 80, GOLD, 260.0);
                 world.spawn_particles(st_pos, 60, PURPLE, 220.0);
                 world.spawn_particles(st_pos, 40, SKYBLUE, 180.0);
-                world.add_floating_text(st_pos, "🌟 ИНФЕРНАЛЬНЫЙ РАЗЛОМ ЗАКРЫТ! (+350 XP)".to_string(), GOLD, 2.5);
+                world.add_floating_text(
+                    st_pos,
+                    format!("🌟 ИНФЕРНАЛЬНЫЙ РАЗЛОМ ЗАКРЫТ! (+{} XP + {:.0}% ур.)", base_xp as u32, pct * 100.0),
+                    GOLD,
+                    2.8,
+                );
                 dropped_gems.push(SoulGemEntity {
                     id: st_id,
                     pos: st_pos,
-                    xp_value: 350.0,
+                    xp_value: base_xp,
                     is_magnet: true,
                 });
-                // Восстановление 15% HP боссу
-                let heal_bonus = world.boss_health.max * 0.15;
-                world.boss_health.heal(heal_bonus);
             }
             _ => {}
         }
