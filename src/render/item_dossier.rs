@@ -129,7 +129,9 @@ pub fn draw_item_inspection_modal(
     let cw = fonts.measure_heading("X", 16.0).width;
     fonts.draw_heading("X", close_btn_x + (close_btn_w - cw) / 2.0, close_btn_y + 21.0, 16.0, WHITE);
 
-    let close_requested = is_key_pressed(KeyCode::Escape) || (is_mouse_button_pressed(MouseButton::Left) && is_close_hover);
+    let close_requested = is_key_pressed(KeyCode::Escape)
+        || is_key_pressed(KeyCode::I)
+        || (is_mouse_button_pressed(MouseButton::Left) && is_close_hover);
 
     // Содержимое окна
     let content_x = x + 24.0;

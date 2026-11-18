@@ -354,19 +354,29 @@ async fn main() {
         if is_key_pressed(KeyCode::I) {
             if active_item_inspection.is_some() {
                 active_item_inspection = None;
-                opened_item_from_codex = false;
-                show_codex = false;
+                if opened_item_from_codex {
+                    show_codex = true;
+                    opened_item_from_codex = false;
+                } else {
+                    show_codex = false;
+                }
                 audio.handle_event(crate::audio::AudioEvent::BookClose);
             } else if active_dossier_tier.is_some() {
                 active_dossier_tier = None;
-                opened_dossier_from_codex = false;
-                show_codex = false;
+                if opened_dossier_from_codex {
+                    show_codex = true;
+                    opened_dossier_from_codex = false;
+                } else {
+                    show_codex = false;
+                }
                 audio.handle_event(crate::audio::AudioEvent::BookClose);
             } else {
                 show_codex = !show_codex;
                 if show_codex {
                     active_dossier_tier = None;
                     active_item_inspection = None;
+                    opened_item_from_codex = false;
+                    opened_dossier_from_codex = false;
                     audio.handle_event(crate::audio::AudioEvent::BookOpen);
                 } else {
                     audio.handle_event(crate::audio::AudioEvent::BookClose);
@@ -457,7 +467,12 @@ async fn main() {
             ..Default::default()
         };
 
-        let is_running = !is_game_over && !is_paused && !show_codex && active_dossier_tier.is_none() && world.boss_level_up_options.is_none();
+        let is_running = !is_game_over
+            && !is_paused
+            && !show_codex
+            && active_dossier_tier.is_none()
+            && active_item_inspection.is_none()
+            && world.boss_level_up_options.is_none();
 
         // 2. Сбор ввода игрока-директора -> генерация Команд
         let mut player_move_dir = Vec2::ZERO;
@@ -658,28 +673,6 @@ async fn main() {
             }
         };
 
-        if ui_interaction.toggle_control_scheme {
-            menu.settings.control_scheme = match menu.settings.control_scheme {
-                crate::render::main_menu::BossControlScheme::DirectKeyboard => {
-                    crate::render::main_menu::BossControlScheme::MouseRts
-                }
-                crate::render::main_menu::BossControlScheme::MouseRts => {
-                    crate::render::main_menu::BossControlScheme::DirectKeyboard
-                }
-            };
-            menu.settings.save();
-            let mode_name = match menu.settings.control_scheme {
-                crate::render::main_menu::BossControlScheme::DirectKeyboard => "Режим: Только WASD + Пробел",
-                crate::render::main_menu::BossControlScheme::MouseRts => "Режим: Движение на ПКМ (RTS) + 'S' Стоп",
-            };
-            world.add_floating_text(world.boss_pos, mode_name.to_string(), GOLD, 1.4);
-            audio.handle_event(crate::audio::AudioEvent::UiClick);
-        }
-
-        if let Some(perk) = ui_interaction.chosen_perk {
-            crate::ecs::systems::coop::apply_player_perk_choice(&mut world, perk);
-        }
-
         if net_driver.is_networked() {
             let (label, color) = if net_driver.is_network_host() {
                 ("СЕТЬ · UDP ХОСТ".to_string(), Color::new(0.55, 0.95, 0.75, 0.95))
@@ -706,78 +699,109 @@ async fn main() {
             fonts.draw_heading(text, banner_x + 16.0, banner_y + 21.0, 11.5, GOLD);
         }
 
-        // Обработка интеракций из UI
-        if ui_interaction.clicked_sound_toggle {
-            audio.toggle_mute();
-            audio.handle_event(crate::audio::AudioEvent::UiClick);
-        }
-        if ui_interaction.clicked_next_track {
-            audio.next_track();
-            audio.handle_event(crate::audio::AudioEvent::UiClick);
-        }
-        if ui_interaction.clicked_pause {
-            is_paused = !is_paused;
-            audio.handle_event(crate::audio::AudioEvent::UiClick);
-        }
-        if ui_interaction.clicked_codex {
-            show_codex = !show_codex;
-            if show_codex {
-                active_dossier_tier = None;
-                audio.handle_event(crate::audio::AudioEvent::BookOpen);
-            } else {
-                audio.handle_event(crate::audio::AudioEvent::BookClose);
-            }
-        }
-        if let Some(target) = ui_interaction.map_click_world_pos {
-            cam_pos = target;
-            follow_boss = false;
-        }
-        if let Some(tier) = ui_interaction.open_dossier_tier {
-            active_dossier_tier = Some(tier);
-            opened_dossier_from_codex = false;
-            audio.handle_event(crate::audio::AudioEvent::BookOpen);
-        }
-        if let Some(target) = ui_interaction.open_item_inspection {
-            active_item_inspection = Some(target);
-            opened_item_from_codex = false;
-            audio.handle_event(crate::audio::AudioEvent::BookOpen);
-        }
-        if let Some(tier) = ui_interaction.direct_summon_tier {
-            if let Some(director) = world.directors.first() {
-                try_summon_squad(director, tier, &mut net_driver);
-            }
-        }
-        if let Some(tier) = ui_interaction.direct_summon_max_tier {
-            if let Some(director) = world.directors.first() {
-                net_driver.send_command(Command::SpawnSquadMax { director_id: director.id, tier });
-            }
-        }
-        if let Some(grade) = ui_interaction.upgrade_grade {
-            if let Some(director) = world.directors.first() {
-                net_driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: grade });
-            }
-        }
-        if let Some(grade) = ui_interaction.upgrade_grade_max {
-            if let Some(director) = world.directors.first() {
-                net_driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: grade });
-            }
-        }
-        if let Some(page) = ui_interaction.set_mob_page {
-            if let Some(director) = world.directors.first() {
-                net_driver.send_command(Command::SetMobPage { director_id: director.id, page });
-            }
-        }
+        let modal_active = show_codex
+            || active_dossier_tier.is_some()
+            || active_item_inspection.is_some()
+            || is_paused
+            || world.boss_level_up_options.is_some();
 
-        if let Some(tier) = ui_interaction.altar_tier {
-            selected_altar_tier = tier;
-        }
-        if ui_interaction.start_altar_placement {
-            placement_mode = PlacementMode::Altar;
-            audio.handle_event(crate::audio::AudioEvent::UiClick);
-        }
-        if ui_interaction.start_wall_placement || is_key_pressed(KeyCode::B) {
-            placement_mode = PlacementMode::Wall;
-            audio.handle_event(crate::audio::AudioEvent::UiClick);
+        if !modal_active {
+            if ui_interaction.toggle_control_scheme {
+                menu.settings.control_scheme = match menu.settings.control_scheme {
+                    crate::render::main_menu::BossControlScheme::DirectKeyboard => {
+                        crate::render::main_menu::BossControlScheme::MouseRts
+                    }
+                    crate::render::main_menu::BossControlScheme::MouseRts => {
+                        crate::render::main_menu::BossControlScheme::DirectKeyboard
+                    }
+                };
+                menu.settings.save();
+                let mode_name = match menu.settings.control_scheme {
+                    crate::render::main_menu::BossControlScheme::DirectKeyboard => "Режим: Только WASD + Пробел",
+                    crate::render::main_menu::BossControlScheme::MouseRts => "Режим: Движение на ПКМ (RTS) + 'S' Стоп",
+                };
+                world.add_floating_text(world.boss_pos, mode_name.to_string(), GOLD, 1.4);
+                audio.handle_event(crate::audio::AudioEvent::UiClick);
+            }
+
+            if let Some(perk) = ui_interaction.chosen_perk {
+                crate::ecs::systems::coop::apply_player_perk_choice(&mut world, perk);
+            }
+
+            // Обработка интеракций из UI
+            if ui_interaction.clicked_sound_toggle {
+                audio.toggle_mute();
+                audio.handle_event(crate::audio::AudioEvent::UiClick);
+            }
+            if ui_interaction.clicked_next_track {
+                audio.next_track();
+                audio.handle_event(crate::audio::AudioEvent::UiClick);
+            }
+            if ui_interaction.clicked_pause {
+                is_paused = !is_paused;
+                audio.handle_event(crate::audio::AudioEvent::UiClick);
+            }
+            if ui_interaction.clicked_codex {
+                show_codex = !show_codex;
+                if show_codex {
+                    active_dossier_tier = None;
+                    active_item_inspection = None;
+                    audio.handle_event(crate::audio::AudioEvent::BookOpen);
+                } else {
+                    audio.handle_event(crate::audio::AudioEvent::BookClose);
+                }
+            }
+            if let Some(target) = ui_interaction.map_click_world_pos {
+                cam_pos = target;
+                follow_boss = false;
+            }
+            if let Some(tier) = ui_interaction.open_dossier_tier {
+                active_dossier_tier = Some(tier);
+                opened_dossier_from_codex = false;
+                audio.handle_event(crate::audio::AudioEvent::BookOpen);
+            }
+            if let Some(target) = ui_interaction.open_item_inspection {
+                active_item_inspection = Some(target);
+                opened_item_from_codex = false;
+                audio.handle_event(crate::audio::AudioEvent::BookOpen);
+            }
+            if let Some(tier) = ui_interaction.direct_summon_tier {
+                if let Some(director) = world.directors.first() {
+                    try_summon_squad(director, tier, &mut net_driver);
+                }
+            }
+            if let Some(tier) = ui_interaction.direct_summon_max_tier {
+                if let Some(director) = world.directors.first() {
+                    net_driver.send_command(Command::SpawnSquadMax { director_id: director.id, tier });
+                }
+            }
+            if let Some(grade) = ui_interaction.upgrade_grade {
+                if let Some(director) = world.directors.first() {
+                    net_driver.send_command(Command::UpgradeDirectorGrade { director_id: director.id, grade_type: grade });
+                }
+            }
+            if let Some(grade) = ui_interaction.upgrade_grade_max {
+                if let Some(director) = world.directors.first() {
+                    net_driver.send_command(Command::UpgradeDirectorGradeMax { director_id: director.id, grade_type: grade });
+                }
+            }
+            if let Some(page) = ui_interaction.set_mob_page {
+                if let Some(director) = world.directors.first() {
+                    net_driver.send_command(Command::SetMobPage { director_id: director.id, page });
+                }
+            }
+
+            if let Some(tier) = ui_interaction.altar_tier {
+                selected_altar_tier = tier;
+            }
+            if ui_interaction.start_altar_placement {
+                placement_mode = PlacementMode::Altar;
+                audio.handle_event(crate::audio::AudioEvent::UiClick);
+            }
+            if ui_interaction.start_wall_placement || is_key_pressed(KeyCode::B) {
+                placement_mode = PlacementMode::Wall;
+                audio.handle_event(crate::audio::AudioEvent::UiClick);
+            }
         }
 
         // Логика перемещения карты или подтверждения установки Структуры
@@ -870,6 +894,9 @@ async fn main() {
                         active_item_inspection = Some(target);
                         opened_item_from_codex = true;
                         audio.handle_event(crate::audio::AudioEvent::BookOpen);
+                    }
+                    crate::render::codex::CodexResult::Close => {
+                        audio.handle_event(crate::audio::AudioEvent::BookClose);
                     }
                 }
             }

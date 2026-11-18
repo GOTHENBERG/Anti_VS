@@ -2,6 +2,23 @@ use macroquad::prelude::*;
 
 pub const BASE_FONT_SIZE: f32 = 32.0;
 
+/// Квантование размеров шрифта для предотвращения мыла и блюра (downsampling blur).
+/// Для размеров <= 18px глифы растрируются в атлас строго в натуральном масштабе 1:1.
+/// Для крупных заголовков используются фиксированные базовые тиры (20, 24, 32).
+pub fn quantize_font_size(size: f32) -> (u16, f32) {
+    let s = size.round() as u16;
+    if s <= 18 {
+        // Честный 1:1 пиксельный рендеринг без билинейного размытия текстуры
+        (s.max(9), 1.0)
+    } else if s <= 22 {
+        (20, size / 20.0)
+    } else if s <= 28 {
+        (24, size / 24.0)
+    } else {
+        (32, size / 32.0)
+    }
+}
+
 fn sanitize_text(text: &str) -> String {
     // If text only contains standard chars, avoid unnecessary allocations
     if text.chars().all(|c| {
@@ -118,19 +135,27 @@ impl GameFonts {
             text_font = heading_font.clone();
         }
 
-        // Предварительный прогрев кэша атласа (все глифы рендерятся ровно 1 раз на базовом размере)
+        // Предварительный прогрев кэша атласа для ключевых используемых размеров
         let mut warmup_chars: Vec<char> = Font::latin_character_list();
         let cyrillic_and_symbols = "абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ 0123456789%:-+.,!?/\\()[]{}<>_=#*~|^$\"'`№@&•—–«»…";
         for c in cyrillic_and_symbols.chars() {
             warmup_chars.push(c);
         }
 
-        let base_size_u16 = BASE_FONT_SIZE as u16;
-        if let Some(ref font) = heading_font {
-            font.populate_font_cache(&warmup_chars, base_size_u16);
-        }
+        // Прогреваем text_font на часто используемых размерах UI и описаний
+        let text_sizes = [9u16, 10, 11, 12, 13, 14, 16, 18];
         if let Some(ref font) = text_font {
-            font.populate_font_cache(&warmup_chars, base_size_u16);
+            for &s in &text_sizes {
+                font.populate_font_cache(&warmup_chars, s);
+            }
+        }
+
+        // Прогреваем heading_font на стандартных размерах заголовков
+        let heading_sizes = [11u16, 12, 13, 14, 16, 18, 20, 24, 32];
+        if let Some(ref font) = heading_font {
+            for &s in &heading_sizes {
+                font.populate_font_cache(&warmup_chars, s);
+            }
         }
 
         Self {
@@ -143,14 +168,14 @@ impl GameFonts {
         let clean = sanitize_text(text);
         let font_ref = self.text_font.as_ref().or(self.heading_font.as_ref());
         if let Some(font) = font_ref {
-            let scale = size / BASE_FONT_SIZE;
+            let (raster_size, scale) = quantize_font_size(size);
             draw_text_ex(
                 &clean,
                 x,
                 y,
                 TextParams {
                     font: Some(font),
-                    font_size: BASE_FONT_SIZE as u16,
+                    font_size: raster_size,
                     font_scale: scale,
                     font_scale_aspect: 1.0,
                     color,
@@ -166,14 +191,14 @@ impl GameFonts {
         let clean = sanitize_text(text);
         let font_ref = self.heading_font.as_ref().or(self.text_font.as_ref());
         if let Some(font) = font_ref {
-            let scale = size / BASE_FONT_SIZE;
+            let (raster_size, scale) = quantize_font_size(size);
             draw_text_ex(
                 &clean,
                 x,
                 y,
                 TextParams {
                     font: Some(font),
-                    font_size: BASE_FONT_SIZE as u16,
+                    font_size: raster_size,
                     font_scale: scale,
                     font_scale_aspect: 1.0,
                     color,
@@ -189,8 +214,8 @@ impl GameFonts {
         let clean = sanitize_text(text);
         let font_ref = self.text_font.as_ref().or(self.heading_font.as_ref());
         if let Some(font) = font_ref {
-            let scale = size / BASE_FONT_SIZE;
-            measure_text(&clean, Some(font), BASE_FONT_SIZE as u16, scale)
+            let (raster_size, scale) = quantize_font_size(size);
+            measure_text(&clean, Some(font), raster_size, scale)
         } else {
             measure_text(&clean, None, size.round() as u16, 1.0)
         }
@@ -200,8 +225,8 @@ impl GameFonts {
         let clean = sanitize_text(text);
         let font_ref = self.heading_font.as_ref().or(self.text_font.as_ref());
         if let Some(font) = font_ref {
-            let scale = size / BASE_FONT_SIZE;
-            measure_text(&clean, Some(font), BASE_FONT_SIZE as u16, scale)
+            let (raster_size, scale) = quantize_font_size(size);
+            measure_text(&clean, Some(font), raster_size, scale)
         } else {
             measure_text(&clean, None, size.round() as u16, 1.0)
         }
@@ -301,5 +326,31 @@ mod tests {
         assert!(cleaned.contains("->"));
         assert!(!cleaned.contains('➔'));
         assert!(!cleaned.contains('\u{fe0f}'));
+    }
+
+    #[test]
+    fn test_quantize_font_size_native_crisp_tiers() {
+        // Проверяем, что малые размеры рендерятся строго в 1:1 без блюра
+        assert_eq!(quantize_font_size(9.0), (9, 1.0));
+        assert_eq!(quantize_font_size(10.5), (11, 1.0));
+        assert_eq!(quantize_font_size(11.0), (11, 1.0));
+        assert_eq!(quantize_font_size(12.0), (12, 1.0));
+        assert_eq!(quantize_font_size(13.0), (13, 1.0));
+        assert_eq!(quantize_font_size(14.0), (14, 1.0));
+        assert_eq!(quantize_font_size(16.0), (16, 1.0));
+        assert_eq!(quantize_font_size(18.0), (18, 1.0));
+
+        // Для больших заголовков используются фиксированные базовые тиры
+        let (s20, sc20) = quantize_font_size(20.0);
+        assert_eq!(s20, 20);
+        assert!((sc20 - 1.0).abs() < 0.001);
+
+        let (s24, sc24) = quantize_font_size(24.0);
+        assert_eq!(s24, 24);
+        assert!((sc24 - 1.0).abs() < 0.001);
+
+        let (s32, sc32) = quantize_font_size(32.0);
+        assert_eq!(s32, 32);
+        assert!((sc32 - 1.0).abs() < 0.001);
     }
 }

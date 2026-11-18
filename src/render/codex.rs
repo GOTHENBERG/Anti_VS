@@ -13,6 +13,7 @@ static PASSIVES_PAGE: AtomicUsize = AtomicUsize::new(0);
 pub enum CodexResult {
     MobDossier(u8),
     ItemInspection(ItemInspectionTarget),
+    Close,
 }
 
 pub fn draw_codex(current_tab: &mut usize, fonts: &GameFonts, textures: &GameTextures) -> Option<CodexResult> {
@@ -37,6 +38,22 @@ pub fn draw_codex(current_tab: &mut usize, fonts: &GameFonts, textures: &GameTex
 
     let title = "ИНФЕРНАЛЬНЫЙ КОДЕКС РЕЖИССЁРА  |  [I] или [Esc] — Закрыть окно";
     fonts.draw_heading(title, mx + 20.0, my + 28.0, 18.0, GOLD);
+
+    // Кнопка [ X ] в верхнем правом углу
+    let close_btn_w = 34.0;
+    let close_btn_h = 28.0;
+    let close_btn_x = mx + modal_w - close_btn_w - 7.0;
+    let close_btn_y = my + 7.0;
+    let (mouse_x, mouse_y) = mouse_position();
+    let is_close_hover = mouse_x >= close_btn_x && mouse_x <= close_btn_x + close_btn_w && mouse_y >= close_btn_y && mouse_y <= close_btn_y + close_btn_h;
+    draw_rectangle(close_btn_x, close_btn_y, close_btn_w, close_btn_h, if is_close_hover { RED } else { Color::new(0.20, 0.10, 0.12, 0.9) });
+    draw_rectangle_lines(close_btn_x, close_btn_y, close_btn_w, close_btn_h, 1.5, WHITE);
+    let cw = fonts.measure_heading("X", 15.0).width;
+    fonts.draw_heading("X", close_btn_x + (close_btn_w - cw) / 2.0, close_btn_y + 19.0, 15.0, WHITE);
+
+    if is_mouse_button_pressed(MouseButton::Left) && is_close_hover {
+        return Some(CodexResult::Close);
+    }
 
     // Вкладки
     let tabs = [
@@ -363,22 +380,22 @@ fn draw_tab_bestiary(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
         let max_text_w = col_w - 74.0;
 
         // 1. Имя моба
-        fonts.draw_heading(name, text_x, cy + 18.0, 12.0, *col);
+        fonts.draw_heading(name, text_x, cy + 18.0, 13.0, *col);
 
         // 2. Параметры стоимости и экономики
-        fonts.draw_text(cost_info, text_x, cy + 33.0, 9.8, GOLD);
+        fonts.draw_text(cost_info, text_x, cy + 33.0, 11.0, GOLD);
 
         // 3. Боевые параметры (HP, скорость бега, урон, темп атаки, дальность, броня)
-        fonts.draw_text(stats, text_x, cy + 46.0, 9.5, WHITE);
+        fonts.draw_text(stats, text_x, cy + 46.0, 10.5, WHITE);
 
         // 4. Резисты и стойкость к отталкиванию
-        fonts.draw_text(resists, text_x, cy + 59.0, 9.3, LIGHTGRAY);
+        fonts.draw_text(resists, text_x, cy + 59.0, 10.5, LIGHTGRAY);
 
         // 5. Тактическая роль (с авто-переносом по ширине карточки, чтобы текст НИКОГДА не вылезал)
-        fonts.draw_text_wrapped(role, text_x, cy + 72.0, 9.5, 12.0, max_text_w, SKYBLUE);
+        fonts.draw_text_wrapped(role, text_x, cy + 72.0, 10.5, 13.0, max_text_w, SKYBLUE);
 
         // 6. Условие разблокировки внизу карточки
-        fonts.draw_text(unlock, text_x, cy + card_h - 6.0, 9.0, GREEN);
+        fonts.draw_text(unlock, text_x, cy + card_h - 6.0, 10.0, GREEN);
 
         // Клик по кнопке [i] или по всей карточке -> открывает полное досье
         if is_mouse_button_pressed(MouseButton::Left) && (is_btn_hover || is_card_hover) {
@@ -754,10 +771,10 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
         let tx = cx + 58.0;
         let text_max_w = col_w - 68.0;
 
-        fonts.draw_heading(name, tx, cy + 17.0, 12.0, *col);
-        fonts.draw_text(recipe, tx, cy + 32.0, 9.8, GOLD);
-        fonts.draw_text_wrapped(base_desc, tx, cy + 45.0, 9.3, 11.5, text_max_w, LIGHTGRAY);
-        fonts.draw_text_wrapped(evo_desc, tx, cy + 68.0, 9.3, 11.5, text_max_w, YELLOW);
+        fonts.draw_heading(name, tx, cy + 17.0, 13.0, *col);
+        fonts.draw_text(recipe, tx, cy + 32.0, 11.0, GOLD);
+        fonts.draw_text_wrapped(base_desc, tx, cy + 46.0, 10.5, 13.5, text_max_w, LIGHTGRAY);
+        fonts.draw_text_wrapped(evo_desc, tx, cy + 68.0, 10.5, 13.5, text_max_w, YELLOW);
     }
 
     requested_action
@@ -1157,9 +1174,9 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
         let tx = cx + 54.0;
         let text_max_w = col_w - 64.0;
 
-        fonts.draw_heading(name, tx, cy + 15.0, 11.5, *col);
-        fonts.draw_text_wrapped(effect, tx, cy + 28.0, 9.2, 11.0, text_max_w, WHITE);
-        fonts.draw_text_wrapped(evo, tx, cy + 48.0, 9.0, 11.0, text_max_w, GOLD);
+        fonts.draw_heading(name, tx, cy + 15.0, 13.0, *col);
+        fonts.draw_text_wrapped(effect, tx, cy + 28.0, 10.5, 13.5, text_max_w, WHITE);
+        fonts.draw_text_wrapped(evo, tx, cy + 49.0, 10.5, 13.5, text_max_w, GOLD);
     }
 
     requested_action
