@@ -73,6 +73,9 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         draw_circle(pool.pos.x - b_angle * 0.7, pool.pos.y - b_y * 0.7, 2.0, border_color);
     }
 
+    // 2.1 Инфернальные маркеры движения мыши (RTS Click Indicator) и очередь пути
+    draw_move_click_effects(world);
+
     // 3. Разрушаемые структуры (Алтари Крови, Стены, Обелиски)
     let pestilence_lvl = world.directors.first().map_or(0, |d| d.grade_pestilence);
     for structure in &world.structures {
@@ -569,4 +572,51 @@ fn draw_downed_boss(pos: Vec2, revive_progress: f32, name: &str, textures: &Game
     draw_boss_name(name, pos, fonts, SKYBLUE);
     let remaining = (crate::ecs::systems::coop::REVIVE_SECONDS - revive_progress.max(0.0)).max(0.0);
     fonts.draw_heading(&format!("ВОСКРЕШЕНИЕ {:.1}с", remaining), pos.x - 50.0, pos.y + 63.0, 10.0, SKYBLUE);
+}
+
+fn draw_move_click_effects(world: &World) {
+    // 1. Отрисовка очереди маршрута (Shift-waypoint path)
+    if !world.boss_waypoint_queue.is_empty() {
+        let mut prev = world.boss_pos;
+        for &wp in &world.boss_waypoint_queue {
+            draw_line(prev.x, prev.y, wp.x, wp.y, 2.0, Color::new(0.92, 0.28, 0.16, 0.45));
+            draw_circle(wp.x, wp.y, 4.0, Color::new(1.0, 0.60, 0.18, 0.75));
+            draw_circle_lines(wp.x, wp.y, 6.5, 1.2, Color::new(0.92, 0.22, 0.12, 0.85));
+            prev = wp;
+        }
+    }
+
+    // 2. Анимированный расплывающийся инфернальный кружок на месте клика (ПКМ RTS)
+    for eff in &world.move_click_effects {
+        let dur = eff.duration.max(0.001);
+        let progress = (1.0 - (eff.timer / dur)).clamp(0.0, 1.0); // 0.0 -> 1.0
+        let fade = (eff.timer / dur).clamp(0.0, 1.0);
+        let alpha = fade * fade;
+
+        // Внешнее расширяющееся инфернальное кольцо
+        let outer_r = 8.0 + progress * 24.0;
+        let outer_col = Color::new(1.0, 0.32, 0.12, alpha * 0.95);
+        draw_circle_lines(eff.pos.x, eff.pos.y, outer_r, 2.2, outer_col);
+
+        // Внутреннее вторичное пульсирующее кольцо
+        let inner_r = 4.0 + progress * 13.0;
+        let inner_col = Color::new(0.95, 0.70, 0.20, alpha * 0.75);
+        draw_circle_lines(eff.pos.x, eff.pos.y, inner_r, 1.6, inner_col);
+
+        // 4 рунических засечки, направленные к центру (стиль Dota/Warcraft, адаптированный под Anti_VS)
+        let rot = progress * 0.4;
+        for i in 0..4 {
+            let angle = (i as f32) * std::f32::consts::FRAC_PI_2 + rot;
+            let dir = Vec2::new(angle.cos(), angle.sin());
+            let p1 = eff.pos + dir * (outer_r - 3.0);
+            let p2 = eff.pos + dir * (outer_r + 6.0);
+            draw_line(p1.x, p1.y, p2.x, p2.y, 2.0, Color::new(1.0, 0.85, 0.30, alpha));
+        }
+
+        // Яркая точка в центре
+        let dot_r = (1.0 - progress) * 3.5;
+        if dot_r > 0.5 {
+            draw_circle(eff.pos.x, eff.pos.y, dot_r, Color::new(1.0, 0.50, 0.15, alpha));
+        }
+    }
 }

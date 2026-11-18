@@ -22,6 +22,21 @@ enum NetworkField {
     HostAddress,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BossControlScheme {
+    DirectKeyboard, // 1) только wasd и пробел
+    MouseRts,       // 2) движение на ПКМ, 'S' стоп, Shift - очереди приказов
+}
+
+impl BossControlScheme {
+    pub fn name_ru(&self) -> &'static str {
+        match self {
+            BossControlScheme::DirectKeyboard => "Только WASD + Пробел",
+            BossControlScheme::MouseRts => "ПКМ (RTS) + 'S' Стоп",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayerControl {
     Up,
@@ -29,6 +44,7 @@ pub enum PlayerControl {
     Left,
     Right,
     Dash,
+    Stop,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -36,11 +52,13 @@ pub enum PlayerControl {
 pub struct PlayerSettings {
     pub nickname: String,
     pub skin: u8,
+    pub control_scheme: BossControlScheme,
     pub move_up: String,
     pub move_down: String,
     pub move_left: String,
     pub move_right: String,
     pub dash: String,
+    pub stop: String,
 }
 
 impl Default for PlayerSettings {
@@ -48,11 +66,13 @@ impl Default for PlayerSettings {
         Self {
             nickname: "Игрок".to_string(),
             skin: 0,
+            control_scheme: BossControlScheme::DirectKeyboard,
             move_up: "W".to_string(),
             move_down: "S".to_string(),
             move_left: "A".to_string(),
             move_right: "D".to_string(),
             dash: "Space".to_string(),
+            stop: "S".to_string(),
         }
     }
 }
@@ -83,6 +103,7 @@ impl PlayerSettings {
             PlayerControl::Left => &self.move_left,
             PlayerControl::Right => &self.move_right,
             PlayerControl::Dash => &self.dash,
+            PlayerControl::Stop => &self.stop,
         };
         parse_key_code(name).unwrap_or(match control {
             PlayerControl::Up => KeyCode::W,
@@ -90,6 +111,7 @@ impl PlayerSettings {
             PlayerControl::Left => KeyCode::A,
             PlayerControl::Right => KeyCode::D,
             PlayerControl::Dash => KeyCode::Space,
+            PlayerControl::Stop => KeyCode::S,
         })
     }
 
@@ -101,6 +123,7 @@ impl PlayerSettings {
             PlayerControl::Left => self.move_left = name,
             PlayerControl::Right => self.move_right = name,
             PlayerControl::Dash => self.dash = name,
+            PlayerControl::Stop => self.stop = name,
         }
     }
 
@@ -111,6 +134,7 @@ impl PlayerSettings {
             PlayerControl::Left => &self.move_left,
             PlayerControl::Right => &self.move_right,
             PlayerControl::Dash => &self.dash,
+            PlayerControl::Stop => &self.stop,
         }
     }
 }
@@ -243,14 +267,42 @@ impl MainMenu {
 
         let mut button_y = controls_rect.y + 56.0;
         if self.show_controls {
-            let controls = [
-                (PlayerControl::Up, "Движение вверх"),
-                (PlayerControl::Down, "Движение вниз"),
-                (PlayerControl::Left, "Движение влево"),
-                (PlayerControl::Right, "Движение вправо"),
-                (PlayerControl::Dash, "Рывок"),
-            ];
-            for (control, label) in controls {
+            let mode_rect = Rect::new(x + 42.0, button_y, panel_w - 84.0, 32.0);
+            let mode_text = format!("РЕЖИМ: {}  ⟲", self.settings.control_scheme.name_ru());
+            draw_menu_button(mode_rect, &mode_text, contains(mode_rect, mx, my), fonts);
+            if is_mouse_button_pressed(MouseButton::Left) && contains(mode_rect, mx, my) {
+                self.settings.control_scheme = match self.settings.control_scheme {
+                    BossControlScheme::DirectKeyboard => BossControlScheme::MouseRts,
+                    BossControlScheme::MouseRts => BossControlScheme::DirectKeyboard,
+                };
+                self.settings.save();
+            }
+            button_y += 38.0;
+
+            let controls: &[(PlayerControl, &str)] = match self.settings.control_scheme {
+                BossControlScheme::DirectKeyboard => &[
+                    (PlayerControl::Up, "Движение вверх"),
+                    (PlayerControl::Down, "Движение вниз"),
+                    (PlayerControl::Left, "Движение влево"),
+                    (PlayerControl::Right, "Движение вправо"),
+                    (PlayerControl::Dash, "Рывок"),
+                ],
+                BossControlScheme::MouseRts => {
+                    let rts_info_row = Rect::new(x + 42.0, button_y, panel_w - 84.0, 30.0);
+                    draw_rectangle(rts_info_row.x, rts_info_row.y, rts_info_row.w, rts_info_row.h, Color::new(0.035, 0.04, 0.07, 1.0));
+                    draw_rectangle_lines(rts_info_row.x, rts_info_row.y, rts_info_row.w, rts_info_row.h, 0.8, Color::new(0.25, 0.28, 0.36, 1.0));
+                    fonts.draw_text("Движение (клик / Shift-очередь)", rts_info_row.x + 12.0, rts_info_row.y + 20.0, 12.0, LIGHTGRAY);
+                    let rts_kw = fonts.measure_heading("ПКМ", 11.0).width;
+                    fonts.draw_heading("ПКМ", rts_info_row.x + rts_info_row.w - rts_kw - 12.0, rts_info_row.y + 20.0, 11.0, GOLD);
+                    button_y += 34.0;
+
+                    &[
+                        (PlayerControl::Stop, "Остановиться (Стоп)"),
+                        (PlayerControl::Dash, "Рывок"),
+                    ]
+                }
+            };
+            for &(control, label) in controls {
                 let row = Rect::new(x + 42.0, button_y, panel_w - 84.0, 30.0);
                 let active = self.rebinding == Some(control);
                 draw_rectangle(row.x, row.y, row.w, row.h, Color::new(0.035, 0.04, 0.07, 1.0));

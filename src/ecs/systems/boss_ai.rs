@@ -111,14 +111,14 @@ pub fn update_player_boss(
         world.boss_vel = Vec2::ZERO;
         return;
     }
-    if aim_dir.length_squared() > 0.01 {
-        world.boss_facing = aim_dir.normalize();
+    if move_dir.length_squared() > 0.01 {
+        world.boss_facing = move_dir.normalize();
     }
     if dash_pressed && world.boss_dash_cooldown <= 0.0 {
-        let direction = if aim_dir.length_squared() > 0.01 {
-            aim_dir.normalize()
-        } else if move_dir.length_squared() > 0.01 {
+        let direction = if move_dir.length_squared() > 0.01 {
             move_dir.normalize()
+        } else if aim_dir.length_squared() > 0.01 {
+            aim_dir.normalize()
         } else {
             world.boss_facing
         };

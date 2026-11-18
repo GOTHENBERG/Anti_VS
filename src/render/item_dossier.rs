@@ -181,7 +181,7 @@ pub fn draw_item_inspection_modal(
 
             // Название и тип урона
             fonts.draw_heading(def.name, desc_x, content_y + 26.0, 16.0, GOLD);
-            fonts.draw_text(&format!("Тип урона: {} | Базовый откат: {:.2}с | Базовый урон: {:.0}", dmg_type_str, def.base_cooldown, def.base_damage), desc_x, content_y + 46.0, 12.0, SKYBLUE);
+            fonts.draw_text(&format!("Тип: {} | Урон: {} | Откат: {:.2}с | Базовый: {:.0}", def.delivery.name_ru(), dmg_type_str, def.base_cooldown, def.base_damage), desc_x, content_y + 46.0, 11.0, SKYBLUE);
 
             // Описание боевой роли
             fonts.draw_text(def.description, desc_x, content_y + 68.0, 11.5, LIGHTGRAY);

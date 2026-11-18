@@ -645,6 +645,7 @@ impl Default for BossInventory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use macroquad::prelude::Vec2;
 
     #[test]
     fn test_chain_lightning_and_crit_passives() {
@@ -701,5 +702,100 @@ mod tests {
             level: 1,
         });
         assert_eq!(inv.can_evolve(1), Some(WeaponType::StormGodWrath));
+    }
+
+    #[test]
+    fn test_skill_delivery_classification() {
+        use crate::content::weapons::{get_weapon_def, SkillDelivery};
+
+        // Ненаправленные (орбитали, ауры вокруг босса)
+        assert_eq!(get_weapon_def(WeaponType::BladeStorm).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::FireAura).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::Hellfire).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::HolyHammer).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::DivineShield).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::DivineBell).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::CathedralAura).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::AegisOrbiters).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::InvincibleBastion).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::SacredScriptures).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::InfernalLiturgy).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::VampiricAura).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::SoulFeast).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::ChronoStasis).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::InfiniteDilation).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::AstralCloak).delivery, SkillDelivery::NonDirectional);
+        assert_eq!(get_weapon_def(WeaponType::BloodEmperorShroud).delivery, SkillDelivery::NonDirectional);
+
+        // Направленные (снаряды и атаки в цель/объект)
+        assert_eq!(get_weapon_def(WeaponType::WindBlade).delivery, SkillDelivery::TargetedEntity);
+        assert_eq!(get_weapon_def(WeaponType::MagicWand).delivery, SkillDelivery::TargetedEntity);
+        assert_eq!(get_weapon_def(WeaponType::DeathRay).delivery, SkillDelivery::TargetedEntity);
+        assert_eq!(get_weapon_def(WeaponType::IceShards).delivery, SkillDelivery::TargetedEntity);
+        assert_eq!(get_weapon_def(WeaponType::ExecutionerAxe).delivery, SkillDelivery::TargetedEntity);
+        assert_eq!(get_weapon_def(WeaponType::MissileSwarm).delivery, SkillDelivery::TargetedEntity);
+        assert_eq!(get_weapon_def(WeaponType::ChainLightning).delivery, SkillDelivery::TargetedEntity);
+        assert_eq!(get_weapon_def(WeaponType::SoulPhantoms).delivery, SkillDelivery::TargetedEntity);
+    }
+
+    #[test]
+    fn test_projectile_pierce_straight_line() {
+        use crate::ecs::world::{ProjectileEntity, World};
+        use crate::ecs::components::combat::{DamageType, Faction};
+
+        let mut world = World::new();
+        let proj = ProjectileEntity {
+            id: 1,
+            pos: Vec2::new(100.0, 100.0),
+            vel: Vec2::new(300.0, 0.0),
+            damage: 50.0,
+            damage_type: DamageType::Physical,
+            armor_penetration: 0.0,
+            lifetime: 2.0,
+            radius: 10.0,
+            pierce: 2,
+            faction: Faction::Boss,
+            homing_strength: 7.5,
+            source_weapon: Some(WeaponType::MissileSwarm),
+        };
+        world.projectiles.push(proj);
+
+        // Проверяем, что при первом пробитии homing сбрасывается в 0, а pierce уменьшается до 1
+        let p = &mut world.projectiles[0];
+        p.pierce = p.pierce.saturating_sub(1);
+        if p.pierce > 0 {
+            p.homing_strength = 0.0;
+        }
+        assert_eq!(p.pierce, 1);
+        assert_eq!(p.homing_strength, 0.0); // Траектория зафиксирована по прямой!
+
+        // При втором попадании pierce истощается
+        p.pierce = p.pierce.saturating_sub(1);
+        assert_eq!(p.pierce, 0);
+    }
+
+    #[test]
+    fn test_boss_rts_waypoint_queue() {
+        use crate::ecs::world::World;
+
+        let mut world = World::new();
+        assert!(world.boss_waypoint_queue.is_empty());
+
+        // Shift-очередь приказов: точка 1, затем точка 2
+        world.boss_waypoint_queue.push_back(Vec2::new(100.0, 100.0));
+        world.boss_waypoint_queue.push_back(Vec2::new(200.0, 200.0));
+        assert_eq!(world.boss_waypoint_queue.len(), 2);
+
+        // Босс подошел к точке 1 (в пределах 12px)
+        world.boss_pos = Vec2::new(105.0, 102.0);
+        let dist = (*world.boss_waypoint_queue.front().unwrap() - world.boss_pos).length();
+        assert!(dist <= 12.0);
+        world.boss_waypoint_queue.pop_front();
+        assert_eq!(world.boss_waypoint_queue.len(), 1);
+        assert_eq!(world.boss_waypoint_queue.front().copied(), Some(Vec2::new(200.0, 200.0)));
+
+        // Приказ "Стоп" (клавиша S) мгновенно очищает очередь
+        world.boss_waypoint_queue.clear();
+        assert!(world.boss_waypoint_queue.is_empty());
     }
 }

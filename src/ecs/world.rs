@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use crate::core::rand;
 use crate::core::spatial_grid::SpatialGrid;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction, Health, Resistances, StatusEffects};
@@ -95,6 +95,13 @@ pub struct ParticleEntity {
     pub radius: f32,
     pub lifetime: f32,
     pub max_lifetime: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct MoveClickEffect {
+    pub pos: Vec2,
+    pub timer: f32,
+    pub duration: f32,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -311,6 +318,8 @@ pub struct World {
     pub floating_texts: Vec<FloatingTextEntity>,
     pub particles: Vec<ParticleEntity>,
     pub lightning_arcs: Vec<(Vec2, Vec2, f32)>, // (start, end, timer)
+    pub boss_waypoint_queue: VecDeque<Vec2>,
+    pub move_click_effects: Vec<MoveClickEffect>,
 
     // Директор
     pub directors: Vec<DirectorState>,
@@ -508,6 +517,8 @@ impl World {
             floating_texts: Vec::with_capacity(500),
             particles: Vec::with_capacity(2000),
             lightning_arcs: Vec::new(),
+            boss_waypoint_queue: VecDeque::new(),
+            move_click_effects: Vec::new(),
             directors: vec![DirectorState::new(1)],
             damage_queue: Vec::new(),
             next_entity_id: 1,
@@ -521,6 +532,14 @@ impl World {
             audio_events: Vec::new(),
             is_headless: false,
         }
+    }
+
+    pub fn spawn_move_click(&mut self, pos: Vec2) {
+        self.move_click_effects.push(MoveClickEffect {
+            pos,
+            timer: 0.45,
+            duration: 0.45,
+        });
     }
 
     pub fn alloc_id(&mut self) -> usize {

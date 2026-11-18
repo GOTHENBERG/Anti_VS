@@ -11,7 +11,7 @@ pub enum SettingsAction {
     MainMenu,
 }
 
-pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager) -> SettingsAction {
+pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings: &mut crate::render::main_menu::PlayerSettings) -> SettingsAction {
     let screen_w = screen_width();
     let screen_h = screen_height();
     let (mx, my) = mouse_position();
@@ -23,7 +23,7 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager) -> Setti
 
     // 2. Габариты центральной панели настроек
     let panel_w = 560.0;
-    let panel_h = 500.0;
+    let panel_h = 540.0;
     let x = (screen_w - panel_w) / 2.0;
     let y = (screen_h - panel_h) / 2.0;
 
@@ -298,9 +298,30 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager) -> Setti
     }
 
     // -------------------------------------------------------------
+    // СЕКЦИЯ 4.1: РЕЖИМ УПРАВЛЕНИЯ БОССОМ
+    // -------------------------------------------------------------
+    let ctrl_y = mute_y + 38.0;
+    let ctrl_btn_w = panel_w - 36.0;
+    let ctrl_btn_h = 30.0;
+    let ctrl_hover = mx >= x + 18.0 && mx <= x + 18.0 + ctrl_btn_w && my >= ctrl_y && my <= ctrl_y + ctrl_btn_h;
+    draw_rectangle(x + 18.0, ctrl_y, ctrl_btn_w, ctrl_btn_h, if ctrl_hover { Color::new(0.24, 0.18, 0.32, 1.0) } else { Color::new(0.10, 0.11, 0.18, 0.96) });
+    draw_rectangle_lines(x + 18.0, ctrl_y, ctrl_btn_w, ctrl_btn_h, 1.2, if ctrl_hover { GOLD } else { Color::new(0.4, 0.45, 0.6, 0.8) });
+    let ctrl_label = format!("🎮 РЕЖИМ УПРАВЛЕНИЯ БОССОМ: {}  [Клик / F2]", settings.control_scheme.name_ru());
+    let clw = fonts.measure_heading(&ctrl_label, 11.0).width;
+    fonts.draw_heading(&ctrl_label, x + 18.0 + (ctrl_btn_w - clw) / 2.0, ctrl_y + 20.0, 11.0, if ctrl_hover { GOLD } else { WHITE });
+    if is_clicked && ctrl_hover {
+        settings.control_scheme = match settings.control_scheme {
+            crate::render::main_menu::BossControlScheme::DirectKeyboard => crate::render::main_menu::BossControlScheme::MouseRts,
+            crate::render::main_menu::BossControlScheme::MouseRts => crate::render::main_menu::BossControlScheme::DirectKeyboard,
+        };
+        settings.save();
+        audio.handle_event(AudioEvent::UiClick);
+    }
+
+    // -------------------------------------------------------------
     // СЕКЦИЯ 5: КНОПКИ ДЕЙСТВИЙ (ВНИЗУ)
     // -------------------------------------------------------------
-    let actions_y = mute_y + 44.0;
+    let actions_y = ctrl_y + 42.0;
     let act_btn_w = (panel_w - 60.0) / 4.0;
     let act_btn_h = 36.0;
 

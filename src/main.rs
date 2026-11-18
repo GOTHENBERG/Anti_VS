@@ -421,6 +421,25 @@ async fn main() {
             audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
 
+        // Быстрое переключение режима управления Боссом: [F2]
+        if is_key_pressed(KeyCode::F2) {
+            menu.settings.control_scheme = match menu.settings.control_scheme {
+                crate::render::main_menu::BossControlScheme::DirectKeyboard => {
+                    crate::render::main_menu::BossControlScheme::MouseRts
+                }
+                crate::render::main_menu::BossControlScheme::MouseRts => {
+                    crate::render::main_menu::BossControlScheme::DirectKeyboard
+                }
+            };
+            menu.settings.save();
+            let mode_name = match menu.settings.control_scheme {
+                crate::render::main_menu::BossControlScheme::DirectKeyboard => "Режим: Только WASD + Пробел",
+                crate::render::main_menu::BossControlScheme::MouseRts => "Режим: Движение на ПКМ (RTS) + 'S' Стоп",
+            };
+            world.add_floating_text(world.boss_pos, mode_name.to_string(), GOLD, 1.4);
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
+        }
+
         // 1. Управление камерой на большой карте: WASD + колесо мыши + центрирование по C
         handle_camera_input(
             &mut cam_pos,
@@ -453,7 +472,7 @@ async fn main() {
                 }
                 crate::render::main_menu::GameRole::Boss => {
                     (player_move_dir, player_aim_dir, player_dash_pressed) =
-                        collect_boss_player_input(&menu.settings, &world, &world_cam);
+                        collect_boss_player_input(&menu.settings, &mut world, &world_cam);
                     if net_driver.is_network_client() {
                         if let Some(player_id) = net_driver.assigned_player_id() {
                             net_driver.send_command(Command::BossInput {
@@ -636,9 +655,27 @@ async fn main() {
                 render_ui(&world, &clock, &fonts, cam_pos, cam_zoom, &textures, audio.is_muted, audio.get_current_track_title())
             }
             crate::render::main_menu::GameRole::Boss => {
-                crate::render::ui::render_boss_ui(&world, &clock, &fonts, &textures, audio.is_muted, audio.get_current_track_title())
+                crate::render::ui::render_boss_ui(&world, &clock, &fonts, &textures, audio.is_muted, audio.get_current_track_title(), menu.settings.control_scheme)
             }
         };
+
+        if ui_interaction.toggle_control_scheme {
+            menu.settings.control_scheme = match menu.settings.control_scheme {
+                crate::render::main_menu::BossControlScheme::DirectKeyboard => {
+                    crate::render::main_menu::BossControlScheme::MouseRts
+                }
+                crate::render::main_menu::BossControlScheme::MouseRts => {
+                    crate::render::main_menu::BossControlScheme::DirectKeyboard
+                }
+            };
+            menu.settings.save();
+            let mode_name = match menu.settings.control_scheme {
+                crate::render::main_menu::BossControlScheme::DirectKeyboard => "Режим: Только WASD + Пробел",
+                crate::render::main_menu::BossControlScheme::MouseRts => "Режим: Движение на ПКМ (RTS) + 'S' Стоп",
+            };
+            world.add_floating_text(world.boss_pos, mode_name.to_string(), GOLD, 1.4);
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
+        }
 
         if let Some(perk) = ui_interaction.chosen_perk {
             crate::ecs::systems::coop::apply_player_perk_choice(&mut world, perk);
@@ -853,7 +890,7 @@ async fn main() {
                 }
             }
         } else if is_paused && !is_game_over {
-            let action = crate::render::settings::draw_pause_settings(&fonts, &mut audio);
+            let action = crate::render::settings::draw_pause_settings(&fonts, &mut audio, &mut menu.settings);
             match action {
                 crate::render::settings::SettingsAction::Resume => {
                     is_paused = false;
@@ -1032,32 +1069,83 @@ fn draw_build_grid_overlay(cam_pos: Vec2, cam_zoom: f32, screen_w: f32, screen_h
 
 fn collect_boss_player_input(
     settings: &crate::render::main_menu::PlayerSettings,
-    world: &World,
+    world: &mut World,
     world_cam: &Camera2D,
 ) -> (Vec2, Vec2, bool) {
-    use crate::render::main_menu::PlayerControl;
+    use crate::render::main_menu::{BossControlScheme, PlayerControl};
 
-    let mut move_dir = Vec2::ZERO;
-    if is_key_down(settings.key_for(PlayerControl::Up)) {
-        move_dir.y -= 1.0;
-    }
-    if is_key_down(settings.key_for(PlayerControl::Down)) {
-        move_dir.y += 1.0;
-    }
-    if is_key_down(settings.key_for(PlayerControl::Left)) {
-        move_dir.x -= 1.0;
-    }
-    if is_key_down(settings.key_for(PlayerControl::Right)) {
-        move_dir.x += 1.0;
-    }
-    if move_dir.length_squared() > 1.0 {
-        move_dir = move_dir.normalize();
-    }
     let (mx, my) = mouse_position();
     let mouse_world = world_cam.screen_to_world(Vec2::new(mx, my));
     let aim_dir = (mouse_world - world.boss_pos).normalize_or_zero();
     let dash_pressed = is_key_pressed(settings.key_for(PlayerControl::Dash));
-    (move_dir, aim_dir, dash_pressed)
+
+    match settings.control_scheme {
+        BossControlScheme::DirectKeyboard => {
+            // Режим 1: только WASD и пробел
+            if !world.boss_waypoint_queue.is_empty() {
+                world.boss_waypoint_queue.clear();
+            }
+
+            let mut move_dir = Vec2::ZERO;
+            if is_key_down(settings.key_for(PlayerControl::Up)) {
+                move_dir.y -= 1.0;
+            }
+            if is_key_down(settings.key_for(PlayerControl::Down)) {
+                move_dir.y += 1.0;
+            }
+            if is_key_down(settings.key_for(PlayerControl::Left)) {
+                move_dir.x -= 1.0;
+            }
+            if is_key_down(settings.key_for(PlayerControl::Right)) {
+                move_dir.x += 1.0;
+            }
+            if move_dir.length_squared() > 1.0 {
+                move_dir = move_dir.normalize();
+            }
+
+            (move_dir, aim_dir, dash_pressed)
+        }
+        BossControlScheme::MouseRts => {
+            // Режим 2: Движение на ПКМ, 'S' стоп, Shift — очередь приказов
+            if is_key_pressed(settings.key_for(PlayerControl::Stop)) {
+                world.boss_waypoint_queue.clear();
+            }
+
+            let screen_w = screen_width();
+            let top_panel_w = 680.0f32.min(screen_w - 240.0);
+            let top_panel_x = (screen_w - top_panel_w) / 2.0;
+            let in_top_hud = mx >= top_panel_x && mx <= top_panel_x + top_panel_w && my >= 12.0 && my <= 120.0;
+            let in_side_hud = mx >= screen_w - 185.0 && my >= 10.0 && my <= 105.0;
+
+            if is_mouse_button_pressed(MouseButton::Right) && !in_top_hud && !in_side_hud {
+                let clamped_target = Vec2::new(
+                    mouse_world.x.clamp(35.0, crate::core::MAP_WIDTH - 35.0),
+                    mouse_world.y.clamp(35.0, crate::core::MAP_HEIGHT - 35.0),
+                );
+
+                let is_shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
+                if !is_shift {
+                    world.boss_waypoint_queue.clear();
+                }
+                world.boss_waypoint_queue.push_back(clamped_target);
+                world.spawn_move_click(clamped_target);
+            }
+
+            let mut move_dir = Vec2::ZERO;
+            while let Some(&target) = world.boss_waypoint_queue.front() {
+                let to_target = target - world.boss_pos;
+                let dist = to_target.length();
+                if dist <= 12.0 {
+                    world.boss_waypoint_queue.pop_front();
+                } else {
+                    move_dir = to_target / dist;
+                    break;
+                }
+            }
+
+            (move_dir, aim_dir, dash_pressed)
+        }
+    }
 }
 
 fn apply_player_profile(

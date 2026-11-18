@@ -1,5 +1,23 @@
+use serde::{Deserialize, Serialize};
 use crate::ecs::components::combat::DamageType;
 use crate::ecs::components::inventory::WeaponType;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SkillDelivery {
+    /// Ненаправленные: орбитали, сферы вокруг босса, ауры, пульсации, радиусные эффекты
+    NonDirectional,
+    /// Направленные на существо или объект: снаряды и направленные атаки в цель
+    TargetedEntity,
+}
+
+impl SkillDelivery {
+    pub fn name_ru(&self) -> &'static str {
+        match self {
+            SkillDelivery::NonDirectional => "Ненаправленный (вокруг босса)",
+            SkillDelivery::TargetedEntity => "Направленный (на существо/объект)",
+        }
+    }
+}
 
 pub struct WeaponDefinition {
     pub kind: WeaponType,
@@ -9,6 +27,7 @@ pub struct WeaponDefinition {
     pub base_cooldown: f32,
     pub damage_type: DamageType,
     pub is_evolution: bool,
+    pub delivery: SkillDelivery,
 }
 
 pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
@@ -21,6 +40,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.1,
             damage_type: DamageType::Physical,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::BladeStorm => WeaponDefinition {
             kind,
@@ -30,6 +50,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.35,
             damage_type: DamageType::Physical,
             is_evolution: true,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::FireAura => WeaponDefinition {
             kind,
@@ -39,6 +60,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.8,
             damage_type: DamageType::Fire,
             is_evolution: false,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::Hellfire => WeaponDefinition {
             kind,
@@ -48,6 +70,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.5,
             damage_type: DamageType::Fire,
             is_evolution: true,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::MagicWand => WeaponDefinition {
             kind,
@@ -57,6 +80,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.7,
             damage_type: DamageType::True,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::DeathRay => WeaponDefinition {
             kind,
@@ -66,6 +90,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.4,
             damage_type: DamageType::True,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::HolyHammer => WeaponDefinition {
             kind,
@@ -75,6 +100,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.4,
             damage_type: DamageType::Holy,
             is_evolution: false,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::DivineShield => WeaponDefinition {
             kind,
@@ -84,6 +110,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.6,
             damage_type: DamageType::Holy,
             is_evolution: true,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::IceShards => WeaponDefinition {
             kind,
@@ -93,6 +120,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.0,
             damage_type: DamageType::Ice,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::BlizzardStorm => WeaponDefinition {
             kind,
@@ -102,6 +130,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.5,
             damage_type: DamageType::Ice,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::PoisonOrbs => WeaponDefinition {
             kind,
@@ -111,6 +140,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.2,
             damage_type: DamageType::Poison,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::ToxicPestilence => WeaponDefinition {
             kind,
@@ -120,6 +150,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.6,
             damage_type: DamageType::Poison,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::ExecutionerAxe => WeaponDefinition {
             kind,
@@ -129,6 +160,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.5,
             damage_type: DamageType::Physical,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::WhirlwindCleaver => WeaponDefinition {
             kind,
@@ -138,6 +170,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.5,
             damage_type: DamageType::Physical,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::CelestialBow => WeaponDefinition {
             kind,
@@ -147,6 +180,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.9,
             damage_type: DamageType::Holy,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::StarfallBarrage => WeaponDefinition {
             kind,
@@ -156,6 +190,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.45,
             damage_type: DamageType::Holy,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::ThunderOrb => WeaponDefinition {
             kind,
@@ -165,6 +200,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.0,
             damage_type: DamageType::True,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::ThunderstormWrath => WeaponDefinition {
             kind,
@@ -174,15 +210,17 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.4,
             damage_type: DamageType::True,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::BloodDaggers => WeaponDefinition {
             kind,
             name: "Кровавые Кинжалы",
-            description: "Кинжалы, летящие в направлении движения босса",
+            description: "Серия быстрых кинжалов, пронзающих врагов и структуры",
             base_damage: 26.0,
             base_cooldown: 0.8,
             damage_type: DamageType::Physical,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::BloodHarvest => WeaponDefinition {
             kind,
@@ -192,6 +230,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.35,
             damage_type: DamageType::Physical,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::SingularityOrb => WeaponDefinition {
             kind,
@@ -201,6 +240,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.4,
             damage_type: DamageType::True,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::EventHorizon => WeaponDefinition {
             kind,
@@ -210,6 +250,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.7,
             damage_type: DamageType::True,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::ChainFrost => WeaponDefinition {
             kind,
@@ -219,6 +260,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.1,
             damage_type: DamageType::Ice,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::AbsoluteZero => WeaponDefinition {
             kind,
@@ -228,6 +270,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.5,
             damage_type: DamageType::Ice,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::BrimstoneRay => WeaponDefinition {
             kind,
@@ -237,6 +280,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.2,
             damage_type: DamageType::Fire,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::InfernalCataclysm => WeaponDefinition {
             kind,
@@ -246,6 +290,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.6,
             damage_type: DamageType::Fire,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::MissileSwarm => WeaponDefinition {
             kind,
@@ -255,6 +300,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.9,
             damage_type: DamageType::Physical,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::DoomsdayBarrage => WeaponDefinition {
             kind,
@@ -264,6 +310,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.42,
             damage_type: DamageType::Physical,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::ChainLightning => WeaponDefinition {
             kind,
@@ -273,6 +320,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.95,
             damage_type: DamageType::True,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::StormGodWrath => WeaponDefinition {
             kind,
@@ -282,6 +330,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.45,
             damage_type: DamageType::True,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::DivineBell => WeaponDefinition {
             kind,
@@ -291,6 +340,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.3,
             damage_type: DamageType::Holy,
             is_evolution: false,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::CathedralAura => WeaponDefinition {
             kind,
@@ -300,6 +350,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.6,
             damage_type: DamageType::Holy,
             is_evolution: true,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::SoulPhantoms => WeaponDefinition {
             kind,
@@ -309,6 +360,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.0,
             damage_type: DamageType::True,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::BansheeWail => WeaponDefinition {
             kind,
@@ -318,6 +370,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.4,
             damage_type: DamageType::True,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::AegisOrbiters => WeaponDefinition {
             kind,
@@ -327,6 +380,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.8,
             damage_type: DamageType::Physical,
             is_evolution: false,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::InvincibleBastion => WeaponDefinition {
             kind,
@@ -336,6 +390,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.35,
             damage_type: DamageType::Physical,
             is_evolution: true,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::ChaosMeteor => WeaponDefinition {
             kind,
@@ -345,6 +400,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.5,
             damage_type: DamageType::Fire,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::ArmageddonStorm => WeaponDefinition {
             kind,
@@ -354,6 +410,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.7,
             damage_type: DamageType::Fire,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::VoidRift => WeaponDefinition {
             kind,
@@ -363,6 +420,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.25,
             damage_type: DamageType::True,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::SingularityCollapse => WeaponDefinition {
             kind,
@@ -372,6 +430,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.55,
             damage_type: DamageType::True,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::SacredScriptures => WeaponDefinition {
             kind,
@@ -381,6 +440,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.0,
             damage_type: DamageType::Holy,
             is_evolution: false,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::InfernalLiturgy => WeaponDefinition {
             kind,
@@ -390,6 +450,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.25,
             damage_type: DamageType::Fire,
             is_evolution: true,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::FaithBoomerang => WeaponDefinition {
             kind,
@@ -399,6 +460,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.2,
             damage_type: DamageType::Holy,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::HeavenlyJudgment => WeaponDefinition {
             kind,
@@ -408,6 +470,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.65,
             damage_type: DamageType::Holy,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::CursedChalice => WeaponDefinition {
             kind,
@@ -417,6 +480,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.3,
             damage_type: DamageType::Fire,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::BloodDeluge => WeaponDefinition {
             kind,
@@ -426,6 +490,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.5,
             damage_type: DamageType::Fire,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::VampiricAura => WeaponDefinition {
             kind,
@@ -435,6 +500,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.6,
             damage_type: DamageType::True,
             is_evolution: false,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::SoulFeast => WeaponDefinition {
             kind,
@@ -444,6 +510,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.35,
             damage_type: DamageType::True,
             is_evolution: true,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::RunicPrism => WeaponDefinition {
             kind,
@@ -453,6 +520,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.9,
             damage_type: DamageType::Physical,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::SpatialShatter => WeaponDefinition {
             kind,
@@ -462,6 +530,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.45,
             damage_type: DamageType::True,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::AbyssalBeam => WeaponDefinition {
             kind,
@@ -471,6 +540,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 1.4,
             damage_type: DamageType::True,
             is_evolution: false,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::ApocalypseCascade => WeaponDefinition {
             kind,
@@ -480,15 +550,17 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.6,
             damage_type: DamageType::True,
             is_evolution: true,
+            delivery: SkillDelivery::TargetedEntity,
         },
         WeaponType::ChronoStasis => WeaponDefinition {
             kind,
             name: "Хроно-Стазис",
-            description: "Выпускает конус темпорального холода по взгляду босса, замораживая мобов в абсолютный стазис",
+            description: "Выпускает купол темпорального холода вокруг босса, замораживая врагов в абсолютный стазис",
             base_damage: 24.0,
             base_cooldown: 1.6,
             damage_type: DamageType::Ice,
             is_evolution: false,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::InfiniteDilation => WeaponDefinition {
             kind,
@@ -498,6 +570,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.8,
             damage_type: DamageType::Ice,
             is_evolution: true,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::AstralCloak => WeaponDefinition {
             kind,
@@ -507,6 +580,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 2.0,
             damage_type: DamageType::Holy,
             is_evolution: false,
+            delivery: SkillDelivery::NonDirectional,
         },
         WeaponType::BloodEmperorShroud => WeaponDefinition {
             kind,
@@ -516,6 +590,7 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             base_cooldown: 0.4,
             damage_type: DamageType::Holy,
             is_evolution: true,
+            delivery: SkillDelivery::NonDirectional,
         },
     }
 }

@@ -353,6 +353,9 @@ pub fn update_combat(world: &mut World, dt: f32) {
                         let actual_dmg = mob.resistances.calculate_damage(&packet, mob.is_undead);
                         mob.health.take_damage(actual_dmg);
                         proj.pierce = proj.pierce.saturating_sub(1);
+                        if proj.pierce > 0 {
+                            proj.homing_strength = 0.0;
+                        }
 
                         if is_crit {
                             hit_particles.push((mob.pos, GOLD));
@@ -455,6 +458,9 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     st.health.take_damage(actual_dmg);
                     if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && actual_dmg > 0.0 { projectile_obelisk_contributions.push(st.id); }
                     proj.pierce = proj.pierce.saturating_sub(1);
+                    if proj.pierce > 0 {
+                        proj.homing_strength = 0.0;
+                    }
                     hit_particles.push((st.pos, PURPLE));
                     structure_proj_hits.push((st.pos, format!("-{:.0}", actual_dmg)));
                 }

@@ -407,4 +407,10 @@ pub fn update_movement(world: &mut World, dt: f32) {
     if world.screen_shake > 0.0 {
         world.screen_shake = (world.screen_shake - dt * 15.0).max(0.0);
     }
+
+    // 9. Анимация кругов приказов перемещения (Move Click Indicators)
+    for eff in &mut world.move_click_effects {
+        eff.timer -= dt;
+    }
+    world.move_click_effects.retain(|e| e.timer > 0.0);
 }

@@ -28,6 +28,7 @@ pub struct UiInteraction {
     pub start_altar_placement: bool,
     pub start_wall_placement: bool,
     pub chosen_perk: Option<crate::ecs::components::inventory::PerkChoice>,
+    pub toggle_control_scheme: bool,
 }
 
 enum HoverTooltip {
@@ -989,6 +990,7 @@ pub fn render_boss_ui(
     textures: &GameTextures,
     is_muted: bool,
     current_track: &str,
+    control_scheme: crate::render::main_menu::BossControlScheme,
 ) -> UiInteraction {
     let w = screen_width();
     let h = screen_height();
@@ -1181,7 +1183,22 @@ pub fn render_boss_ui(
     if is_mouse_button_pressed(MouseButton::Left) && sound_hover {
         interaction.clicked_sound_toggle = true;
     }
-    interaction.is_mouse_over_ui = pause_hover || sound_hover || contains_rect(Rect::new(panel_x, panel_y, panel_w, panel_h), mx, my);
+
+    let mode_btn = Rect::new(w - 180.0, 72.0, 165.0, 24.0);
+    let mode_hover = contains_rect(mode_btn, mx, my);
+    draw_rectangle(mode_btn.x, mode_btn.y, mode_btn.w, mode_btn.h, if mode_hover { Color::new(0.24, 0.18, 0.28, 1.0) } else { Color::new(0.08, 0.09, 0.14, 0.96) });
+    draw_rectangle_lines(mode_btn.x, mode_btn.y, mode_btn.w, mode_btn.h, 1.0, if mode_hover { GOLD } else { DARKGRAY });
+    let mode_label = match control_scheme {
+        crate::render::main_menu::BossControlScheme::DirectKeyboard => "🎮 WASD [F2]",
+        crate::render::main_menu::BossControlScheme::MouseRts => "🖱️ ПКМ RTS [F2]",
+    };
+    fonts.draw_heading(mode_label, mode_btn.x + 12.0, mode_btn.y + 17.0, 10.0, if mode_hover { GOLD } else { WHITE });
+
+    if is_mouse_button_pressed(MouseButton::Left) && mode_hover {
+        interaction.toggle_control_scheme = true;
+    }
+
+    interaction.is_mouse_over_ui = pause_hover || sound_hover || mode_hover || contains_rect(Rect::new(panel_x, panel_y, panel_w, panel_h), mx, my);
 
     if !current_track.is_empty() {
         fonts.draw_text(current_track, 18.0, h - 16.0, 10.0, Color::new(0.68, 0.70, 0.78, 0.82));
