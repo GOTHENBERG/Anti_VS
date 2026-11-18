@@ -112,6 +112,10 @@ pub struct WorldSnapshot {
     pub game_time: f32,
     #[serde(default = "default_match_duration_secs")]
     pub match_duration_secs: f32,
+    #[serde(default)]
+    pub is_paused: bool,
+    #[serde(default)]
+    pub pause_initiator: Option<String>,
     pub bosses: Vec<BossSnapshot>,
     pub director: Option<crate::ecs::world::DirectorState>,
     pub mobs: Vec<MobSnapshot>,
@@ -211,6 +215,8 @@ impl WorldSnapshot {
                 pos: pool.pos.into(), radius: pool.radius, lifetime: pool.lifetime,
                 dps: pool.dps, corrosive: pool.corrosive, is_director_source: pool.is_director_source,
             }).collect(),
+            is_paused: world.is_network_paused,
+            pause_initiator: world.pause_initiator.clone(),
         }
     }
 }
@@ -221,6 +227,8 @@ impl WorldSnapshot {
 pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_id: u8) {
     world.game_time = snapshot.game_time;
     world.match_duration_secs = snapshot.match_duration_secs;
+    world.is_network_paused = snapshot.is_paused;
+    world.pause_initiator = snapshot.pause_initiator;
     world.directors.clear();
     if let Some(director) = snapshot.director { world.directors.push(director); }
 
@@ -297,4 +305,31 @@ pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_i
         pos: pool.pos.into(), radius: pool.radius, lifetime: pool.lifetime, dps: pool.dps,
         corrosive: pool.corrosive, is_director_source: pool.is_director_source,
     }).collect();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_world_snapshot_pause_synchronization() {
+        let mut world = World::new();
+        world.is_network_paused = true;
+        world.pause_initiator = Some("Босс (Игрок)".to_string());
+
+        let snapshot = WorldSnapshot::from_world(&world, 42);
+        assert!(snapshot.is_paused);
+        assert_eq!(snapshot.pause_initiator.as_deref(), Some("Босс (Игрок)"));
+
+        let json = serde_json::to_string(&snapshot).expect("Serialize snapshot");
+        let decoded: WorldSnapshot = serde_json::from_str(&json).expect("Deserialize snapshot");
+        assert!(decoded.is_paused);
+        assert_eq!(decoded.pause_initiator.as_deref(), Some("Босс (Игрок)"));
+
+        let mut client_world = World::new();
+        assert!(!client_world.is_network_paused);
+        apply_to_world(decoded, &mut client_world, 1);
+        assert!(client_world.is_network_paused);
+        assert_eq!(client_world.pause_initiator.as_deref(), Some("Босс (Игрок)"));
+    }
 }

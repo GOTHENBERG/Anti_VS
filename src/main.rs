@@ -350,6 +350,8 @@ async fn main() {
             audio.toggle_mute();
         }
 
+        let my_player_id = net_driver.assigned_player_id().unwrap_or(if game_role == crate::render::main_menu::GameRole::Director { 0 } else { 1 });
+
         // Инфернальный кодекс по I
         if is_key_pressed(KeyCode::I) {
             if active_item_inspection.is_some() {
@@ -359,6 +361,11 @@ async fn main() {
                     opened_item_from_codex = false;
                 } else {
                     show_codex = false;
+                    if net_driver.is_networked() {
+                        world.is_network_paused = false;
+                        world.pause_initiator = None;
+                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
+                    }
                 }
                 audio.handle_event(crate::audio::AudioEvent::BookClose);
             } else if active_dossier_tier.is_some() {
@@ -368,6 +375,11 @@ async fn main() {
                     opened_dossier_from_codex = false;
                 } else {
                     show_codex = false;
+                    if net_driver.is_networked() {
+                        world.is_network_paused = false;
+                        world.pause_initiator = None;
+                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
+                    }
                 }
                 audio.handle_event(crate::audio::AudioEvent::BookClose);
             } else {
@@ -378,8 +390,19 @@ async fn main() {
                     opened_item_from_codex = false;
                     opened_dossier_from_codex = false;
                     audio.handle_event(crate::audio::AudioEvent::BookOpen);
+                    if net_driver.is_networked() {
+                        let initiator = if my_player_id == 0 { "Директор (Кодекс)".to_string() } else { format!("Босс ({})", world.boss_name) };
+                        world.is_network_paused = true;
+                        world.pause_initiator = Some(initiator);
+                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: true });
+                    }
                 } else {
                     audio.handle_event(crate::audio::AudioEvent::BookClose);
+                    if net_driver.is_networked() {
+                        world.is_network_paused = false;
+                        world.pause_initiator = None;
+                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
+                    }
                 }
             }
         }
@@ -391,6 +414,10 @@ async fn main() {
                 if opened_item_from_codex {
                     show_codex = true;
                     opened_item_from_codex = false;
+                } else if net_driver.is_networked() {
+                    world.is_network_paused = false;
+                    world.pause_initiator = None;
+                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
                 }
             } else if active_dossier_tier.is_some() {
                 active_dossier_tier = None;
@@ -398,12 +425,28 @@ async fn main() {
                 if opened_dossier_from_codex {
                     show_codex = true;
                     opened_dossier_from_codex = false;
+                } else if net_driver.is_networked() {
+                    world.is_network_paused = false;
+                    world.pause_initiator = None;
+                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
                 }
             } else if show_codex {
                 show_codex = false;
                 audio.handle_event(crate::audio::AudioEvent::BookClose);
+                if net_driver.is_networked() {
+                    world.is_network_paused = false;
+                    world.pause_initiator = None;
+                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
+                }
             } else {
-                is_paused = !is_paused;
+                let target_pause = !(is_paused || world.is_network_paused);
+                is_paused = target_pause;
+                world.is_network_paused = target_pause;
+                let initiator = if my_player_id == 0 { "Директор (Хост)".to_string() } else { format!("Босс ({})", world.boss_name) };
+                world.pause_initiator = if target_pause { Some(initiator) } else { None };
+                if net_driver.is_networked() {
+                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: target_pause });
+                }
                 audio.handle_event(crate::audio::AudioEvent::UiClick);
             }
         }
@@ -469,6 +512,7 @@ async fn main() {
 
         let is_running = !is_game_over
             && !is_paused
+            && !world.is_network_paused
             && !show_codex
             && active_dossier_tier.is_none()
             && active_item_inspection.is_none()
@@ -514,15 +558,42 @@ async fn main() {
         // 3. Исполнение сетевых/локальных команд (Command Pattern)
         let commands = net_driver.poll_commands();
         for cmd in commands {
-            execute_command(&mut world, cmd);
+            match &cmd {
+                Command::TogglePause { player_id, paused } => {
+                    let initiator = if *player_id == 0 {
+                        "Директор (Хост)".to_string()
+                    } else if *player_id == 1 {
+                        format!("Босс ({})", world.boss_name)
+                    } else {
+                        format!("Босс #{}", player_id)
+                    };
+                    world.is_network_paused = *paused;
+                    world.pause_initiator = if *paused { Some(initiator.clone()) } else { None };
+                    is_paused = *paused;
+                    let text = if *paused {
+                        format!("⏸ ПАУЗА: {}", initiator)
+                    } else {
+                        "▶ ИГРА ВОЗОБНОВЛЕНА".to_string()
+                    };
+                    world.add_floating_text(world.boss_pos, text, GOLD, 2.5);
+                }
+                _ => execute_command(&mut world, cmd),
+            }
         }
         if net_driver.is_network_client() {
             if let Some(snapshot) = net_driver.take_snapshot() {
+                let net_paused = snapshot.is_paused;
                 let local_id = net_driver.assigned_player_id().unwrap_or(1);
                 crate::network::snapshot::apply_to_world(snapshot, &mut world, local_id);
                 clock.elapsed_secs = world.game_time;
                 clock.duration_secs = world.match_duration_secs;
                 if follow_boss { cam_pos = world.boss_pos; }
+
+                if net_paused && !is_paused && !show_codex && active_item_inspection.is_none() && active_dossier_tier.is_none() {
+                    is_paused = true;
+                } else if !net_paused && is_paused && world.pause_initiator.is_none() {
+                    is_paused = false;
+                }
             }
         }
 
@@ -699,10 +770,24 @@ async fn main() {
             fonts.draw_heading(text, banner_x + 16.0, banner_y + 21.0, 11.5, GOLD);
         }
 
+        if net_driver.is_networked() && world.is_network_paused {
+            let banner_w = 540.0;
+            let banner_h = 32.0;
+            let banner_x = (screen_w - banner_w) * 0.5;
+            let banner_y = if placement_mode != PlacementMode::None { 48.0 } else { 12.0 };
+            draw_rectangle(banner_x, banner_y, banner_w, banner_h, Color::new(0.08, 0.08, 0.16, 0.95));
+            draw_rectangle_lines(banner_x, banner_y, banner_w, banner_h, 2.0, GOLD);
+            let who = world.pause_initiator.as_deref().unwrap_or("Игрок");
+            let pause_banner = format!("⏸ СЕТЕВАЯ ПАУЗА  •  Инициатор: {}  •  [Esc] Снять", who);
+            let tw = fonts.measure_heading(&pause_banner, 11.5).width;
+            fonts.draw_heading(&pause_banner, banner_x + (banner_w - tw) * 0.5, banner_y + 21.0, 11.5, GOLD);
+        }
+
         let modal_active = show_codex
             || active_dossier_tier.is_some()
             || active_item_inspection.is_some()
             || is_paused
+            || world.is_network_paused
             || world.boss_level_up_options.is_some();
 
         if !modal_active {
@@ -738,7 +823,14 @@ async fn main() {
                 audio.handle_event(crate::audio::AudioEvent::UiClick);
             }
             if ui_interaction.clicked_pause {
-                is_paused = !is_paused;
+                let target_pause = !(is_paused || world.is_network_paused);
+                is_paused = target_pause;
+                world.is_network_paused = target_pause;
+                let initiator = if my_player_id == 0 { "Директор (Хост)".to_string() } else { format!("Босс ({})", world.boss_name) };
+                world.pause_initiator = if target_pause { Some(initiator) } else { None };
+                if net_driver.is_networked() {
+                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: target_pause });
+                }
                 audio.handle_event(crate::audio::AudioEvent::UiClick);
             }
             if ui_interaction.clicked_codex {
@@ -747,8 +839,19 @@ async fn main() {
                     active_dossier_tier = None;
                     active_item_inspection = None;
                     audio.handle_event(crate::audio::AudioEvent::BookOpen);
+                    if net_driver.is_networked() {
+                        let initiator = if my_player_id == 0 { "Директор (Кодекс)".to_string() } else { format!("Босс ({})", world.boss_name) };
+                        world.is_network_paused = true;
+                        world.pause_initiator = Some(initiator);
+                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: true });
+                    }
                 } else {
                     audio.handle_event(crate::audio::AudioEvent::BookClose);
+                    if net_driver.is_networked() {
+                        world.is_network_paused = false;
+                        world.pause_initiator = None;
+                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
+                    }
                 }
             }
             if let Some(target) = ui_interaction.map_click_world_pos {
@@ -759,11 +862,23 @@ async fn main() {
                 active_dossier_tier = Some(tier);
                 opened_dossier_from_codex = false;
                 audio.handle_event(crate::audio::AudioEvent::BookOpen);
+                if net_driver.is_networked() {
+                    let initiator = if my_player_id == 0 { "Директор (Досье)".to_string() } else { format!("Босс ({})", world.boss_name) };
+                    world.is_network_paused = true;
+                    world.pause_initiator = Some(initiator);
+                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: true });
+                }
             }
             if let Some(target) = ui_interaction.open_item_inspection {
                 active_item_inspection = Some(target);
                 opened_item_from_codex = false;
                 audio.handle_event(crate::audio::AudioEvent::BookOpen);
+                if net_driver.is_networked() {
+                    let initiator = if my_player_id == 0 { "Директор (Инфо)".to_string() } else { format!("Босс ({})", world.boss_name) };
+                    world.is_network_paused = true;
+                    world.pause_initiator = Some(initiator);
+                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: true });
+                }
             }
             if let Some(tier) = ui_interaction.direct_summon_tier {
                 if let Some(director) = world.directors.first() {
@@ -879,6 +994,10 @@ async fn main() {
                 if opened_item_from_codex {
                     show_codex = true;
                     opened_item_from_codex = false;
+                } else if net_driver.is_networked() {
+                    world.is_network_paused = false;
+                    world.pause_initiator = None;
+                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
                 }
             }
         } else if show_codex {
@@ -897,6 +1016,11 @@ async fn main() {
                     }
                     crate::render::codex::CodexResult::Close => {
                         audio.handle_event(crate::audio::AudioEvent::BookClose);
+                        if net_driver.is_networked() {
+                            world.is_network_paused = false;
+                            world.pause_initiator = None;
+                            net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
+                        }
                     }
                 }
             }
@@ -908,6 +1032,10 @@ async fn main() {
                 if opened_dossier_from_codex {
                     show_codex = true;
                     opened_dossier_from_codex = false;
+                } else if net_driver.is_networked() {
+                    world.is_network_paused = false;
+                    world.pause_initiator = None;
+                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
                 }
             }
             if res.summon_requested {
@@ -915,11 +1043,16 @@ async fn main() {
                     try_summon_squad(director, tier, &mut net_driver);
                 }
             }
-        } else if is_paused && !is_game_over {
+        } else if (is_paused || world.is_network_paused) && !is_game_over {
             let action = crate::render::settings::draw_pause_settings(&fonts, &mut audio, &mut menu.settings);
             match action {
                 crate::render::settings::SettingsAction::Resume => {
                     is_paused = false;
+                    world.is_network_paused = false;
+                    world.pause_initiator = None;
+                    if net_driver.is_networked() {
+                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
+                    }
                 }
                 crate::render::settings::SettingsAction::Restart => {
                     let duration_secs = clock.duration_secs;
@@ -933,6 +1066,11 @@ async fn main() {
                     spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
                     spawn_corner_obelisks(&mut world);
                     is_paused = false;
+                    world.is_network_paused = false;
+                    world.pause_initiator = None;
+                    if net_driver.is_networked() {
+                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
+                    }
                     placement_mode = PlacementMode::None;
                     show_codex = false;
                     active_dossier_tier = None;
@@ -950,6 +1088,11 @@ async fn main() {
                 }
                 crate::render::settings::SettingsAction::MainMenu => {
                     is_paused = false;
+                    world.is_network_paused = false;
+                    world.pause_initiator = None;
+                    if net_driver.is_networked() {
+                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
+                    }
                     show_main_menu = true;
                     show_mouse(true);
                 }

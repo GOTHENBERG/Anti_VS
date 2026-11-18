@@ -336,6 +336,8 @@ pub struct World {
     pub boss_model: Option<crate::ai::models::BossModel>,
     pub audio_events: Vec<crate::audio::AudioEvent>,
     pub is_headless: bool, // Режим обучения без графики: отключает вложенный параллелизм
+    pub is_network_paused: bool, // Глобальная пауза сетевого матча
+    pub pause_initiator: Option<String>, // Имя/роль игрока, поставившего матч на паузу
 }
 
 impl World {
@@ -531,6 +533,8 @@ impl World {
             boss_model: None,
             audio_events: Vec::new(),
             is_headless: false,
+            is_network_paused: false,
+            pause_initiator: None,
         }
     }
 

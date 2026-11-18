@@ -76,6 +76,30 @@ pub enum Command {
         director_id: u8,
         page: u8,
     },
+    /// Переключение глобальной паузы матча (от любого игрока: Хоста или Клиента)
+    TogglePause {
+        player_id: u8,
+        paused: bool,
+    },
     /// Перезапуск игры
     RestartGame,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_toggle_pause_command_serde() {
+        let cmd = Command::TogglePause { player_id: 2, paused: true };
+        let serialized = serde_json::to_string(&cmd).expect("Serialize Command::TogglePause");
+        let deserialized: Command = serde_json::from_str(&serialized).expect("Deserialize Command::TogglePause");
+        match deserialized {
+            Command::TogglePause { player_id, paused } => {
+                assert_eq!(player_id, 2);
+                assert!(paused);
+            }
+            _ => panic!("Expected TogglePause command"),
+        }
+    }
 }
