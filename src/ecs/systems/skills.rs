@@ -1822,7 +1822,7 @@ pub fn update_world_structures(world: &mut World, dt: f32) {
                 world.screen_shake = 16.0;
                 world.add_floating_text(
                     pos,
-                    format!("⚡ РАЗЛОМ [{}]! 20с до Прорыва!", corner_name),
+                    format!("РАЗЛОМ [{}]! 20с до Прорыва!", corner_name),
                     GOLD,
                     3.0,
                 );
@@ -1860,7 +1860,7 @@ pub fn update_world_structures(world: &mut World, dt: f32) {
         world.screen_shake = 22.0;
         world.spawn_particles(pos, 50, PURPLE, 240.0);
         world.spawn_particles(pos, 35, RED, 180.0);
-        world.add_floating_text(pos, "💀 ИНФЕРНАЛЬНЫЙ ПРОРЫВ! ОРДА ВЫРВАЛАСЬ!".to_string(), RED, 2.5);
+        world.add_floating_text(pos, "ИНФЕРНАЛЬНЫЙ ПРОРЫВ! ОРДА ВЫРВАЛАСЬ!".to_string(), RED, 2.5);
 
         let income = if let Some(d) = world.directors.first() {
             d.income_rate + (world.structures.iter().filter(|s| crate::content::structures::is_altar_structure_type(s.structure_type) && s.health.is_alive()).count() as f32 * 3.0)

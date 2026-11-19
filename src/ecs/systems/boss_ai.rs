@@ -899,7 +899,7 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
             if let Some(w) = world.boss_inventory.weapons.get_mut(weapon_idx) {
                 w.limit_break_level += 1;
                 w.damage *= 1.12;
-                let text = format!("⚡ ВОЗВЫШЕНИЕ: {} (+12% Урона)", name);
+                let text = format!("ВОЗВЫШЕНИЕ: {} (+12% Урона)", name);
                 world.boss_inventory.last_chosen_perk = Some(text.clone());
                 world.boss_inventory.perk_announcement_timer = 2.5;
                 world.add_floating_text(boss_pos, text, GOLD, 1.4);
@@ -910,7 +910,7 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
             if let Some(w) = world.boss_inventory.weapons.get_mut(weapon_idx) {
                 w.limit_break_level += 1;
                 w.base_cooldown = (w.base_cooldown * 0.94).max(0.12);
-                let text = format!("⚡ ВОЗВЫШЕНИЕ: {} (-6% КД)", name);
+                let text = format!("ВОЗВЫШЕНИЕ: {} (-6% КД)", name);
                 world.boss_inventory.last_chosen_perk = Some(text.clone());
                 world.boss_inventory.perk_announcement_timer = 2.5;
                 world.add_floating_text(boss_pos, text, SKYBLUE, 1.4);
@@ -921,7 +921,7 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
             if let Some(w) = world.boss_inventory.weapons.get_mut(weapon_idx) {
                 w.limit_break_level += 1;
                 w.bonus_projectiles += 1;
-                let text = format!("⚡ ВОЗВЫШЕНИЕ: {} (+1 Снаряд)", name);
+                let text = format!("ВОЗВЫШЕНИЕ: {} (+1 Снаряд)", name);
                 world.boss_inventory.last_chosen_perk = Some(text.clone());
                 world.boss_inventory.perk_announcement_timer = 2.5;
                 world.add_floating_text(boss_pos, text, ORANGE, 1.4);
@@ -931,7 +931,7 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
         PerkChoice::LimitBreakTitanVigor => {
             world.boss_health.max += 160.0;
             world.boss_health.heal(world.boss_health.max * 0.25);
-            let text = "🛡️ ВОЗВЫШЕНИЕ: Закалка Титана (+160 HP, Лечение)".to_string();
+            let text = "ВОЗВЫШЕНИЕ: Закалка Титана (+160 HP, Лечение)".to_string();
             world.boss_inventory.last_chosen_perk = Some(text.clone());
             world.boss_inventory.perk_announcement_timer = 3.0;
             world.add_floating_text(boss_pos, text, GREEN, 1.5);
@@ -941,7 +941,7 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
             world.boss_resistances.flat_armor += 2.0;
             world.boss_resistances.physical_res = (world.boss_resistances.physical_res + 0.03).min(0.75);
             world.boss_resistances.fire_res = (world.boss_resistances.fire_res + 0.03).min(0.75);
-            let text = "🛡️ ВОЗВЫШЕНИЕ: Адаптивная Броня (+2 Брони, +3% Резисты)".to_string();
+            let text = "ВОЗВЫШЕНИЕ: Адаптивная Броня (+2 Брони, +3% Резисты)".to_string();
             world.boss_inventory.last_chosen_perk = Some(text.clone());
             world.boss_inventory.perk_announcement_timer = 3.0;
             world.add_floating_text(boss_pos, text, PURPLE, 1.5);
@@ -949,7 +949,7 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
         }
         PerkChoice::LimitBreakPredatorSpeed => {
             world.boss_inventory.bonus_move_speed_multiplier += 0.08;
-            let text = "⚡ ВОЗВЫШЕНИЕ: Скорость Хищника (+8% Скорости бега)".to_string();
+            let text = "ВОЗВЫШЕНИЕ: Скорость Хищника (+8% Скорости бега)".to_string();
             world.boss_inventory.last_chosen_perk = Some(text.clone());
             world.boss_inventory.perk_announcement_timer = 2.5;
             world.add_floating_text(boss_pos, text, YELLOW, 1.3);

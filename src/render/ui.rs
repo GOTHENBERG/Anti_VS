@@ -45,6 +45,32 @@ enum HoverTooltip {
     },
 }
 
+/// Процедурная отрисовка пиксельного навесного замка (Pixel Padlock)
+/// Латунная дужка, металлический корпус и замочная скважина (GPL-3.0 совместимо, процедурный пиксель-арт)
+pub fn draw_pixel_lock(x: f32, y: f32, color: Color) {
+    let shackle_color = Color::new(color.r * 0.9 + 0.1, color.g * 0.9 + 0.1, color.b * 0.9 + 0.1, color.a);
+    // Дужка замка (U-образная дуга)
+    draw_line(x + 2.0, y + 1.0, x + 6.0, y + 1.0, 1.2, shackle_color);
+    draw_line(x + 2.0, y + 1.0, x + 2.0, y + 4.5, 1.2, shackle_color);
+    draw_line(x + 6.0, y + 1.0, x + 6.0, y + 4.5, 1.2, shackle_color);
+
+    // Корпус замка (8x7 пикселей)
+    draw_rectangle(x, y + 4.0, 8.5, 7.0, color);
+    draw_rectangle_lines(x, y + 4.0, 8.5, 7.0, 1.0, Color::new(color.r * 0.45, color.g * 0.45, color.b * 0.45, color.a));
+
+    // Замочная скважина
+    let hole_col = Color::new(0.08, 0.05, 0.08, color.a);
+    draw_circle(x + 4.25, y + 6.5, 1.0, hole_col);
+    draw_line(x + 4.25, y + 7.0, x + 4.25, y + 9.0, 1.0, hole_col);
+}
+
+/// Процедурная отрисовка пиксельной молнии (Pixel Lightning Spark)
+pub fn draw_pixel_lightning(x: f32, y: f32, color: Color) {
+    draw_line(x + 4.0, y, x + 1.0, y + 5.0, 1.5, color);
+    draw_line(x + 1.0, y + 5.0, x + 5.0, y + 4.0, 1.2, color);
+    draw_line(x + 5.0, y + 4.0, x + 2.0, y + 10.0, 1.5, color);
+}
+
 pub fn render_ui(
     world: &World,
     clock: &GameClock,
@@ -358,7 +384,7 @@ pub fn render_ui(
         }
     }
 
-    // 5. Верхняя левая кнопка: Кодекс [ 📖 Кодекс (I) ]
+    // 5. Верхняя левая кнопка: Кодекс [ Кодекс (I) ] с графической иконкой книги
     let codex_btn_w = 145.0;
     let codex_btn_h = 34.0;
     let codex_btn_x = 20.0;
@@ -369,7 +395,19 @@ pub fn render_ui(
     }
     draw_rectangle(codex_btn_x, codex_btn_y, codex_btn_w, codex_btn_h, if codex_hover { Color::new(0.24, 0.16, 0.35, 1.0) } else { Color::new(0.12, 0.10, 0.18, 0.95) });
     draw_rectangle_lines(codex_btn_x, codex_btn_y, codex_btn_w, codex_btn_h, 1.5, if codex_hover { GOLD } else { GRAY });
-    fonts.draw_heading("Кодекс [I]", codex_btn_x + 14.0, codex_btn_y + 22.0, 14.0, if codex_hover { GOLD } else { WHITE });
+    if let Some(ref book_tex) = textures.icon_book {
+        draw_texture_ex(
+            book_tex,
+            codex_btn_x + 8.0,
+            codex_btn_y + 6.0,
+            if codex_hover { GOLD } else { WHITE },
+            DrawTextureParams {
+                dest_size: Some(Vec2::splat(22.0)),
+                ..Default::default()
+            },
+        );
+    }
+    fonts.draw_heading("Кодекс [I]", codex_btn_x + 36.0, codex_btn_y + 22.0, 14.0, if codex_hover { GOLD } else { WHITE });
 
     if is_mouse_button_pressed(MouseButton::Left) && codex_hover {
         interaction.clicked_codex = true;
@@ -377,7 +415,7 @@ pub fn render_ui(
 
     // Подсказка навигации под кнопкой кодекса (в 2 компактные строки)
     fonts.draw_text("Стрелки: Камера | Колесо: Зум", 20.0, 62.0, 11.5, YELLOW);
-    fonts.draw_text("[C]: Центр босса | ЛКМ: Двигать карту", 20.0, 78.0, 11.5, YELLOW);
+    fonts.draw_text("[Пробел]: Центр босса | ЛКМ: Двигать карту", 20.0, 78.0, 11.5, YELLOW);
 
     // 6. ТАКТИЧЕСКАЯ МИНИКАРТА (В левой нижней части экрана)
     draw_minimap(world, cam_pos, cam_zoom, fonts, &mut interaction);
@@ -780,13 +818,24 @@ pub fn render_ui(
 
             // Нижняя строка: ЛКМ Призыв
             if is_unlocked {
-                let call_hint = if is_shift { "⚡ ВСЕ" } else { "Призыв" };
-                let ch_w = fonts.measure_text(call_hint, 9.5).width;
-                fonts.draw_text(call_hint, cx + (card_w - ch_w) / 2.0, cy + 112.0, 9.5, if card_hover { YELLOW } else { LIGHTGRAY });
+                if is_shift {
+                    let call_hint = "ВСЕ [Shift]";
+                    let ch_w = fonts.measure_text(call_hint, 9.5).width;
+                    let spark_x = cx + (card_w - ch_w) / 2.0 - 7.0;
+                    draw_pixel_lightning(spark_x, cy + 104.0, YELLOW);
+                    fonts.draw_text(call_hint, spark_x + 9.0, cy + 112.0, 9.5, if card_hover { YELLOW } else { GOLD });
+                } else {
+                    let call_hint = "Призыв";
+                    let ch_w = fonts.measure_text(call_hint, 9.5).width;
+                    fonts.draw_text(call_hint, cx + (card_w - ch_w) / 2.0, cy + 112.0, 9.5, if card_hover { YELLOW } else { LIGHTGRAY });
+                }
             } else {
-                let lock_str = format!("🔒 {:.0}", config.unlock_spent_threshold);
-                let lw = fonts.measure_text(&lock_str, 9.5).width;
-                fonts.draw_text(&lock_str, cx + (card_w - lw) / 2.0, cy + 112.0, 9.5, RED);
+                let cost_num = format!("{:.0}", config.unlock_spent_threshold);
+                let nw = fonts.measure_text(&cost_num, 9.5).width;
+                let total_w = 11.0 + nw;
+                let lock_x = cx + (card_w - total_w) / 2.0;
+                draw_pixel_lock(lock_x, cy + 102.5, Color::new(0.9, 0.3, 0.3, 1.0));
+                fonts.draw_text(&cost_num, lock_x + 12.0, cy + 112.0, 9.5, RED);
             }
 
             let altar_cooldown = director.altar_cooldown_for_tier(tier);
@@ -884,8 +933,9 @@ pub fn render_ui(
                 let cd_str = format!("{:.0}с", altar_cooldown);
                 fonts.draw_heading(&cd_str, text_left + 14.0, altar_button.y + 12.0, 9.5, Color::new(1.0, 0.45, 0.35, 1.0));
             } else if !is_unlocked {
-                let lock_str = format!("🔒{:.0}", config.unlock_spent_threshold);
-                fonts.draw_text(&lock_str, text_left, altar_button.y + 15.0, 8.5, RED);
+                let cost_num = format!("{:.0}", config.unlock_spent_threshold);
+                draw_pixel_lock(text_left, altar_button.y + 6.0, Color::new(0.9, 0.35, 0.35, 1.0));
+                fonts.draw_text(&cost_num, text_left + 12.0, altar_button.y + 15.0, 8.5, RED);
             } else if !altar_affordable {
                 fonts.draw_heading(&ctrl_str, text_left, altar_button.y + 11.0, 8.5, GRAY);
                 fonts.draw_text(&format!("{:.0}", altar_cost), text_left + 14.0, altar_button.y + 13.0, 9.0, Color::new(1.0, 0.4, 0.4, 1.0));
@@ -934,27 +984,27 @@ pub fn render_ui(
         // 11.1 Наведение на Босса
         if world_mpos.distance(world.boss_pos) < 36.0 {
             let state_str = if world.boss_still_time >= 1.2 {
-                ("🧘 МЕДИТАЦИЯ ПОКОЯ (+2% HP/с, +30 XP/с)".to_string(), GREEN)
+                ("[МЕДИТАЦИЯ ПОКОЯ] (+2% HP/с, +30 XP/с)".to_string(), GREEN)
             } else if world.boss_dash_cooldown <= 0.0 {
-                ("⚡ РЫВОК ГОТОВ (8-лучевой Dash)".to_string(), GOLD)
+                ("[РЫВОК ГОТОВ] (8-лучевой Dash)".to_string(), GOLD)
             } else {
-                ("⚔️ АКТИВНЫЙ БОЙ (Кайтинг орд)".to_string(), SKYBLUE)
+                ("[АКТИВНЫЙ БОЙ] (Кайтинг орд)".to_string(), SKYBLUE)
             };
 
             let ai_str = if let Some(ref model) = world.boss_model {
                 let syn = model.total_synapses;
                 let desc = if syn > 0 {
-                    format!("🧠 ИИ: Глубокая нейросеть ({} параметров, 166 сенсоров, Пок. {})", syn, model.generation)
+                    format!("[НЕЙРОСЕТЬ] Глубокий ИИ ({} параметров, 166 сенсоров, Пок. {})", syn, model.generation)
                 } else {
-                    format!("🧠 ИИ: Обученная модель (Поколение {}, Фитнес {:.0})", model.generation, model.fitness)
+                    format!("[ОБУЧЕННЫЙ ИИ] Модель (Поколение {}, Фитнес {:.0})", model.generation, model.fitness)
                 };
                 (desc, GOLD)
             } else {
-                ("⚙️ ИИ: Базовые потенциальные поля".to_string(), LIGHTGRAY)
+                ("[БАЗОВЫЙ ИИ] Потенциальные поля".to_string(), LIGHTGRAY)
             };
 
             let lines = vec![
-                ("👑 СОЛО-БОСС (АВТОНОМНЫЙ ГЕРОЙ)".to_string(), YELLOW),
+                ("[БОСС-ГЕРОЙ] АВТОНОМНЫЙ ПЕРСОНАЖ".to_string(), YELLOW),
                 (format!("Здоровье: {:.0} / {:.0} HP | Броня: {:.1}", world.boss_health.current, world.boss_health.max, world.boss_resistances.flat_armor), WHITE),
                 (format!("Уровень: {} | Оружий: {}/6 | Пассивок: {}/6", world.boss_inventory.level, world.boss_inventory.weapons.len(), world.boss_inventory.passives.len()), LIGHTGRAY),
                 state_str,
@@ -968,11 +1018,11 @@ pub fn render_ui(
             for st in &world.structures {
                 if world_mpos.distance(st.pos) < st.radius + 18.0 {
                     let lines = vec![
-                        ("🏛️ АЛТАРЬ КРОВИ (Инфернальная структура)".to_string(), PURPLE),
+                        ("[АЛТАРЬ КРОВИ] Инфернальная структура".to_string(), PURPLE),
                         (format!("Здоровье: {:.0} / {:.0} HP | Броня: {:.0}", st.health.current, st.health.max, st.resistances.flat_armor), WHITE),
                         ("+3.0 Очков Душ каждые 2 сек к доходу Директора".to_string(), GREEN),
                         ("Аура Крови: лечит союзных мобов на +35 HP каждые 3 сек в радиусе 180px".to_string(), SKYBLUE),
-                        ("⚠️ РАЗРУШАЕМ: Босс атакует и уничтожает алтарь!".to_string(), ORANGE),
+                        ("[УЯЗВИМОСТЬ] Разрушаем: Босс атакует и уничтожает алтарь!".to_string(), ORANGE),
                     ];
                     hovered_tooltip = Some(HoverTooltip::WorldEntity(Vec2::new(mx, my), lines));
                     break;
@@ -988,20 +1038,20 @@ pub fn render_ui(
                     if mob.pos.distance(world_mpos) < mob.radius + 12.0 {
                         let config = get_squad_config(mob.tier);
                         let mut lines = vec![
-                            (format!("👹 {} (Тир {})", config.name, mob.tier), WHITE),
+                            (format!("[ОТРЯД] {} (Тир {})", config.name, mob.tier), WHITE),
                             (format!("HP: {:.0} / {:.0} | Скорость: {:.0} | Броня: {:.0}", mob.health.current, mob.health.max, mob.speed, mob.resistances.flat_armor), LIGHTGRAY),
                         ];
 
                         if mob.status.burn_timer > 0.0 {
-                            lines.push((format!("🔥 Горение: -{:.0} HP/сек", mob.status.burn_dps), ORANGE));
+                            lines.push((format!("[ОЖОГ] -{:.0} HP/сек", mob.status.burn_dps), ORANGE));
                         }
                         if mob.status.is_frozen() {
-                            lines.push(("❄️ Заморозка: полностью обездвижен".to_string(), SKYBLUE));
+                            lines.push(("[ЗАМОРОЗКА] Полностью обездвижен".to_string(), SKYBLUE));
                         } else if mob.status.slow_timer > 0.0 {
-                            lines.push(("❄️ Замедление скорости на 50%".to_string(), SKYBLUE));
+                            lines.push(("[ЗАМЕДЛЕНИЕ] Скорость снижена на 50%".to_string(), SKYBLUE));
                         }
                         if mob.status.poison_timer > 0.0 {
-                            lines.push((format!("🧪 Отравление: -{:.0} HP/сек", mob.status.poison_dps), LIME));
+                            lines.push((format!("[ТОКСИН] -{:.0} HP/сек", mob.status.poison_dps), LIME));
                         }
 
                         hovered_tooltip = Some(HoverTooltip::WorldEntity(Vec2::new(mx, my), lines));
@@ -1706,13 +1756,13 @@ fn draw_altar_button_tooltip(
 
     // Статус
     if can_build {
-        fonts.draw_heading("✔ ГОТОВ К ПОСТРОЙКЕ! Нажмите Ctrl+Q..F или кликните ЛКМ", card_x + 12.0, card_y + 144.0, 11.0, GREEN);
+        fonts.draw_heading("[ГОТОВ] К ПОСТРОЙКЕ! Нажмите Ctrl+Q..F или кликните ЛКМ", card_x + 12.0, card_y + 144.0, 11.0, GREEN);
     } else if altar_cooldown > 0.0 {
-        fonts.draw_heading(&format!("⏳ ПЕРЕЗАРЯДКА: осталось {:.1} сек", altar_cooldown), card_x + 12.0, card_y + 144.0, 11.0, ORANGE);
+        fonts.draw_heading(&format!("[ОТКАТ] Перезарядка: осталось {:.1} сек", altar_cooldown), card_x + 12.0, card_y + 144.0, 11.0, ORANGE);
     } else if !is_unlocked {
-        fonts.draw_heading(&format!("🔒 ЗАБЛОКИРОВАНО: нужно потратить ещё {:.0} душ", config.unlock_spent_threshold - director.total_points_spent), card_x + 12.0, card_y + 144.0, 11.0, RED);
+        fonts.draw_heading(&format!("[БЛОК] Заблокировано: нужно потратить ещё {:.0} душ", config.unlock_spent_threshold - director.total_points_spent), card_x + 12.0, card_y + 144.0, 11.0, RED);
     } else {
-        fonts.draw_heading(&format!("❌ НЕДОСТАТОЧНО ДУШ: не хватает {:.0} душ", altar_cost - director.points), card_x + 12.0, card_y + 144.0, 11.0, Color::new(1.0, 0.4, 0.4, 1.0));
+        fonts.draw_heading(&format!("[ЦЕНА] Недостаточно душ: не хватает {:.0} душ", altar_cost - director.points), card_x + 12.0, card_y + 144.0, 11.0, Color::new(1.0, 0.4, 0.4, 1.0));
     }
 }
 
@@ -1769,9 +1819,9 @@ fn draw_weapon_tooltip(w: &WeaponSlot, sx: f32, sy: f32, screen_w: f32, fonts: &
     fonts.draw_text(def.description, card_x + 12.0, card_y + 68.0, 11.5, LIGHTGRAY);
 
     let (evo_str, evo_col) = if w.limit_break_level > 0 {
-        (format!("⚡ ВОЗВЫШЕНИЕ: +{}% Урона, +{} Снарядов", w.limit_break_level * 10, w.bonus_projectiles), GOLD)
+        (format!("[ВОЗВЫШЕНИЕ] +{}% Урона, +{} Снарядов", w.limit_break_level * 10, w.bonus_projectiles), GOLD)
     } else if w.is_evolved {
-        ("⭐ СУПЕРОРУЖИЕ: Максимальная боевая эволюция".to_string(), GOLD)
+        ("[СУПЕРОРУЖИЕ] Максимальная боевая эволюция".to_string(), GOLD)
     } else {
         let (req_passive, evo_weapon) = match w.kind {
             WeaponType::WindBlade => ("Перчатка Скорости", "Буря Клинков"),

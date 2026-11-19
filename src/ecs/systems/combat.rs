@@ -18,7 +18,7 @@ fn apply_damage_to_boss(
     let has_shroud = world.boss_inventory.has_weapon(WeaponType::BloodEmperorShroud);
     if world.boss_inventory.astral_cloak_charges > 0 {
         world.boss_inventory.astral_cloak_charges -= 1;
-        world.add_floating_text(world.boss_pos, "🛡️ БАРЬЕР".to_string(), SKYBLUE, 1.0);
+        world.add_floating_text(world.boss_pos, "БАРЬЕР".to_string(), SKYBLUE, 1.0);
 
         if has_shroud {
             // Ответная волна крови при срабатывании барьера
@@ -480,7 +480,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
                         if is_crit {
                             hit_particles.push((mob.pos, GOLD));
-                            crit_texts.push((mob.pos, format!("💥 {:.0}!", actual_dmg)));
+                            crit_texts.push((mob.pos, format!("КРИТ {:.0}!", actual_dmg)));
                         }
 
                         // Цепные молнии от пассивок: Катушка Теслы (TeslaCoil) и Статическое Ядро (StaticCore)
@@ -875,7 +875,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 world.spawn_particles(st_pos, 50, PURPLE, 190.0);
                 world.spawn_particles(st_pos, 35, RED, 150.0);
                 world.spawn_particles(st_pos, 25, GOLD, 130.0);
-                world.add_floating_text(st_pos, format!("💥 АЛТАРЬ ТИРА {} УНИЧТОЖЕН!", altar_tier), GOLD, 1.6);
+                world.add_floating_text(st_pos, format!("АЛТАРЬ ТИРА {} УНИЧТОЖЕН!", altar_tier), GOLD, 1.6);
                 dropped_gems.push(SoulGemEntity {
                     id: st_id,
                     pos: st_pos,
@@ -887,7 +887,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 world.screen_shake = 6.0;
                 world.spawn_particles(st_pos, 16, DARKGRAY, 90.0);
                 world.spawn_particles(st_pos, 8, ORANGE, 70.0);
-                world.add_floating_text(st_pos, "💥 БАРЬЕР СЛОМАН!".to_string(), LIGHTGRAY, 1.1);
+                world.add_floating_text(st_pos, "БАРЬЕР СЛОМАН!".to_string(), LIGHTGRAY, 1.1);
                 dropped_gems.push(SoulGemEntity {
                     id: st_id,
                     pos: st_pos,
@@ -946,7 +946,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 world.spawn_particles(st_pos, 40, SKYBLUE, 180.0);
                 world.add_floating_text(
                     st_pos,
-                    format!("🌟 ИНФЕРНАЛЬНЫЙ РАЗЛОМ ЗАКРЫТ! (+{} XP + {:.0}% ур.)", base_xp as u32, pct * 100.0),
+                    format!("ИНФЕРНАЛЬНЫЙ РАЗЛОМ ЗАКРЫТ! (+{} XP + {:.0}% ур.)", base_xp as u32, pct * 100.0),
                     GOLD,
                     2.8,
                 );
@@ -1028,7 +1028,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
         world.boss_invulnerable_timer = 3.0; // 3 сек абсолютной неуязвимости
         world.add_floating_text(
             boss_pos,
-            "🛡️ ВОСКРЕШЕНИЕ: ЭГИДА БЕССМЕРТИЯ!".to_string(),
+            "ВОСКРЕШЕНИЕ: ЭГИДА БЕССМЕРТИЯ!".to_string(),
             GOLD,
             1.8,
         );

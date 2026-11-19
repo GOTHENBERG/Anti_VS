@@ -418,7 +418,7 @@ pub fn run_co_evolutionary_training(
     println!("  Формат: v{} (старый фитнес инвалидируется при загрузке)", MODEL_FORMAT_VERSION);
     println!("  Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
     if let Some(ref dir) = island_config.exchange_dir {
-        println!("  🏝️ Островная модель: АКТИВНА | Остров: '{}' | Каталог: {:?} | Миграция: каждые {} поколений",
+        println!("  [ОСТРОВ] Островная модель: АКТИВНА | Остров: '{}' | Каталог: {:?} | Миграция: каждые {} поколений",
             island_config.island_name, dir, island_config.migrate_every);
     }
     if reset {
@@ -1207,7 +1207,7 @@ pub fn process_island_migration(
     }
 
     println!(
-        "[ОСТРОВ '{}'] 🏝️ Миграция #{}: Экспорт чемпиона (Фитнес Boss: {:+.1}, Dir: {:+.1}) | Импорт из других островов: {} Боссов, {} Директоров",
+        "[ОСТРОВ '{}'] Миграция #{}: Экспорт чемпиона (Фитнес Boss: {:+.1}, Dir: {:+.1}) | Импорт из других островов: {} Боссов, {} Директоров",
         island_config.island_name, current_gen_num, current_best_boss.fitness, current_best_dir.fitness, imported_bosses, imported_directors
     );
 }

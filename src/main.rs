@@ -90,7 +90,15 @@ async fn main() {
             .iter()
             .position(|a| a == "--exchange" || a == "--island-dir")
             .and_then(|idx| args.get(idx + 1))
-            .map(std::path::PathBuf::from);
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                // Если указан остров, но не указана папка обмена, используем models/islands
+                if island_name != "local" {
+                    Some(std::path::PathBuf::from("models/islands"))
+                } else {
+                    None
+                }
+            });
         let migrate_every = args
             .iter()
             .position(|a| a == "--migrate-every" || a == "--migrate-interval")
@@ -529,13 +537,14 @@ async fn main() {
             audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
 
-        // 1. Управление камерой на большой карте: Стрелки + колесо мыши + центрирование по C
+        // 1. Управление камерой на большой карте: Стрелки + колесо мыши + центрирование по Пробелу (Space)
         handle_camera_input(
             &mut cam_pos,
             &mut cam_zoom,
             &mut follow_boss,
             world.boss_pos,
             dt,
+            game_role == crate::render::main_menu::GameRole::Director,
         );
 
         let screen_w = screen_width();
@@ -607,9 +616,9 @@ async fn main() {
                     world.pause_initiator = if *paused { Some(initiator.clone()) } else { None };
                     is_paused = *paused;
                     let text = if *paused {
-                        format!("⏸ ПАУЗА: {}", initiator)
+                        format!("ПАУЗА: {}", initiator)
                     } else {
-                        "▶ ИГРА ВОЗОБНОВЛЕНА".to_string()
+                        "ИГРА ВОЗОБНОВЛЕНА".to_string()
                     };
                     world.add_floating_text(world.boss_pos, text, GOLD, 2.5);
                 }
@@ -814,9 +823,15 @@ async fn main() {
             draw_rectangle(banner_x, banner_y, banner_w, banner_h, Color::new(0.08, 0.08, 0.16, 0.95));
             draw_rectangle_lines(banner_x, banner_y, banner_w, banner_h, 2.0, GOLD);
             let who = world.pause_initiator.as_deref().unwrap_or("Игрок");
-            let pause_banner = format!("⏸ СЕТЕВАЯ ПАУЗА  •  Инициатор: {}  •  [Esc] Снять", who);
+            // Процедурные колонны знака Паузы ||
+            let p_bar_x = banner_x + 18.0;
+            let p_bar_y = banner_y + 8.0;
+            draw_rectangle(p_bar_x, p_bar_y, 4.0, 16.0, GOLD);
+            draw_rectangle(p_bar_x + 7.0, p_bar_y, 4.0, 16.0, GOLD);
+
+            let pause_banner = format!("СЕТЕВАЯ ПАУЗА  •  Инициатор: {}  •  [Esc] Снять", who);
             let tw = fonts.measure_heading(&pause_banner, 11.5).width;
-            fonts.draw_heading(&pause_banner, banner_x + (banner_w - tw) * 0.5, banner_y + 21.0, 11.5, GOLD);
+            fonts.draw_heading(&pause_banner, banner_x + (banner_w - tw) * 0.5 + 8.0, banner_y + 21.0, 11.5, GOLD);
         }
 
         // 7. Применение выбора реликвии/перка Level-Up Босса (доступно при активном окне выбора)
@@ -1207,6 +1222,7 @@ fn handle_camera_input(
     follow_boss: &mut bool,
     boss_pos: Vec2,
     dt: f32,
+    is_director: bool,
 ) {
     let mut move_dir = Vec2::ZERO;
 
@@ -1229,8 +1245,8 @@ fn handle_camera_input(
         *cam_pos += move_dir.normalize() * (speed * dt / *cam_zoom);
     }
 
-    // Центрирование камеры на боссе по клавише C
-    if is_key_pressed(KeyCode::C) {
+    // Центрирование камеры на боссе: для Директора — Пробел (Space) и клавиша C
+    if (is_director && is_key_pressed(KeyCode::Space)) || is_key_pressed(KeyCode::C) {
         *follow_boss = true;
     }
 
@@ -1491,7 +1507,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                 world.push_audio(crate::audio::AudioEvent::SummonMob);
                 world.add_floating_text(
                     world.boss_pos,
-                    format!("⚡ ПРИЗЫВ НА ВСЕ: +{} отрядов {}!", count, config.name),
+                    format!("ПРИЗЫВ НА ВСЕ: +{} отрядов {}!", count, config.name),
                     GOLD,
                     1.5,
                 );
@@ -1507,7 +1523,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                             let cost = 100.0 * (director.grade_fury as f32 + 1.0);
                             if director.spend_points(cost) {
                                 director.grade_fury += 1;
-                                notification = Some((format!("🔥 ЯРОСТЬ КРОВИ (Ур. {})", director.grade_fury), RED));
+                                notification = Some((format!("ЯРОСТЬ КРОВИ (Ур. {})", director.grade_fury), RED));
                             }
                         }
                     }
@@ -1517,7 +1533,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                             if director.spend_points(cost) {
                                 director.grade_carapace += 1;
                                 carapace_upgraded = true;
-                                notification = Some((format!("🛡️ ПАНЦИРЬ (Ур. {})", director.grade_carapace), SKYBLUE));
+                                notification = Some((format!("ПАНЦИРЬ (Ур. {})", director.grade_carapace), SKYBLUE));
                             }
                         }
                     }
@@ -1526,7 +1542,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                             let cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
                             if director.spend_points(cost) {
                                 director.grade_pestilence += 1;
-                                notification = Some((format!("🧪 ЧУМНЫЕ СПОРЫ (Ур. {})", director.grade_pestilence), LIME));
+                                notification = Some((format!("ЧУМНЫЕ СПОРЫ (Ур. {})", director.grade_pestilence), LIME));
                             }
                         }
                     }
@@ -1558,7 +1574,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                             }
                         }
                         if upgraded > 0 {
-                            notification = Some((format!("🔥 ЯРОСТЬ КРОВИ (+{} ур. -> Ур. {})", upgraded, director.grade_fury), RED));
+                            notification = Some((format!("ЯРОСТЬ КРОВИ (+{} ур. -> Ур. {})", upgraded, director.grade_fury), RED));
                         }
                     }
                     1 => {
@@ -1573,7 +1589,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                         }
                         carapace_upgrades = upgraded;
                         if upgraded > 0 {
-                            notification = Some((format!("🛡️ ПАНЦИРЬ (+{} ур. -> Ур. {})", upgraded, director.grade_carapace), SKYBLUE));
+                            notification = Some((format!("ПАНЦИРЬ (+{} ур. -> Ур. {})", upgraded, director.grade_carapace), SKYBLUE));
                         }
                     }
                     2 => {
@@ -1587,7 +1603,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                             }
                         }
                         if upgraded > 0 {
-                            notification = Some((format!("🧪 ЧУМНЫЕ СПОРЫ (+{} ур. -> Ур. {})", upgraded, director.grade_pestilence), LIME));
+                            notification = Some((format!("ЧУМНЫЕ СПОРЫ (+{} ур. -> Ур. {})", upgraded, director.grade_pestilence), LIME));
                         }
                     }
                     _ => {}
