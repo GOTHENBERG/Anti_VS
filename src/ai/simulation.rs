@@ -370,10 +370,9 @@ fn run_director_decision(
         let ctx = build_director_context(world);
         let decision = net.forward(&obs, &ctx);
 
-        // 1. Постройка Алтаря Крови: выбираем максимально отдалённую точку от всех живых боссов
+        // 1. Постройка Алтаря Крови: использует выбранную нейросетью позицию слота (altar_target_pos)
         if decision.should_build_altar {
-            let target_pos = crate::content::structures::find_furthest_altar_spawn(world)
-                .unwrap_or(decision.altar_target_pos);
+            let target_pos = decision.altar_target_pos;
             if can_place_blood_altar(world, target_pos) {
                 let altar_tier = decision.altar_tier;
                 let altar_cost = crate::content::structures::altar_cost(altar_tier);

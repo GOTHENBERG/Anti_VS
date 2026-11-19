@@ -372,6 +372,23 @@ fn tournament_index(fitness: &[f32], k: usize) -> usize {
     best_idx
 }
 
+#[derive(Clone, Debug)]
+pub struct IslandConfig {
+    pub island_name: String,
+    pub exchange_dir: Option<std::path::PathBuf>,
+    pub migrate_every: usize,
+}
+
+impl Default for IslandConfig {
+    fn default() -> Self {
+        Self {
+            island_name: "local".to_string(),
+            exchange_dir: None,
+            migrate_every: 10,
+        }
+    }
+}
+
 pub fn run_co_evolutionary_training(
     generations: usize,
     population_size: usize,
@@ -379,6 +396,7 @@ pub fn run_co_evolutionary_training(
     round_duration: Option<f32>,
     boss_decision_interval: f32,
     boss_count: usize,
+    island_config: IslandConfig,
 ) {
     let generations = generations.max(1);
     // Два элита занимают всю популяцию; при размере 2 следующие поколения
@@ -399,6 +417,10 @@ pub fn run_co_evolutionary_training(
     println!("  Частота решений Босса: {:.0} мс", boss_decision_interval * 1000.0);
     println!("  Формат: v{} (старый фитнес инвалидируется при загрузке)", MODEL_FORMAT_VERSION);
     println!("  Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
+    if let Some(ref dir) = island_config.exchange_dir {
+        println!("  🏝️ Островная модель: АКТИВНА | Остров: '{}' | Каталог: {:?} | Миграция: каждые {} поколений",
+            island_config.island_name, dir, island_config.migrate_every);
+    }
     if reset {
         println!("  [СБРОС --clean]: ИИ Босса очищен, обучение начнется с нуля!");
     }
@@ -669,8 +691,8 @@ pub fn run_co_evolutionary_training(
         boss_pop.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap_or(std::cmp::Ordering::Equal));
         director_pop.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap_or(std::cmp::Ordering::Equal));
 
-        let current_best_boss = &boss_pop[0];
-        let current_best_dir = &director_pop[0];
+        let current_best_boss = boss_pop[0].clone();
+        let current_best_dir = director_pop[0].clone();
 
         if current_best_boss.fitness > best_overall_boss_fitness {
             best_overall_boss_fitness = current_best_boss.fitness;
@@ -870,6 +892,20 @@ pub fn run_co_evolutionary_training(
 
         append_to_history_log(&round_log);
 
+        // 3.4 Островная модель: экспорт чемпионов и импорт иммигрантов между устройствами
+        if island_config.exchange_dir.is_some() && gen_idx % island_config.migrate_every == 0 {
+            process_island_migration(
+                &island_config,
+                current_gen_num,
+                &current_best_boss,
+                &current_best_dir,
+                &mut boss_pop,
+                &mut director_pop,
+                &mut hof_bosses,
+                &mut hof_directors,
+            );
+        }
+
         // 4. Селекция: элита + турнир; нейросеть клонируется и мутирует,
         //    скалярные генетические приоритеты смешиваются и мутируют.
         let mut next_boss_pop = vec![boss_pop[0].clone(), boss_pop[1].clone()];
@@ -1061,5 +1097,201 @@ fn save_models(
     if is_final {
         println!("[ГОТОВО] Обучение завершено. Модели сохранены и готовы к игре.\n");
         append_to_history_log("[ГОТОВО] Обучение завершено. Модели сохранены на диск.\n\n");
+    }
+}
+
+/// Выполняет синхронизацию чемпионов в Островной Модели (Island Model).
+pub fn process_island_migration(
+    island_config: &IslandConfig,
+    current_gen_num: u32,
+    current_best_boss: &BossModel,
+    current_best_dir: &DirectorModel,
+    boss_pop: &mut [BossModel],
+    director_pop: &mut [DirectorModel],
+    hof_bosses: &mut Vec<BossModel>,
+    hof_directors: &mut Vec<DirectorModel>,
+) {
+    let Some(ref exchange_dir) = island_config.exchange_dir else {
+        return;
+    };
+    if let Err(e) = std::fs::create_dir_all(exchange_dir) {
+        eprintln!("[ОСТРОВ '{}'] Ошибка создания папки обмена {:?}: {}", island_config.island_name, exchange_dir, e);
+        return;
+    }
+
+    // 1. Атомарный экспорт лучшего Босса и Директора текущего острова
+    let boss_export_path = exchange_dir.join(format!("island_{}_boss.json", island_config.island_name));
+    let dir_export_path = exchange_dir.join(format!("island_{}_director.json", island_config.island_name));
+
+    if let Ok(json) = serde_json::to_string_pretty(current_best_boss) {
+        let tmp = exchange_dir.join(format!("island_{}_boss.tmp", island_config.island_name));
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, &boss_export_path);
+        }
+    }
+    if let Ok(json) = serde_json::to_string_pretty(current_best_dir) {
+        let tmp = exchange_dir.join(format!("island_{}_director.tmp", island_config.island_name));
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, &dir_export_path);
+        }
+    }
+
+    // 2. Сканирование и импорт чемпионов с других островов
+    let mut imported_bosses = 0;
+    let mut imported_directors = 0;
+    let my_prefix = format!("island_{}_", island_config.island_name);
+
+    if let Ok(entries) = std::fs::read_dir(exchange_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !file_name.starts_with("island_") || !file_name.ends_with(".json") {
+                continue;
+            }
+            // Пропускаем свои собственные файлы
+            if file_name.starts_with(&my_prefix) {
+                continue;
+            }
+
+            if file_name.ends_with("_boss.json") {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(mut imported_boss) = serde_json::from_str::<BossModel>(&content) {
+                        let net_ok = imported_boss.neural_net.as_ref().map_or(false, |n| n.is_compatible());
+                        if net_ok {
+                            imported_boss.fitness_version = MODEL_FORMAT_VERSION;
+                            // Добавляем иммигранта в Зал Славы Лиги
+                            if hof_bosses.len() < 16 {
+                                hof_bosses.push(imported_boss.clone());
+                            } else {
+                                let idx = rand::gen_range(1, hof_bosses.len());
+                                hof_bosses[idx] = imported_boss.clone();
+                            }
+                            // Вводим свежую кровь в популяцию вместо худшего агента
+                            if !boss_pop.is_empty() {
+                                let last = boss_pop.len() - 1;
+                                boss_pop[last] = imported_boss;
+                            }
+                            imported_bosses += 1;
+                        }
+                    }
+                }
+            } else if file_name.ends_with("_director.json") {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(mut imported_dir) = serde_json::from_str::<DirectorModel>(&content) {
+                        let net_ok = imported_dir.neural_net.as_ref().map_or(false, |n| n.is_compatible());
+                        if net_ok {
+                            imported_dir.fitness_version = MODEL_FORMAT_VERSION;
+                            // Добавляем иммигранта в Зал Славы Лиги
+                            if hof_directors.len() < 16 {
+                                hof_directors.push(imported_dir.clone());
+                            } else {
+                                let idx = rand::gen_range(1, hof_directors.len());
+                                hof_directors[idx] = imported_dir.clone();
+                            }
+                            // Вводим свежую кровь в популяцию вместо худшего агента
+                            if !director_pop.is_empty() {
+                                let last = director_pop.len() - 1;
+                                director_pop[last] = imported_dir;
+                            }
+                            imported_directors += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    println!(
+        "[ОСТРОВ '{}'] 🏝️ Миграция #{}: Экспорт чемпиона (Фитнес Boss: {:+.1}, Dir: {:+.1}) | Импорт из других островов: {} Боссов, {} Директоров",
+        island_config.island_name, current_gen_num, current_best_boss.fitness, current_best_dir.fitness, imported_bosses, imported_directors
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_island_migration_roundtrip() {
+        let exchange_dir = std::env::temp_dir().join("anti_vs_test_exchange");
+        let _ = std::fs::remove_dir_all(&exchange_dir);
+        let _ = std::fs::create_dir_all(&exchange_dir);
+
+        let island_a = IslandConfig {
+            island_name: "island_alpha".to_string(),
+            exchange_dir: Some(exchange_dir.clone()),
+            migrate_every: 5,
+        };
+        let island_b = IslandConfig {
+            island_name: "island_beta".to_string(),
+            exchange_dir: Some(exchange_dir.clone()),
+            migrate_every: 5,
+        };
+
+        let mut boss_a = BossModel::default();
+        boss_a.neural_net = Some(crate::ai::neural_net::NeuralNet::new());
+        boss_a.fitness = 420.0;
+        let mut dir_a = DirectorModel::default();
+        dir_a.neural_net = Some(crate::ai::neural_net::DirectorBrainNet::new());
+        dir_a.fitness = 150.0;
+
+        let mut pop_boss_a = vec![boss_a.clone(), boss_a.clone()];
+        let mut pop_dir_a = vec![dir_a.clone(), dir_a.clone()];
+        let mut hof_boss_a = vec![boss_a.clone()];
+        let mut hof_dir_a = vec![dir_a.clone()];
+
+        // Миграция острова А: экспорт
+        process_island_migration(
+            &island_a,
+            10,
+            &boss_a,
+            &dir_a,
+            &mut pop_boss_a,
+            &mut pop_dir_a,
+            &mut hof_boss_a,
+            &mut hof_dir_a,
+        );
+
+        let exported_boss_a = exchange_dir.join("island_island_alpha_boss.json");
+        let exported_dir_a = exchange_dir.join("island_island_alpha_director.json");
+        assert!(exported_boss_a.exists(), "Файл экспорта босса острова А должен существовать");
+        assert!(exported_dir_a.exists(), "Файл экспорта директора острова А должен существовать");
+
+        // Миграция острова Б: импорт от острова А и экспорт чемпиона острова Б
+        let mut boss_b = BossModel::default();
+        boss_b.neural_net = Some(crate::ai::neural_net::NeuralNet::new());
+        boss_b.fitness = 300.0;
+        let mut dir_b = DirectorModel::default();
+        dir_b.neural_net = Some(crate::ai::neural_net::DirectorBrainNet::new());
+        dir_b.fitness = 200.0;
+
+        let mut pop_boss_b = vec![boss_b.clone(), boss_b.clone()];
+        let mut pop_dir_b = vec![dir_b.clone(), dir_b.clone()];
+        let mut hof_boss_b = vec![boss_b.clone()];
+        let mut hof_dir_b = vec![dir_b.clone()];
+
+        process_island_migration(
+            &island_b,
+            10,
+            &boss_b,
+            &dir_b,
+            &mut pop_boss_b,
+            &mut pop_dir_b,
+            &mut hof_boss_b,
+            &mut hof_dir_b,
+        );
+
+        // Проверяем, что в Зал Славы острова Б попал чемпион острова А
+        assert_eq!(hof_boss_b.len(), 2, "Зал славы должен содержать 2 боссов после импорта");
+        assert_eq!(hof_boss_b[1].fitness, 420.0);
+        assert_eq!(hof_dir_b.len(), 2, "Зал славы должен содержать 2 директоров после импорта");
+        assert_eq!(hof_dir_b[1].fitness, 150.0);
+
+        let _ = std::fs::remove_dir_all(&exchange_dir);
     }
 }

@@ -2,9 +2,9 @@
   "version": "v8.0-coevolution",
   "model_version": 8,
   "fitness_version": 8,
-  "generation": 281,
-  "fitness": 951.5274,
-  "avg_boss_kill_time": 486.97607,
+  "generation": 295,
+  "fitness": 159.0889,
+  "avg_boss_kill_time": 30.049831,
   "neural_net": {
     "input_size": 177,
     "hidden1_size": 64,

@@ -59,7 +59,8 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     // Режим автономного со-эволюционного обучения ботов (Self-Play Training)
-    // Supports --train [generations] [population] [duration] [--bosses N] [--think-ms 50|100|200] [--clean / --reset].
+    // Supports --train [generations] [population] [duration] [--bosses N] [--think-ms 50|100|200] [--clean / --reset]
+    //          [--island NAME] [--exchange PATH] [--migrate-every N].
     let args: Vec<String> = std::env::args().collect();
     if let Some(pos) = args.iter().position(|a| a == "--train") {
         let generations = args.get(pos + 1).and_then(|s| s.parse().ok()).unwrap_or(8);
@@ -77,6 +78,30 @@ async fn main() {
             .and_then(|value| value.parse::<f32>().ok())
             .map(|ms| (ms / 1000.0).clamp(0.05, 0.20))
             .unwrap_or(crate::ai::neural_net::BOSS_TRAINING_DECISION_INTERVAL);
+
+        // Настройки островной модели распределённого обучения (Island Model)
+        let island_name = args
+            .iter()
+            .position(|a| a == "--island")
+            .and_then(|idx| args.get(idx + 1))
+            .cloned()
+            .unwrap_or_else(|| "local".to_string());
+        let exchange_dir = args
+            .iter()
+            .position(|a| a == "--exchange" || a == "--island-dir")
+            .and_then(|idx| args.get(idx + 1))
+            .map(std::path::PathBuf::from);
+        let migrate_every = args
+            .iter()
+            .position(|a| a == "--migrate-every" || a == "--migrate-interval")
+            .and_then(|idx| args.get(idx + 1))
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(10);
+        let island_config = crate::ai::trainer::IslandConfig {
+            island_name,
+            exchange_dir,
+            migrate_every,
+        };
 
         // Выбор длительности раунда матчей (300 сек, 1020 сек или произвольный)
         let round_duration = if let Some(cap_pos) = args.iter().position(|a| a == "--cap" || a == "--duration") {
@@ -97,6 +122,7 @@ async fn main() {
             round_duration,
             training_think_interval,
             boss_count,
+            island_config,
         );
         return;
     }
@@ -213,18 +239,28 @@ async fn main() {
             && game_role == crate::render::main_menu::GameRole::Director
             && (is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl))
         {
+            let page_offset = if let Some(director) = world.directors.first() {
+                director.mob_page * 8
+            } else {
+                0
+            };
             let altar_tier_key = [
-                (KeyCode::Q, 1), (KeyCode::W, 2), (KeyCode::E, 3), (KeyCode::R, 4),
-                (KeyCode::A, 5), (KeyCode::S, 6), (KeyCode::D, 7), (KeyCode::F, 8),
-                (KeyCode::Z, 9), (KeyCode::X, 10), (KeyCode::C, 11), (KeyCode::V, 12),
-                (KeyCode::G, 13), (KeyCode::H, 14), (KeyCode::Y, 15), (KeyCode::U, 16),
+                (KeyCode::Q, 1 + page_offset),
+                (KeyCode::W, 2 + page_offset),
+                (KeyCode::E, 3 + page_offset),
+                (KeyCode::R, 4 + page_offset),
+                (KeyCode::A, 5 + page_offset),
+                (KeyCode::S, 6 + page_offset),
+                (KeyCode::D, 7 + page_offset),
+                (KeyCode::F, 8 + page_offset),
             ];
             if let Some((_, tier)) = altar_tier_key.iter().find(|(key, _)| is_key_pressed(*key)) {
                 selected_altar_tier = *tier;
                 placement_mode = PlacementMode::Altar;
+                let mob_name = crate::content::mobs::get_squad_config(selected_altar_tier).name;
                 world.add_floating_text(
                     world.boss_pos,
-                    format!("Выбран алтарь тира {}", selected_altar_tier),
+                    format!("Выбран алтарь тира {} ({})", selected_altar_tier, mob_name),
                     GOLD,
                     1.1,
                 );
@@ -763,7 +799,7 @@ async fn main() {
             draw_rectangle(banner_x, banner_y, banner_w, banner_h, Color::new(0.08, 0.08, 0.16, 0.95));
             draw_rectangle_lines(banner_x, banner_y, banner_w, banner_h, 2.0, GOLD);
             let text = match placement_mode {
-                PlacementMode::Altar => "УСТАНОВКА АЛТАРЯ: [ЛКМ] - Поставить | Ctrl+Q/W/E/R/A/S/D/F и Ctrl+Z/X/C/V/G/H/Y/U - тир | [Esc] - Отмена",
+                PlacementMode::Altar => "УСТАНОВКА АЛТАРЯ: [ЛКМ] - Поставить | Ctrl+[Q..F] - тир страницы | [Esc] - Отмена",
                 PlacementMode::Wall => "УСТАНОВКА БАРРИКАДЫ: [ЛКМ] - Поставить  |  [ПКМ / Esc] - Отмена",
                 PlacementMode::None => "",
             };
@@ -781,6 +817,12 @@ async fn main() {
             let pause_banner = format!("⏸ СЕТЕВАЯ ПАУЗА  •  Инициатор: {}  •  [Esc] Снять", who);
             let tw = fonts.measure_heading(&pause_banner, 11.5).width;
             fonts.draw_heading(&pause_banner, banner_x + (banner_w - tw) * 0.5, banner_y + 21.0, 11.5, GOLD);
+        }
+
+        // 7. Применение выбора реликвии/перка Level-Up Босса (доступно при активном окне выбора)
+        if let Some(perk) = ui_interaction.chosen_perk {
+            crate::ecs::systems::coop::apply_player_perk_choice(&mut world, perk);
+            audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
 
         let modal_active = show_codex
@@ -807,10 +849,6 @@ async fn main() {
                 };
                 world.add_floating_text(world.boss_pos, mode_name.to_string(), GOLD, 1.4);
                 audio.handle_event(crate::audio::AudioEvent::UiClick);
-            }
-
-            if let Some(perk) = ui_interaction.chosen_perk {
-                crate::ecs::systems::coop::apply_player_perk_choice(&mut world, perk);
             }
 
             // Обработка интеракций из UI
