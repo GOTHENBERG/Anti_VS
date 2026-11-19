@@ -4,7 +4,7 @@ use crate::ai::models::{BossModel, DirectorModel, TrainingStats, MODEL_FORMAT_VE
 use crate::ai::simulation::{run_headless_simulation_with_boss_count, MatchResult};
 use crate::ecs::components::inventory::{PassiveType, WeaponType};
 
-const MATCHES_PER_AGENT: usize = 3;
+const MATCHES_PER_AGENT: usize = 6;
 /// Полная длительность матча (17 минут), к которой стремится curriculum.
 const FULL_MATCH_CAP: f32 = 1020.0;
 /// Стартовая длительность матча для ускорения ранних поколений.
@@ -84,7 +84,15 @@ fn director_utility(res: &MatchResult) -> f32 {
     let cap = res.match_cap.max(1.0);
     let survival_frac = (res.survival_time / cap).clamp(0.0, 1.0);
     let time_reward = (1.0 - survival_frac) * 600.0;
-    let kill_bonus = if res.boss_won { 0.0 } else { 400.0 };
+    // Дифференцированный бонус за устранение боссов команды (гладкий кредит в коопе)
+    let kill_fraction = if res.total_bosses > 0 {
+        (res.total_bosses.saturating_sub(res.living_bosses)) as f32 / res.total_bosses as f32
+    } else if res.boss_won {
+        0.0
+    } else {
+        1.0
+    };
+    let kill_bonus = kill_fraction * 400.0;
     let damage_frac = (res.damage_dealt_to_boss / res.boss_max_health.max(1.0)).clamp(0.0, 1.0);
     let damage_reward = damage_frac * 200.0;
     // Награда за удержание алтарей: делится на интервалы по базовому КД 45 секунд.
@@ -471,10 +479,6 @@ pub fn run_co_evolutionary_training(
                 if let Some(ref mut net) = m.neural_net {
                     net.mutate(0.12, 0.20);
                 }
-                m.mob_repulsion_weight = (m.mob_repulsion_weight + rand::gen_range(-30.0, 30.0)).clamp(250.0, 700.0);
-                m.gem_attraction_weight = (m.gem_attraction_weight + rand::gen_range(-25.0, 25.0)).clamp(100.0, 400.0);
-                m.sniper_hunt_aggression = (m.sniper_hunt_aggression + rand::gen_range(-30.0, 30.0)).clamp(150.0, 500.0);
-                m.altar_siege_aggression = (m.altar_siege_aggression + rand::gen_range(-25.0, 25.0)).clamp(150.0, 450.0);
                 for a in m.combo_archetype_weights.iter_mut() {
                     *a = (*a + rand::gen_range(-0.4, 0.4)).clamp(0.2, 4.0);
                 }
@@ -496,25 +500,23 @@ pub fn run_co_evolutionary_training(
                 if let Some(ref mut net) = d.neural_net {
                     net.mutate(0.12, 0.20);
                 }
-                d.altar_build_priority = (d.altar_build_priority + rand::gen_range(-0.10, 0.10)).clamp(0.1, 1.0);
-                for w in d.squad_spawn_weights.iter_mut() {
-                    *w = (*w + rand::gen_range(-0.15, 0.15)).max(0.1);
-                }
             }
             d
         })
         .collect();
 
-    // Никаких фиктивных нулей: NEG_INFINITY заставляет первого же реального
-    // чемпиона стать лучшим, даже если загруженная модель была слабой.
+    // Защита от Stale Champion: в текущей серии обучения чемпион выбирается
+    // исключительно по реальным результатам текущего прогона (старт с -inf).
     let mut best_overall_boss = seed_boss.clone();
+    let mut best_overall_boss_fitness = f32::NEG_INFINITY;
     let mut best_overall_director = seed_director.clone();
+    let mut best_overall_dir_fitness = f32::NEG_INFINITY;
     let mut best_avg_boss_level = 0u32;
     let mut total_matches_played = 0usize;
     let mut boss_sigma = 0.20f32;
     let mut director_sigma = 0.18f32;
-    let mut prev_best_boss_fitness = best_overall_boss.fitness;
-    let mut prev_best_director_fitness = best_overall_director.fitness;
+    let mut prev_best_boss_fitness = f32::NEG_INFINITY;
+    let mut prev_best_director_fitness = f32::NEG_INFINITY;
     let base_seed = system_base_seed();
 
     // 3. Цикл поколений обучения
@@ -540,18 +542,23 @@ pub fn run_co_evolutionary_training(
         let mut boss_order: Vec<usize> = (0..population_size).collect();
         let mut director_order: Vec<usize> = (0..population_size).collect();
 
+        let common_round_seeds: Vec<u64> = (0..MATCHES_PER_AGENT)
+            .map(|r| {
+                base_seed
+                    .wrapping_add((gen_idx as u64) << 40)
+                    .wrapping_add(((r + 1) as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15))
+            })
+            .collect();
+
         for round in 0..MATCHES_PER_AGENT {
             shuffle(&mut boss_order);
             shuffle(&mut director_order);
+            let round_seed = common_round_seeds[round];
             for i in 0..population_size {
-                let seed = base_seed
-                    .wrapping_add((gen_idx as u64) << 40)
-                    .wrapping_add((round as u64) << 32)
-                    .wrapping_add((i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
                 pairings.push(Pairing {
                     boss: AgentRef::Population(boss_order[i]),
                     director: AgentRef::Population(director_order[i]),
-                    seed,
+                    seed: round_seed,
                     count_for_boss: true,
                     count_for_director: true,
                 });
@@ -665,10 +672,12 @@ pub fn run_co_evolutionary_training(
         let current_best_boss = &boss_pop[0];
         let current_best_dir = &director_pop[0];
 
-        if current_best_boss.fitness > best_overall_boss.fitness {
+        if current_best_boss.fitness > best_overall_boss_fitness {
+            best_overall_boss_fitness = current_best_boss.fitness;
             best_overall_boss = current_best_boss.clone();
         }
-        if current_best_dir.fitness > best_overall_director.fitness {
+        if current_best_dir.fitness > best_overall_dir_fitness {
+            best_overall_dir_fitness = current_best_dir.fitness;
             best_overall_director = current_best_dir.clone();
         }
 
@@ -697,19 +706,27 @@ pub fn run_co_evolutionary_training(
         }
 
         // Адаптивная сила мутации: застой -> шире поиск, прогресс -> тоньше настройка
-        if best_boss_eval.fitness <= prev_best_boss_fitness + 0.5 {
-            boss_sigma = (boss_sigma * 1.08).min(0.60);
+        if prev_best_boss_fitness.is_finite() {
+            if best_boss_eval.fitness <= prev_best_boss_fitness + 0.5 {
+                boss_sigma = (boss_sigma * 1.08).min(0.60);
+            } else {
+                boss_sigma = (boss_sigma * 0.92).max(0.06);
+            }
+            prev_best_boss_fitness = prev_best_boss_fitness.max(best_boss_eval.fitness);
         } else {
-            boss_sigma = (boss_sigma * 0.92).max(0.06);
+            prev_best_boss_fitness = best_boss_eval.fitness;
         }
-        prev_best_boss_fitness = prev_best_boss_fitness.max(best_boss_eval.fitness);
 
-        if best_dir_eval.fitness <= prev_best_director_fitness + 0.5 {
-            director_sigma = (director_sigma * 1.08).min(0.60);
+        if prev_best_director_fitness.is_finite() {
+            if best_dir_eval.fitness <= prev_best_director_fitness + 0.5 {
+                director_sigma = (director_sigma * 1.08).min(0.60);
+            } else {
+                director_sigma = (director_sigma * 0.92).max(0.06);
+            }
+            prev_best_director_fitness = prev_best_director_fitness.max(best_dir_eval.fitness);
         } else {
-            director_sigma = (director_sigma * 0.92).max(0.06);
+            prev_best_director_fitness = best_dir_eval.fitness;
         }
-        prev_best_director_fitness = prev_best_director_fitness.max(best_dir_eval.fitness);
 
         let total_mobs_spawned: usize = best_dir_eval.mobs_spawned.iter().sum();
         let boss_mobs_spawned: usize = best_boss_eval.mobs_spawned.iter().sum();
@@ -880,33 +897,22 @@ pub fn run_co_evolutionary_training(
                 child.neural_net = Some(net);
             }
 
-            child.mob_repulsion_weight = (p1.mob_repulsion_weight + p2.mob_repulsion_weight) * 0.5;
-            child.gem_attraction_weight = (p1.gem_attraction_weight + p2.gem_attraction_weight) * 0.5;
-            child.altar_siege_aggression = (p1.altar_siege_aggression + p2.altar_siege_aggression) * 0.5;
-            child.sniper_hunt_aggression = (p1.sniper_hunt_aggression + p2.sniper_hunt_aggression) * 0.5;
-
-            child.mob_repulsion_weight = (child.mob_repulsion_weight + rand::gen_range(-25.0, 25.0)).clamp(250.0, 700.0);
-            child.gem_attraction_weight = (child.gem_attraction_weight + rand::gen_range(-20.0, 20.0)).clamp(100.0, 400.0);
-            child.altar_siege_aggression = (child.altar_siege_aggression + rand::gen_range(-25.0, 25.0)).clamp(150.0, 500.0);
-            child.sniper_hunt_aggression = (child.sniper_hunt_aggression + rand::gen_range(-30.0, 30.0)).clamp(150.0, 500.0);
-            child.dash_danger_threshold = (child.dash_danger_threshold as i32 + rand::gen_range(-1, 2)).clamp(8, 18) as usize;
-
-            for w in child.weapon_priorities.iter_mut() {
+            for (w, p2_w) in child.weapon_priorities.iter_mut().zip(p2.weapon_priorities.iter()) {
                 if rand::gen_range(0.0, 1.0) < 0.25 {
-                    *w = (*w + rand::gen_range(-0.25, 0.25)).clamp(0.2, 3.5);
+                    *w = ((*w + *p2_w) * 0.5 + rand::gen_range(-0.25, 0.25)).clamp(0.2, 3.5);
                 }
             }
-            for p in child.passive_priorities.iter_mut() {
+            for (p, p2_p) in child.passive_priorities.iter_mut().zip(p2.passive_priorities.iter()) {
                 if rand::gen_range(0.0, 1.0) < 0.25 {
-                    *p = (*p + rand::gen_range(-0.25, 0.25)).clamp(0.2, 3.5);
+                    *p = ((*p + *p2_p) * 0.5 + rand::gen_range(-0.25, 0.25)).clamp(0.2, 3.5);
                 }
             }
-            for a in child.combo_archetype_weights.iter_mut() {
+            for (a, p2_a) in child.combo_archetype_weights.iter_mut().zip(p2.combo_archetype_weights.iter()) {
                 if rand::gen_range(0.0, 1.0) < 0.30 {
-                    *a = (*a + rand::gen_range(-0.30, 0.30)).clamp(0.2, 4.0);
+                    *a = ((*a + *p2_a) * 0.5 + rand::gen_range(-0.30, 0.30)).clamp(0.2, 4.0);
                 }
             }
-            child.synergy_seeking_weight = (child.synergy_seeking_weight + rand::gen_range(-0.15, 0.15)).clamp(0.5, 3.5);
+            child.synergy_seeking_weight = (((p1.synergy_seeking_weight + p2.synergy_seeking_weight) * 0.5) + rand::gen_range(-0.15, 0.15)).clamp(0.5, 3.5);
 
             next_boss_pop.push(child);
         }
@@ -916,9 +922,7 @@ pub fn run_co_evolutionary_training(
 
         while next_dir_pop.len() < population_size {
             let p1_idx = tournament_index(&director_fitness, 3);
-            let p2_idx = tournament_index(&director_fitness, 3);
             let p1 = &director_pop[p1_idx];
-            let p2 = &director_pop[p2_idx];
             let mut child = p1.clone();
 
             if let Some(net1) = &p1.neural_net {
@@ -933,16 +937,6 @@ pub fn run_co_evolutionary_training(
                 net.mutate(0.10, director_sigma);
                 child.total_synapses = net.total_synapses();
                 child.neural_net = Some(net);
-            }
-
-            child.altar_build_priority = ((p1.altar_build_priority + p2.altar_build_priority) * 0.5
-                + rand::gen_range(-0.08, 0.08))
-            .clamp(0.1, 1.0);
-            for i in 0..child.squad_spawn_weights.len() {
-                let p1_w = p1.squad_spawn_weights.get(i).copied().unwrap_or(1.0);
-                let p2_w = p2.squad_spawn_weights.get(i).copied().unwrap_or(1.0);
-                child.squad_spawn_weights[i] =
-                    ((p1_w + p2_w) * 0.5 + rand::gen_range(-0.15, 0.15)).max(0.1);
             }
 
             next_dir_pop.push(child);

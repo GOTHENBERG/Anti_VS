@@ -2,7 +2,7 @@ use macroquad::prelude::*;
 use crate::core::rand;
 use crate::ai::models::{BossModel, DirectorModel};
 use crate::ai::neural_net::{
-    DirectorActionContext, BOSS_DASH_BASE_COOLDOWN_SECONDS,
+    DirectorActionContext,
     INPUT_SIZE, OUT_DASH, OUT_DASH_X, OUT_DASH_Y, OUT_MOVE_MAG, OUT_MOVE_X, OUT_MOVE_Y, OUT_REST,
 };
 use crate::content::mobs::{get_squad_config, spawn_squad_in_sector};
@@ -10,7 +10,6 @@ use crate::content::structures::{
     can_place_blood_altar, spawn_blood_altar, BLOOD_ALTAR_COST,
 };
 use crate::core::{MAP_HEIGHT, MAP_WIDTH};
-use crate::ecs::components::combat::Faction;
 use crate::ecs::systems::{
     director::update_director,
     movement::update_movement,
@@ -49,6 +48,8 @@ pub struct MatchResult {
     pub boss_damage_stats: crate::ecs::components::inventory::BossDamageStats,
     pub final_weapons: Vec<(crate::ecs::components::inventory::WeaponType, u8)>,
     pub final_passives: Vec<(crate::ecs::components::inventory::PassiveType, u8)>,
+    pub living_bosses: usize,
+    pub total_bosses: usize,
     /// Лимит длительности матча (для нормализации фитнеса между поколениями).
     pub match_cap: f32,
     /// Seed матча: позволяет воспроизвести любой результат.
@@ -179,11 +180,10 @@ pub fn run_headless_simulation_with_boss_count(
         for index in 0..world.coop_bosses.len() {
             if !world.coop_bosses[index].boss_health.is_alive() { continue; }
             coop_think_timers[index] += dt;
+            world.swap_coop_boss_context(index);
             if coop_cached_actions[index].is_none() || coop_think_timers[index] >= boss_decision_interval {
                 coop_think_timers[index] = 0.0;
-                world.swap_coop_boss_context(index);
                 coop_cached_actions[index] = Some(think_boss(&world, boss_model));
-                world.swap_coop_boss_context(index);
             }
             let coop_action = coop_cached_actions[index].unwrap_or(BossAction {
                 move_dir: Vec2::ZERO,
@@ -192,7 +192,6 @@ pub fn run_headless_simulation_with_boss_count(
                 dash_dir: Vec2::X,
                 rest: false,
             });
-            world.swap_coop_boss_context(index);
             let (walk_dist, dashed) = apply_boss_action(&mut world, coop_action, dt);
             world.swap_coop_boss_context(index);
             total_distance_walked += walk_dist;
@@ -221,6 +220,9 @@ pub fn run_headless_simulation_with_boss_count(
     }
 
     let boss_won = world.any_boss_alive();
+    let living_bosses = (if world.boss_health.is_alive() { 1 } else { 0 })
+        + world.coop_bosses.iter().filter(|player| player.boss_health.is_alive()).count();
+    let total_bosses = world.boss_player_count();
     let total_levels = world.boss_inventory.level as usize
         + world.coop_bosses.iter().map(|player| player.boss_inventory.level as usize).sum::<usize>();
     let final_level = (total_levels / world.boss_player_count()) as u32;
@@ -258,6 +260,8 @@ pub fn run_headless_simulation_with_boss_count(
         boss_damage_stats: world.boss_inventory.damage_stats.clone(),
         final_weapons,
         final_passives,
+        living_bosses,
+        total_bosses,
         match_cap: max_duration_seconds,
         seed,
     }
@@ -272,9 +276,8 @@ fn think_boss(world: &World, model: &BossModel) -> BossAction {
         let intent = Vec2::new(out[OUT_MOVE_X], out[OUT_MOVE_Y]);
         let len_sq = intent.length_squared();
         let move_dir = if len_sq > 0.0025 { intent / len_sq.sqrt() } else { Vec2::ZERO };
-        let is_moving = out[OUT_MOVE_MAG] >= 0.5 && out[OUT_REST] <= 0.5;
-        let move_mag = if is_moving { 1.0 } else { 0.0 };
-        let rest = !is_moving;
+        let rest = out[OUT_REST] > 0.5;
+        let move_mag = if rest { 0.0 } else { out[OUT_MOVE_MAG].clamp(0.0, 1.0) };
 
         let dash_raw = Vec2::new(out[OUT_DASH_X], out[OUT_DASH_Y]);
         let dash_dir = if dash_raw.length_squared() > 0.04 {
@@ -332,37 +335,7 @@ fn apply_boss_action(world: &mut World, action: BossAction, dt: f32) -> (f32, bo
     let map_h = MAP_HEIGHT;
 
     if action.dash && world.boss_dash_cooldown <= 0.0 {
-        let dash_target = (world.boss_pos + action.dash_dir * 180.0)
-            .clamp(Vec2::new(60.0, 60.0), Vec2::new(map_w - 60.0, map_h - 60.0));
-
-        world.boss_pos = dash_target;
-        world.boss_invulnerable_timer = 0.25;
-        world.boss_dash_cooldown = BOSS_DASH_BASE_COOLDOWN_SECONDS
-            * world.boss_inventory.get_cooldown_multiplier();
-
-        // Рывок уничтожает вражеские снаряды на пути
-        for proj in &mut world.projectiles {
-            if proj.faction == Faction::Director
-                && proj.pos.distance_squared(dash_target) < 130.0 * 130.0
-            {
-                proj.lifetime = 0.0;
-            }
-        }
-
-        // Рассекающий урон в точке рывка
-        let mut dash_hits: Vec<usize> = Vec::with_capacity(64);
-        world.spatial_grid.query_nearby_into(dash_target, 90.0, &mut dash_hits);
-        for idx in dash_hits {
-            if let Some(mob) = world.mobs.get_mut(idx) {
-                if mob.health.is_alive() && mob.pos.distance_squared(dash_target) < 90.0 * 90.0 {
-                    mob.health.take_damage(80.0);
-                    if !mob.knockback_immune {
-                        mob.knockback_vel += action.dash_dir * 240.0;
-                    }
-                }
-            }
-        }
-
+        crate::ecs::systems::boss_ai::resolve_boss_dash(world, action.dash_dir);
         (0.0, true)
     } else {
         let desired_vel = if action.rest {
@@ -457,19 +430,23 @@ fn run_director_decision(
             }
             17 => {
                 if let Some(director) = world.directors.first_mut() {
-                    let cost = 100.0 * (director.grade_fury as f32 + 1.0);
-                    if director.spend_points(cost) {
-                        director.grade_fury += 1;
+                    if director.grade_fury < crate::ecs::world::MAX_DIRECTOR_GRADE {
+                        let cost = 100.0 * (director.grade_fury as f32 + 1.0);
+                        if director.spend_points(cost) {
+                            director.grade_fury += 1;
+                        }
                     }
                 }
             }
             18 => {
                 let mut upgraded = false;
                 if let Some(director) = world.directors.first_mut() {
-                    let cost = 120.0 * (director.grade_carapace as f32 + 1.0);
-                    if director.spend_points(cost) {
-                        director.grade_carapace += 1;
-                        upgraded = true;
+                    if director.grade_carapace < crate::ecs::world::MAX_DIRECTOR_GRADE {
+                        let cost = 120.0 * (director.grade_carapace as f32 + 1.0);
+                        if director.spend_points(cost) {
+                            director.grade_carapace += 1;
+                            upgraded = true;
+                        }
                     }
                 }
                 if upgraded {
@@ -478,9 +455,11 @@ fn run_director_decision(
             }
             19 => {
                 if let Some(director) = world.directors.first_mut() {
-                    let cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
-                    if director.spend_points(cost) {
-                        director.grade_pestilence += 1;
+                    if director.grade_pestilence < crate::ecs::world::MAX_DIRECTOR_GRADE {
+                        let cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+                        if director.spend_points(cost) {
+                            director.grade_pestilence += 1;
+                        }
                     }
                 }
             }
@@ -629,18 +608,23 @@ fn run_director_fallback(
         let pestilence_cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
 
         if director.points >= pestilence_cost
+            && director.grade_pestilence < crate::ecs::world::MAX_DIRECTOR_GRADE
             && director.grade_pestilence <= director.grade_fury
         {
             if director.spend_points(pestilence_cost) {
                 director.grade_pestilence += 1;
             }
         } else if director.points >= carapace_cost
+            && director.grade_carapace < crate::ecs::world::MAX_DIRECTOR_GRADE
             && director.grade_carapace <= director.grade_fury
         {
             if director.spend_points(carapace_cost) {
                 director.grade_carapace += 1;
             }
-        } else if director.points >= fury_cost && director.spend_points(fury_cost) {
+        } else if director.points >= fury_cost
+            && director.grade_fury < crate::ecs::world::MAX_DIRECTOR_GRADE
+            && director.spend_points(fury_cost)
+        {
             director.grade_fury += 1;
         }
     }
@@ -688,5 +672,79 @@ mod tests {
         );
         assert_eq!(a.altars_built, b.altars_built);
         assert_eq!(a.mobs_spawned_by_tier, b.mobs_spawned_by_tier);
+    }
+
+    #[test]
+    fn test_boss_dash_parity_simulation_and_runtime() {
+        use crate::content::structures::spawn_blood_altar;
+        use crate::ecs::components::combat::Faction;
+        use crate::ecs::world::ProjectileEntity;
+
+        let mut world_sim = World::new();
+        world_sim.is_headless = true;
+        world_sim.boss_pos = Vec2::new(500.0, 500.0);
+        world_sim.boss_facing = Vec2::X;
+
+        let mut world_runtime = World::new();
+        world_runtime.is_headless = true;
+        world_runtime.boss_pos = Vec2::new(500.0, 500.0);
+        world_runtime.boss_facing = Vec2::X;
+
+        let target_pos = Vec2::new(680.0, 500.0);
+
+        // Алтари
+        spawn_blood_altar(&mut world_sim, target_pos);
+        spawn_blood_altar(&mut world_runtime, target_pos);
+        let altar_initial_hp = world_sim.structures[0].health.current;
+
+        // Снаряды
+        world_sim.projectiles.push(ProjectileEntity {
+            id: 101,
+            pos: target_pos,
+            vel: Vec2::ZERO,
+            radius: 8.0,
+            damage: 20.0,
+            damage_type: crate::ecs::components::combat::DamageType::Physical,
+            armor_penetration: 0.0,
+            pierce: 1,
+            lifetime: 2.0,
+            faction: Faction::Director,
+            homing_strength: 0.0,
+            source_weapon: None,
+        });
+        world_runtime.projectiles.push(ProjectileEntity {
+            id: 102,
+            pos: target_pos,
+            vel: Vec2::ZERO,
+            radius: 8.0,
+            damage: 20.0,
+            damage_type: crate::ecs::components::combat::DamageType::Physical,
+            armor_penetration: 0.0,
+            pierce: 1,
+            lifetime: 2.0,
+            faction: Faction::Director,
+            homing_strength: 0.0,
+            source_weapon: None,
+        });
+
+        // Выполняем рывок
+        let action = BossAction {
+            move_dir: Vec2::ZERO,
+            move_mag: 0.0,
+            dash: true,
+            dash_dir: Vec2::X,
+            rest: false,
+        };
+        apply_boss_action(&mut world_sim, action, 0.05);
+        crate::ecs::systems::boss_ai::resolve_boss_dash(&mut world_runtime, Vec2::X);
+
+        // Сверяем идентичность
+        assert_eq!(world_sim.boss_pos, world_runtime.boss_pos);
+        assert_eq!(world_sim.boss_facing, world_runtime.boss_facing);
+        assert_eq!(world_sim.boss_vel, world_runtime.boss_vel);
+        assert_eq!(world_sim.structures[0].health.current, world_runtime.structures[0].health.current);
+        assert_eq!(world_sim.structures[0].health.current, altar_initial_hp - 160.0);
+        assert_eq!(world_sim.projectiles[0].lifetime, 0.0);
+        assert_eq!(world_runtime.projectiles[0].lifetime, 0.0);
     }
 }

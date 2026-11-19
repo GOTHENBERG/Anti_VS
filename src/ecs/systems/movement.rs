@@ -274,8 +274,8 @@ pub fn update_movement(world: &mut World, dt: f32) {
         pool.lifetime -= dt;
 
         // Лужи Босса наносят урон МОБАМ (Босса они не трогают)
-        let nearby = world.spatial_grid.query_nearby(pool.pos, pool.radius);
-        for idx in nearby {
+        world.spatial_grid.query_nearby_into(pool.pos, pool.radius, &mut homing_buf);
+        for &idx in &homing_buf {
             if let Some(mob) = world.mobs.get_mut(idx) {
                 if mob.pos.distance_squared(pool.pos) < pool.radius * pool.radius {
                     mob.status.apply_poison(2.5, pool.dps * 0.5);

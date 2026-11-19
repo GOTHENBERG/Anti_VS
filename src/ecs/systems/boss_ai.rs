@@ -32,9 +32,8 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
                 let obs = crate::ai::sensors::extract_boss_observations(world);
                 let nn_out = net.forward(&obs);
                 let move_intent = Vec2::new(nn_out[OUT_MOVE_X], nn_out[OUT_MOVE_Y]);
-                let is_moving = nn_out[OUT_MOVE_MAG] >= 0.5 && nn_out[OUT_REST] <= 0.5;
-                let move_mag = if is_moving { 1.0 } else { 0.0 };
-                let rest = !is_moving;
+                let rest = nn_out[OUT_REST] > 0.5;
+                let move_mag = if rest { 0.0 } else { nn_out[OUT_MOVE_MAG].clamp(0.0, 1.0) };
                 let move_dir = if move_intent.length_squared() > 0.0025 {
                     move_intent.normalize()
                 } else {
@@ -84,12 +83,7 @@ pub fn update_boss_ai(world: &mut World, dt: f32) {
     if should_dash {
         perform_boss_dash(world, dash_dir);
     } else {
-        // Мгновенное переключение между полной скоростью и остановкой, без инерции.
-        world.boss_vel = if desired_vel.length_squared() > 1.0 {
-            desired_vel.normalize() * world.boss_inventory.get_movement_speed(160.0)
-        } else {
-            Vec2::ZERO
-        };
+        world.boss_vel = desired_vel;
         world.boss_pos += world.boss_vel * dt;
         if world.boss_vel.length_squared() > 1.0 {
             world.boss_facing = world.boss_vel.normalize();
@@ -151,6 +145,10 @@ fn update_boss_timers(world: &mut World, dt: f32) {
 }
 
 fn perform_boss_dash(world: &mut World, dash_dir: Vec2) {
+    resolve_boss_dash(world, dash_dir);
+}
+
+pub fn resolve_boss_dash(world: &mut World, dash_dir: Vec2) {
     let map_w = crate::core::MAP_WIDTH;
     let map_h = crate::core::MAP_HEIGHT;
     let dir = if dash_dir.length_squared() > 0.01 { dash_dir.normalize() } else { world.boss_facing };
@@ -163,10 +161,13 @@ fn perform_boss_dash(world: &mut World, dash_dir: Vec2) {
     world.boss_invulnerable_timer = 0.25;
     world.boss_dash_cooldown = BOSS_DASH_BASE_COOLDOWN_SECONDS
         * world.boss_inventory.get_cooldown_multiplier();
-    world.push_audio(crate::audio::AudioEvent::BossDash);
-    world.spawn_particles(old_pos, 20, GOLD, 120.0);
-    world.spawn_particles(dash_target, 20, YELLOW, 140.0);
-    world.add_floating_text(dash_target, "РЫВОК (DASH)!".to_string(), YELLOW, 1.3);
+
+    if !world.is_headless {
+        world.push_audio(crate::audio::AudioEvent::BossDash);
+        world.spawn_particles(old_pos, 20, GOLD, 120.0);
+        world.spawn_particles(dash_target, 20, YELLOW, 140.0);
+        world.add_floating_text(dash_target, "РЫВОК (DASH)!".to_string(), YELLOW, 1.3);
+    }
 
     for proj in &mut world.projectiles {
         if proj.faction == crate::ecs::components::combat::Faction::Director
@@ -175,10 +176,11 @@ fn perform_boss_dash(world: &mut World, dash_dir: Vec2) {
             proj.lifetime = 0.0;
         }
     }
-    let in_dash_slice = world.spatial_grid.query_nearby(dash_target, 90.0);
-    for idx in in_dash_slice {
+    let mut dash_hits: Vec<usize> = Vec::with_capacity(64);
+    world.spatial_grid.query_nearby_into(dash_target, 90.0, &mut dash_hits);
+    for idx in dash_hits {
         if let Some(mob) = world.mobs.get_mut(idx) {
-            if mob.pos.distance_squared(dash_target) < 90.0 * 90.0 {
+            if mob.health.is_alive() && mob.pos.distance_squared(dash_target) < 90.0 * 90.0 {
                 mob.health.take_damage(80.0);
                 if !mob.knockback_immune {
                     mob.knockback_vel += dir * 240.0;

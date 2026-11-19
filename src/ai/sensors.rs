@@ -1,10 +1,27 @@
 use macroquad::prelude::*;
+use std::cell::RefCell;
 use crate::content::structures::{can_place_blood_altar, BLOOD_ALTAR_COST};
 use crate::ecs::components::combat::Faction;
 use crate::ecs::components::inventory::{WeaponType, PassiveType};
 use crate::ecs::world::World;
 use crate::core::{MAP_WIDTH, MAP_HEIGHT};
 use crate::ai::neural_net::{BOSS_DASH_BASE_COOLDOWN_SECONDS, INPUT_SIZE};
+
+thread_local! {
+    static SENSOR_GRID_BUFFER: RefCell<Vec<usize>> = RefCell::new(Vec::with_capacity(256));
+}
+
+#[inline]
+fn with_grid_buffer<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Vec<usize>) -> R,
+{
+    SENSOR_GRID_BUFFER.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        buf.clear();
+        f(&mut buf)
+    })
+}
 
 const BOSS_GRID: usize = 5;
 const BOSS_CELL: f32 = 100.0;
@@ -82,23 +99,23 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
         }
     }
 
-    let mut buf: Vec<usize> = Vec::with_capacity(64);
-
     // --- 1. Ядро 5×5: мобы ---
-    world.spatial_grid.query_nearby_into(boss_pos, HALF + 8.0, &mut buf);
-    for &idx in &buf {
-        if let Some(mob) = world.mobs.get(idx) {
-            if !mob.health.is_alive() {
-                continue;
-            }
-            let dx = mob.pos.x - boss_pos.x;
-            let dy = mob.pos.y - boss_pos.y;
-            if let Some((r, c)) = boss_cell_of(dx, dy) {
-                let elite = if mob.is_elite { 2.0 } else { 1.0 };
-                mob_grid[r][c] += tier_threat(mob.tier) * elite;
+    with_grid_buffer(|buf| {
+        world.spatial_grid.query_nearby_into(boss_pos, HALF + 8.0, buf);
+        for &idx in buf.iter() {
+            if let Some(mob) = world.mobs.get(idx) {
+                if !mob.health.is_alive() {
+                    continue;
+                }
+                let dx = mob.pos.x - boss_pos.x;
+                let dy = mob.pos.y - boss_pos.y;
+                if let Some((r, c)) = boss_cell_of(dx, dy) {
+                    let elite = if mob.is_elite { 2.0 } else { 1.0 };
+                    mob_grid[r][c] += tier_threat(mob.tier) * elite;
+                }
             }
         }
-    }
+    });
 
     // --- 1.1 Ядро 5×5: снаряды Директора ---
     for proj in &world.projectiles {
@@ -182,64 +199,75 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
 
     // --- 2. Внешний пояс: 16 секторов, все мобы 250..600 px ---
     let mut outer = [0.0f32; 16];
-    world.spatial_grid.query_nearby_into(boss_pos, 600.0, &mut buf);
     let mut mobs_160 = 0usize;
     let mut ranged_400 = 0usize;
     let mut elites_500 = 0usize;
     let mut nearest_elite_dist = f32::MAX;
 
-    for &idx in &buf {
-        if let Some(mob) = world.mobs.get(idx) {
-            if !mob.health.is_alive() {
-                continue;
-            }
-            let diff = mob.pos - boss_pos;
-            let dist = diff.length();
-            if dist <= 160.0 {
-                mobs_160 += 1;
-            }
-            let is_ranged = matches!(mob.tier, 3 | 11 | 16);
-            if is_ranged && dist <= 400.0 {
-                ranged_400 += 1;
-            }
-            if mob.is_elite && dist <= 500.0 {
-                elites_500 += 1;
-            }
-            if mob.is_elite {
-                nearest_elite_dist = nearest_elite_dist.min(dist);
-            }
-            if (250.0..=600.0).contains(&dist) {
-                let angle = diff.y.atan2(diff.x);
-                let norm = if angle < 0.0 { angle + std::f32::consts::TAU } else { angle };
-                let sector = ((norm / std::f32::consts::TAU) * 16.0) as usize % 16;
-                let weight = tier_threat(mob.tier) * if mob.is_elite { 2.0 } else { 1.0 };
-                outer[sector] += weight;
+    with_grid_buffer(|buf| {
+        world.spatial_grid.query_nearby_into(boss_pos, 600.0, buf);
+        for &idx in buf.iter() {
+            if let Some(mob) = world.mobs.get(idx) {
+                if !mob.health.is_alive() {
+                    continue;
+                }
+                let diff = mob.pos - boss_pos;
+                let dist = diff.length();
+                if dist <= 160.0 {
+                    mobs_160 += 1;
+                }
+                let is_ranged = mob.is_ranged();
+                if is_ranged && dist <= 400.0 {
+                    ranged_400 += 1;
+                }
+                if mob.is_elite && dist <= 500.0 {
+                    elites_500 += 1;
+                }
+                if mob.is_elite {
+                    nearest_elite_dist = nearest_elite_dist.min(dist);
+                }
+                if (250.0..=600.0).contains(&dist) {
+                    let angle = diff.y.atan2(diff.x);
+                    let norm = if angle < 0.0 { angle + std::f32::consts::TAU } else { angle };
+                    let sector = ((norm / std::f32::consts::TAU) * 16.0) as usize % 16;
+                    let weight = tier_threat(mob.tier) * if mob.is_elite { 2.0 } else { 1.0 };
+                    outer[sector] += weight;
+                }
             }
         }
-    }
+    });
     for i in 0..16 {
         obs[100 + i] = (outer[i] / 6.0).clamp(0.0, 1.0);
     }
 
     // --- 3. Внутреннее состояние Босса [116..124] ---
     obs[116] = (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0);
-    obs[117] = (world.boss_resistances.flat_armor / 60.0).clamp(0.0, 1.0);
+    obs[117] = world.boss_resistances.flat_armor / (world.boss_resistances.flat_armor + 30.0);
     obs[118] = if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 };
     obs[119] = (world.boss_dash_cooldown / BOSS_DASH_BASE_COOLDOWN_SECONDS).clamp(0.0, 1.0);
-    obs[120] = (world.boss_inventory.level as f32 / 50.0).clamp(0.0, 1.0);
+    obs[120] = world.boss_inventory.level as f32 / (world.boss_inventory.level as f32 + 50.0);
     let xp_next = world.boss_inventory.xp_to_next_level.max(1.0);
     obs[121] = (world.boss_inventory.current_xp / xp_next).clamp(0.0, 1.0);
-    obs[122] = (world.boss_vel.length() / max_speed).clamp(0.0, 1.5);
-    obs[123] = (world.boss_still_time / 1.2).clamp(0.0, 1.0);
+    // Честная оценка возможности и процесса медитации:
+    let has_nearby_threat = mobs_160 > 0 || with_grid_buffer(|buf| {
+        world.spatial_grid.query_nearby_into(boss_pos, 450.0, buf);
+        buf.iter().any(|&idx| {
+            world.mobs.get(idx).map_or(false, |m| m.health.is_alive() && m.pos.distance_squared(boss_pos) < 450.0 * 450.0)
+        })
+    });
+    let can_meditate = !has_nearby_threat && world.boss_damage_taken_timer <= 0.0;
+    let is_meditating = can_meditate && world.boss_still_time >= 2.0 && world.boss_vel.length_squared() < 25.0;
+    obs[122] = if is_meditating { 1.0 } else if can_meditate { 0.5 } else { 0.0 };
+    obs[123] = (world.boss_still_time / 2.0).clamp(0.0, 1.0);
 
     // --- 4. Экономика Директора [124..130] ---
     if let Some(dir) = world.directors.first() {
-        obs[124] = (dir.points / 1000.0).clamp(0.0, 5.0);
-        obs[125] = (dir.income_rate / 50.0).clamp(0.0, 3.0);
-        obs[126] = (world.structures.iter().filter(|s| s.health.is_alive()).count() as f32 / 10.0).clamp(0.0, 1.0);
-        obs[127] = (dir.grade_fury as f32 / 20.0).clamp(0.0, 2.0);
-        obs[128] = (dir.grade_carapace as f32 / 20.0).clamp(0.0, 2.0);
-        obs[129] = (dir.grade_pestilence as f32 / 20.0).clamp(0.0, 2.0);
+        obs[124] = dir.points / (dir.points + 1000.0);
+        obs[125] = dir.income_rate / (dir.income_rate + 50.0);
+        obs[126] = (world.structures.iter().filter(|s| crate::content::structures::is_altar_structure_type(s.structure_type) && s.health.is_alive()).count() as f32 / 10.0).clamp(0.0, 1.0);
+        obs[127] = dir.grade_fury as f32 / (dir.grade_fury as f32 + 10.0);
+        obs[128] = dir.grade_carapace as f32 / (dir.grade_carapace as f32 + 10.0);
+        obs[129] = dir.grade_pestilence as f32 / (dir.grade_pestilence as f32 + 10.0);
     }
 
     // --- 5. Агрегаты угроз [130..135] ---
@@ -285,7 +313,7 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     let mut closest_altar_hp = 0.0f32;
     let mut altars_under_attack = 0.0f32;
     for st in &world.structures {
-        if !st.health.is_alive() {
+        if !st.health.is_alive() || !crate::content::structures::is_altar_structure_type(st.structure_type) {
             continue;
         }
         let d_sq = st.pos.distance_squared(boss_pos);
@@ -344,7 +372,8 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     }
 
     obs[145] = altars_under_attack;
-    obs[146] = (world.game_time / 1020.0).clamp(0.0, 1.5);
+    let match_cap = world.match_duration_secs.max(60.0);
+    obs[146] = (world.game_time / match_cap).clamp(0.0, 1.0);
     obs[147] = (world.boss_inventory.damage_stats.melee_recent / 200.0).clamp(0.0, 1.0);
     obs[148] = (world.boss_inventory.damage_stats.ranged_recent / 200.0).clamp(0.0, 1.0);
     obs[149] = if nearest_elite_dist.is_finite() {
@@ -361,51 +390,64 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
         1.0
     };
 
-    let mut obelisks: Vec<_> = world
-        .structures
-        .iter()
-        .filter(|structure| {
-            structure.structure_type == crate::content::structures::STRUCTURE_OBELISK
-        })
-        .collect();
-    obelisks.sort_by(|a, b| {
-        a.pos
-            .y
-            .partial_cmp(&b.pos.y)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.pos.x.partial_cmp(&b.pos.x).unwrap_or(std::cmp::Ordering::Equal))
+    // --- 7. Обелиски: 4 ближайших по расстоянию с фракцией HP ---
+    let mut obelisk_slots = [(0.0f32, 0.0f32, 0.0f32, f32::MAX); 4];
+    let mut obelisk_count = 0usize;
+    for structure in &world.structures {
+        if structure.structure_type == crate::content::structures::STRUCTURE_OBELISK && obelisk_count < 4 {
+            let active = if structure.is_active && structure.health.is_alive() { 1.0 } else { 0.0 };
+            let hp_frac = (structure.health.current / structure.health.max.max(1.0)).clamp(0.0, 1.0);
+            let dist_sq = structure.pos.distance_squared(boss_pos);
+            obelisk_slots[obelisk_count] = (structure.pos.x, structure.pos.y, if active > 0.0 { hp_frac } else { 0.0 }, dist_sq);
+            obelisk_count += 1;
+        }
+    }
+    obelisk_slots[..obelisk_count].sort_unstable_by(|a, b| {
+        a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal)
     });
-    for (index, obelisk) in obelisks.into_iter().take(4).enumerate() {
+    for (index, (ox, oy, active_hp, _)) in obelisk_slots.iter().enumerate() {
         let base = 154 + index * 3;
-        obs[base] = (obelisk.pos.x / MAP_WIDTH).clamp(0.0, 1.0);
-        obs[base + 1] = (obelisk.pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
-        obs[base + 2] = if obelisk.is_active && obelisk.health.is_alive() {
-            1.0
-        } else {
-            0.0
-        };
+        obs[base] = (*ox / MAP_WIDTH).clamp(0.0, 1.0);
+        obs[base + 1] = (*oy / MAP_HEIGHT).clamp(0.0, 1.0);
+        obs[base + 2] = *active_hp;
     }
 
-    let mut allies: Vec<(f32, f32, f32, f32)> = Vec::new();
-    if world.active_boss_id != 1 {
-        let hp = (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0);
-        allies.push((world.boss_pos.x, world.boss_pos.y, hp, if world.boss_health.is_alive() { 1.0 } else { -1.0 }));
+    // --- 8. Союзники: строго другие боссы команды (без дублирования себя!) ---
+    // [dx, dy, hp, alive/revive_status, dist_sq]
+    let mut ally_slots = [(0.0f32, 0.0f32, 0.0f32, -1.0f32, f32::MAX); 4];
+    let mut ally_count = 0usize;
+
+    for player in world.coop_bosses.iter().filter(|player| player.id != world.active_boss_id) {
+        if ally_count < 4 {
+            let hp = (player.boss_health.current / player.boss_health.max.max(1.0)).clamp(0.0, 1.0);
+            let alive_status = if player.boss_health.is_alive() {
+                1.0
+            } else if player.revive_progress > 0.0 {
+                // Если союзник пал, но в процессе воскрешения: шкала [-1.0 .. -0.1]
+                -1.0 + (player.revive_progress / crate::ecs::systems::coop::REVIVE_SECONDS).clamp(0.0, 1.0) * 0.9
+            } else {
+                -1.0
+            };
+            let diff = player.boss_pos - boss_pos;
+            let d_sq = diff.length_squared();
+            ally_slots[ally_count] = (
+                (diff.x / MAP_WIDTH).clamp(-1.0, 1.0),
+                (diff.y / MAP_HEIGHT).clamp(-1.0, 1.0),
+                hp,
+                alive_status,
+                d_sq,
+            );
+            ally_count += 1;
+        }
     }
-    allies.extend(world.coop_bosses.iter().filter(|player| player.id != world.active_boss_id).map(|player| {
-        let hp = (player.boss_health.current / player.boss_health.max.max(1.0)).clamp(0.0, 1.0);
-        (player.boss_pos.x, player.boss_pos.y, hp, if player.boss_health.is_alive() { 1.0 } else { -1.0 })
-    }));
-    allies.sort_by(|a, b| {
-        let da = (a.0 - world.boss_pos.x).powi(2) + (a.1 - world.boss_pos.y).powi(2);
-        let db = (b.0 - world.boss_pos.x).powi(2) + (b.1 - world.boss_pos.y).powi(2);
-        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-    });
-    for (index, (x, y, hp, alive)) in allies.into_iter().take(4).enumerate() {
+    ally_slots[..ally_count].sort_unstable_by(|a, b| a.4.partial_cmp(&b.4).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (index, (dx, dy, hp, alive, _)) in ally_slots.iter().enumerate() {
         let base = 166 + index * 4;
-        obs[base] = ((x - world.boss_pos.x) / MAP_WIDTH).clamp(-1.0, 1.0);
-        obs[base + 1] = ((y - world.boss_pos.y) / MAP_HEIGHT).clamp(-1.0, 1.0);
-        obs[base + 2] = hp;
-        obs[base + 3] = alive;
+        obs[base] = *dx;
+        obs[base + 1] = *dy;
+        obs[base + 2] = *hp;
+        obs[base + 3] = *alive;
     }
 
     obs
@@ -547,32 +589,77 @@ pub fn passive_type_to_index(p: PassiveType) -> usize {
 /// [138]       доля свободных слотов для Алтарей Крови
 pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRECTOR_INPUT_SIZE] {
     let mut obs = [0.0f32; DIRECTOR_INPUT_SIZE];
-    let boss_pos = world.boss_pos;
+
+    // Динамический выбор главного живого босса-фокуса для позиционирования и армии.
+    // Если Босс №1 пал, Директор переключает внимание на живого соратника, а не сканирует труп.
+    let (boss_pos, boss_vel, boss_hp_frac, boss_max_hp, boss_level, boss_cur_xp, boss_next_xp, boss_invuln, boss_dash, boss_still, boss_poison) = if world.boss_health.is_alive() {
+        (
+            world.boss_pos,
+            world.boss_vel,
+            (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0),
+            world.boss_health.max,
+            world.boss_inventory.level,
+            world.boss_inventory.current_xp,
+            world.boss_inventory.xp_to_next_level.max(1.0),
+            if world.boss_invulnerable_timer > 0.0 { 1.0 } else { 0.0 },
+            if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 },
+            if world.boss_still_time >= 1.2 { 1.0 } else { 0.0 },
+            if world.boss_poison_timer > 0.0 { 1.0 } else { 0.0 },
+        )
+    } else if let Some(alive_player) = world.coop_bosses.iter().find(|p| p.boss_health.is_alive()) {
+        (
+            alive_player.boss_pos,
+            alive_player.boss_vel,
+            (alive_player.boss_health.current / alive_player.boss_health.max.max(1.0)).clamp(0.0, 1.0),
+            alive_player.boss_health.max,
+            alive_player.boss_inventory.level,
+            alive_player.boss_inventory.current_xp,
+            alive_player.boss_inventory.xp_to_next_level.max(1.0),
+            if alive_player.boss_invulnerable_timer > 0.0 { 1.0 } else { 0.0 },
+            if alive_player.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 },
+            if alive_player.boss_still_time >= 1.2 { 1.0 } else { 0.0 },
+            if alive_player.boss_poison_timer > 0.0 { 1.0 } else { 0.0 },
+        )
+    } else {
+        (
+            world.boss_pos,
+            world.boss_vel,
+            0.0,
+            world.boss_health.max,
+            world.boss_inventory.level,
+            world.boss_inventory.current_xp,
+            world.boss_inventory.xp_to_next_level.max(1.0),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+    };
 
     // 1. [0..9] Карта и кинематика Босса
     obs[0] = (boss_pos.x / MAP_WIDTH).clamp(0.0, 1.0);
     obs[1] = (boss_pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
-    obs[2] = ((MAP_WIDTH - boss_pos.x) / MAP_WIDTH).clamp(0.0, 1.0);
-    obs[3] = (boss_pos.x / MAP_WIDTH).clamp(0.0, 1.0);
-    obs[4] = ((MAP_HEIGHT - boss_pos.y) / MAP_HEIGHT).clamp(0.0, 1.0);
-    obs[5] = (boss_pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
-    obs[6] = (world.boss_vel.x / 300.0).clamp(-1.5, 1.5);
-    obs[7] = (world.boss_vel.y / 300.0).clamp(-1.5, 1.5);
-    obs[8] = (world.boss_vel.length() / 300.0).clamp(0.0, 2.0);
+    let dist_to_wall = boss_pos.x.min(MAP_WIDTH - boss_pos.x).min(boss_pos.y).min(MAP_HEIGHT - boss_pos.y);
+    obs[2] = (dist_to_wall / (MAP_WIDTH * 0.5)).clamp(0.0, 1.0);
+    obs[3] = (boss_vel.x / 300.0).clamp(-1.0, 1.0);
+    obs[4] = (boss_vel.y / 300.0).clamp(-1.0, 1.0);
+    obs[5] = (boss_vel.length() / 300.0).clamp(0.0, 1.5);
+    obs[6] = world.boss_resistances.flat_armor / (world.boss_resistances.flat_armor + 30.0);
+    obs[7] = boss_max_hp / (boss_max_hp + 1500.0);
+    obs[8] = boss_level as f32 / (boss_level as f32 + 50.0);
 
     // 2. [9..18] HP, XP и действия Босса
-    obs[9] = (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0);
-    obs[10] = (world.boss_health.max / 2000.0).clamp(0.1, 2.5);
-    obs[11] = (world.boss_inventory.level as f32 / 50.0).clamp(0.0, 2.0);
-    let next_xp = world.boss_inventory.xp_to_next_level.max(1.0);
-    obs[12] = (world.boss_inventory.current_xp / next_xp).clamp(0.0, 1.0);
-    obs[13] = (next_xp / 500.0).clamp(0.05, 5.0);
-    obs[14] = if world.boss_invulnerable_timer > 0.0 { 1.0 } else { 0.0 };
-    obs[15] = if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 };
-    obs[16] = if world.boss_still_time >= 1.2 { 1.0 } else { 0.0 };
-    obs[17] = if world.boss_poison_timer > 0.0 { 1.0 } else { 0.0 };
+    obs[9] = boss_hp_frac;
+    obs[10] = boss_max_hp / (boss_max_hp + 1500.0);
+    obs[11] = boss_level as f32 / (boss_level as f32 + 50.0);
+    obs[12] = (boss_cur_xp / boss_next_xp).clamp(0.0, 1.0);
+    obs[13] = (boss_next_xp / 500.0).clamp(0.05, 5.0);
+    obs[14] = boss_invuln;
+    obs[15] = boss_dash;
+    obs[16] = if boss_still >= 1.0 && world.boss_damage_taken_timer <= 0.0 { 1.0 } else { 0.0 };
+    obs[17] = boss_poison;
 
-    // 3. [18..39] Алтари: 4 ближайших, без сортировки всей карты
+    // 3. [18..39] Алтари: 4 ближайших (строго алтари, без стен и обелисков)
     let mut nearest: [Option<(usize, f32)>; 4] = [None; 4];
     let mut alive_altars = 0usize;
     let mut under_attack = 0usize;
@@ -580,7 +667,7 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     let mut closest_altar_dist_sq = f32::MAX;
 
     for (idx, st) in world.structures.iter().enumerate() {
-        if !st.health.is_alive() {
+        if !st.health.is_alive() || !crate::content::structures::is_altar_structure_type(st.structure_type) {
             continue;
         }
         alive_altars += 1;
@@ -636,13 +723,13 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     let mut squad_cooldowns = [0.0f32; 16];
 
     if let Some(dir) = world.directors.first() {
-        obs[39] = (dir.points / 1000.0).clamp(0.0, 10.0);
-        obs[40] = (dir.income_rate / 50.0).clamp(0.0, 5.0);
+        obs[39] = dir.points / (dir.points + 1000.0);
+        obs[40] = dir.income_rate / (dir.income_rate + 50.0);
         obs[41] = (dir.altar_cooldown / 60.0).clamp(0.0, 1.0);
-        obs[42] = (dir.grade_fury as f32 / 20.0).clamp(0.0, 5.0);
-        obs[43] = (dir.grade_carapace as f32 / 20.0).clamp(0.0, 5.0);
-        obs[44] = (dir.grade_pestilence as f32 / 20.0).clamp(0.0, 5.0);
-        obs[45] = (dir.total_points_spent / 50000.0).clamp(0.0, 10.0);
+        obs[42] = dir.grade_fury as f32 / (dir.grade_fury as f32 + 10.0);
+        obs[43] = dir.grade_carapace as f32 / (dir.grade_carapace as f32 + 10.0);
+        obs[44] = dir.grade_pestilence as f32 / (dir.grade_pestilence as f32 + 10.0);
+        obs[45] = dir.total_points_spent / (dir.total_points_spent + 50000.0);
 
         director_points = dir.points;
         director_spent = dir.total_points_spent;
@@ -653,13 +740,11 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
         grade_pestilence = dir.grade_pestilence;
         squad_cooldowns = dir.squad_cooldowns;
     }
-    obs[46] = (world.mobs.len() as f32 / 500.0).clamp(0.0, 2.0);
-    obs[47] = (sim_time / 1020.0).clamp(0.0, 1.5);
-
     // 5-6. [48..88] Армия: тиры + пространственная карта 4×4 + агрегаты
     let mut tier_counts = [0usize; 16];
     let mut army_grid = [[0.0f32; 4]; 4];
     let mut total_mobs = 0usize;
+    let mut ranged_mobs = 0usize;
     let mut centroid = Vec2::ZERO;
     let mut sum_dist = 0.0f32;
     let mut sum_dist_sq = 0.0f32;
@@ -677,6 +762,9 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
             continue;
         }
         total_mobs += 1;
+        if mob.is_ranged() {
+            ranged_mobs += 1;
+        }
         tier_counts[(mob.tier - 1) as usize] += 1;
 
         let diff = mob.pos - boss_pos;
@@ -702,6 +790,10 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
             army_grid[r][c] += 1.0 + mob.tier as f32 * 0.25;
         }
     }
+
+    obs[46] = (total_mobs as f32 / (total_mobs as f32 + 200.0)).clamp(0.0, 1.0);
+    let match_cap = world.match_duration_secs.max(60.0);
+    obs[47] = (sim_time / match_cap).clamp(0.0, 1.0);
 
     for i in 0..16 {
         let config = crate::content::mobs::get_squad_config((i + 1) as u8);
@@ -889,15 +981,16 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     }
 
     let mut mobs_within_250 = 0usize;
-    let mut nearby_buf: Vec<usize> = Vec::with_capacity(64);
-    world.spatial_grid.query_nearby_into(boss_pos, 250.0, &mut nearby_buf);
-    for &m_idx in &nearby_buf {
-        if let Some(m) = world.mobs.get(m_idx) {
-            if m.health.is_alive() {
-                mobs_within_250 += 1;
+    with_grid_buffer(|nearby_buf| {
+        world.spatial_grid.query_nearby_into(boss_pos, 250.0, nearby_buf);
+        for &m_idx in nearby_buf.iter() {
+            if let Some(m) = world.mobs.get(m_idx) {
+                if m.health.is_alive() {
+                    mobs_within_250 += 1;
+                }
             }
         }
-    }
+    });
 
     let map_diag = (MAP_WIDTH * MAP_WIDTH + MAP_HEIGHT * MAP_HEIGHT).sqrt();
     let boss_to_altar = if closest_altar_dist_sq < f32::MAX {
@@ -912,11 +1005,15 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
 
     obs[112] = (affordable_count as f32 / 16.0).clamp(0.0, 1.0);
     obs[113] = (best_affordable_tier as f32 / 16.0).clamp(0.0, 1.0);
-    obs[114] = if world.boss_dash_cooldown <= 0.0 { 1.0 } else { 0.0 };
-    obs[115] = if world.boss_invulnerable_timer > 0.0 { 1.0 } else { 0.0 };
-    obs[116] = (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0);
+    // 114: признак медитации Босса (цель для прерывания)
+    obs[114] = if world.boss_still_time >= 2.0 && world.boss_damage_taken_timer <= 0.0 { 1.0 } else { 0.0 };
+    // 115: число активных обелисков
+    obs[115] = world.structures.iter().filter(|s| s.structure_type == crate::content::structures::STRUCTURE_OBELISK && s.is_active && s.health.is_alive()).count() as f32 / 4.0;
+    // 116: готовность стены Директора
+    obs[116] = if world.directors.first().map_or(0.0, |d| d.wall_cooldown) <= 0.0 { 1.0 } else { 0.0 };
     obs[117] = (recent_damage / 500.0).clamp(0.0, 1.0);
-    obs[118] = (near_boss as f32 * inv).clamp(0.0, 1.0);
+    // 118: доля стрелков (дальнобойных) в армии
+    obs[118] = (ranged_mobs as f32 * inv).clamp(0.0, 1.0);
     obs[119] = (near_altar as f32 * inv).clamp(0.0, 1.0);
     obs[120] = if alive_altars > 0 {
         (under_attack as f32 / alive_altars as f32).clamp(0.0, 1.0)
@@ -927,9 +1024,15 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     obs[122] = (time_since_spawn / 10.0).clamp(0.0, 1.0);
     obs[123] = next_unlock_progress;
     obs[124] = ((grade_fury + grade_carapace + grade_pestilence) as f32 / 60.0).clamp(0.0, 1.0);
-    obs[125] = (world.boss_inventory.level as f32 / 50.0).clamp(0.0, 2.0);
-    obs[126] = (world.boss_inventory.current_xp / next_xp).clamp(0.0, 1.0);
-    obs[127] = (world.directors.first().map_or(0.0, |d| d.income_rate) / 50.0).clamp(0.0, 5.0);
+    // 125: накопленный урон по боссу за раунд
+    let total_boss_dmg = world.boss_inventory.damage_stats.melee_total
+        + world.boss_inventory.damage_stats.ranged_total
+        + world.boss_inventory.damage_stats.hazard_total;
+    obs[125] = total_boss_dmg / (total_boss_dmg + 5000.0);
+    // 126: DPS яда по боссу
+    obs[126] = world.boss_poison_dps / (world.boss_poison_dps + 50.0);
+    // Таймер до следующего тика начисления дохода душ (раз в 2.0 секунды)
+    obs[127] = (world.directors.first().map_or(0.0, |d| d.income_timer / 2.0)).clamp(0.0, 1.0);
     obs[128] = (mobs_within_250 as f32 / 100.0).clamp(0.0, 1.0);
     obs[129] = boss_to_altar;
     obs[130] = boss_to_center.clamp(0.0, 1.0);
@@ -961,21 +1064,32 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     obs[140] = (living_players as f32 / world.boss_player_count().max(1) as f32).clamp(0.0, 1.0);
     obs[141] = if living_players > 0 { total_hp / living_players as f32 } else { 0.0 };
     obs[142] = if living_players > 0 { lowest_hp } else { 0.0 };
-    let centroid = if living_players > 0 { centroid / living_players as f32 } else { world.boss_pos };
+    let centroid = if living_players > 0 { centroid / living_players as f32 } else { boss_pos };
     obs[143] = ((centroid.x - boss_pos.x) / MAP_WIDTH).clamp(-1.0, 1.0);
     obs[144] = ((centroid.y - boss_pos.y) / MAP_HEIGHT).clamp(-1.0, 1.0);
 
-    // Индивидуальные позиции/состояния команды помогают Директору использовать
-    // раздельные направления атаки и замечать отставших или павших Боссов.
-    let mut team = Vec::with_capacity(world.boss_player_count());
-    team.push((world.boss_pos, &world.boss_health));
-    team.extend(world.coop_bosses.iter().map(|player| (player.boss_pos, &player.boss_health)));
-    for (slot, (pos, health)) in team.into_iter().take(8).enumerate() {
+    // Индивидуальные позиции/состояния команды на стеке без динамических аллокаций
+    let mut team: [(Vec2, f32, bool); 8] = [(Vec2::ZERO, 0.0, false); 8];
+    let mut team_count = 0usize;
+    team[team_count] = (
+        world.boss_pos,
+        (world.boss_health.current / world.boss_health.max.max(1.0)).clamp(0.0, 1.0),
+        world.boss_health.is_alive(),
+    );
+    team_count += 1;
+    for player in &world.coop_bosses {
+        if team_count < 8 {
+            let hp = (player.boss_health.current / player.boss_health.max.max(1.0)).clamp(0.0, 1.0);
+            team[team_count] = (player.boss_pos, hp, player.boss_health.is_alive());
+            team_count += 1;
+        }
+    }
+    for (slot, (pos, hp, alive)) in team.iter().take(8).enumerate() {
         let base = 145 + slot * 4;
         obs[base] = ((pos.x - boss_pos.x) / MAP_WIDTH).clamp(-1.0, 1.0);
         obs[base + 1] = ((pos.y - boss_pos.y) / MAP_HEIGHT).clamp(-1.0, 1.0);
-        obs[base + 2] = (health.current / health.max.max(1.0)).clamp(0.0, 1.0);
-        obs[base + 3] = if health.is_alive() { 1.0 } else { 0.0 };
+        obs[base + 2] = *hp;
+        obs[base + 3] = if *alive { 1.0 } else { 0.0 };
     }
 
     obs

@@ -118,48 +118,73 @@ pub fn can_place_blood_altar(world: &World, requested: Vec2) -> bool {
 /// Для любого количества боссов (соло или кооп) находит валидную клетку,
 /// расстояние от которой до БЛИЖАЙШЕГО живого босса максимально.
 pub fn find_furthest_altar_spawn(world: &World) -> Option<Vec2> {
-    let mut living_boss_positions = Vec::with_capacity(world.coop_bosses.len() + 1);
+    let mut living_boss_positions = [Vec2::ZERO; 8];
+    let mut living_count = 0usize;
+
     if world.boss_health.is_alive() {
-        living_boss_positions.push(world.boss_pos);
+        living_boss_positions[living_count] = world.boss_pos;
+        living_count += 1;
     }
     for player in &world.coop_bosses {
-        if player.boss_health.is_alive() {
-            living_boss_positions.push(player.boss_pos);
+        if player.boss_health.is_alive() && living_count < 8 {
+            living_boss_positions[living_count] = player.boss_pos;
+            living_count += 1;
         }
     }
 
-    if living_boss_positions.is_empty() {
+    if living_count == 0 {
         let center = snap_to_build_grid(Vec2::new(crate::core::MAP_WIDTH * 0.5, crate::core::MAP_HEIGHT * 0.5));
         return if can_place_blood_altar(world, center) { Some(center) } else { None };
     }
 
-    let cols = (crate::core::MAP_WIDTH / BUILD_GRID_SIZE).floor() as usize; // 72
-    let rows = (crate::core::MAP_HEIGHT / BUILD_GRID_SIZE).floor() as usize; // 48
-
+    let living_slice = &living_boss_positions[..living_count];
     let mut best_pos: Option<Vec2> = None;
     let mut max_min_dist_sq = -1.0f32;
 
-    for gy in 0..rows {
-        let py = (gy as f32 + 0.5) * BUILD_GRID_SIZE;
-        for gx in 0..cols {
-            let px = (gx as f32 + 0.5) * BUILD_GRID_SIZE;
-            let candidate = Vec2::new(px, py);
+    // Быстрый и точный поиск по 25 макро-слотам сетки арены (5x5).
+    // Полностью синхронизирован с пространством действий и масками Директора.
+    for slot in 0..crate::ai::neural_net::DIRECTOR_ALTAR_HEAD_SIZE.max(25).min(25) {
+        let candidate = crate::ai::neural_net::DirectorBrainNet::altar_slot_position(slot);
+        if !can_place_blood_altar(world, candidate) {
+            continue;
+        }
 
-            if !can_place_blood_altar(world, candidate) {
-                continue;
+        let mut min_dist_sq = f32::MAX;
+        for &boss_pos in living_slice {
+            let d_sq = candidate.distance_squared(boss_pos);
+            if d_sq < min_dist_sq {
+                min_dist_sq = d_sq;
             }
+        }
 
-            let mut min_dist_sq = f32::MAX;
-            for boss_pos in &living_boss_positions {
-                let d_sq = candidate.distance_squared(*boss_pos);
-                if d_sq < min_dist_sq {
-                    min_dist_sq = d_sq;
+        if min_dist_sq > max_min_dist_sq {
+            max_min_dist_sq = min_dist_sq;
+            best_pos = Some(candidate);
+        }
+    }
+
+    // Резервный поиск по 4 углам, если все 25 макро-слотов плотно заняты
+    if best_pos.is_none() {
+        let corners = [
+            Vec2::new(70.0, 70.0),
+            Vec2::new(crate::core::MAP_WIDTH - 70.0, 70.0),
+            Vec2::new(70.0, crate::core::MAP_HEIGHT - 70.0),
+            Vec2::new(crate::core::MAP_WIDTH - 70.0, crate::core::MAP_HEIGHT - 70.0),
+        ];
+        for corner in corners {
+            let candidate = snap_to_build_grid(corner);
+            if can_place_blood_altar(world, candidate) {
+                let mut min_dist_sq = f32::MAX;
+                for &boss_pos in living_slice {
+                    let d_sq = candidate.distance_squared(boss_pos);
+                    if d_sq < min_dist_sq {
+                        min_dist_sq = d_sq;
+                    }
                 }
-            }
-
-            if min_dist_sq > max_min_dist_sq {
-                max_min_dist_sq = min_dist_sq;
-                best_pos = Some(candidate);
+                if min_dist_sq > max_min_dist_sq {
+                    max_min_dist_sq = min_dist_sq;
+                    best_pos = Some(candidate);
+                }
             }
         }
     }

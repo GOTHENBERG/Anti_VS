@@ -9,7 +9,7 @@ pub const HIDDEN1_SIZE: usize = 64;
 pub const HIDDEN2_SIZE: usize = 48;
 pub const OUTPUT_SIZE: usize = 7;
 pub const BOSS_DECISION_INTERVAL: f32 = 0.2;
-pub const BOSS_TRAINING_DECISION_INTERVAL: f32 = 0.05;
+pub const BOSS_TRAINING_DECISION_INTERVAL: f32 = 0.2;
 pub const BOSS_DASH_BASE_COOLDOWN_SECONDS: f32 = 5.0;
 
 // Семантика выходов Босса:
@@ -141,37 +141,34 @@ impl NeuralNet {
     }
 
     /// Прямой проход нейросети (Forward inference pass).
-    /// Выполняется за микросекунды без аллокаций памяти.
+    /// Векторизован через SIMD (без bounds checks) и выполняется за микросекунды без аллокаций памяти.
     pub fn forward(&self, inputs: &[f32; INPUT_SIZE]) -> [f32; OUTPUT_SIZE] {
         // 1. Скрытый слой 1 (Linear + Leaky ReLU)
         let mut h1 = [0.0f32; HIDDEN1_SIZE];
-        for i in 0..HIDDEN1_SIZE {
+        for (i, row) in self.w1.iter().enumerate() {
             let mut sum = self.b1[i];
-            let row = &self.w1[i];
-            for j in 0..INPUT_SIZE {
-                sum += row[j] * inputs[j];
+            for (&w, &inp) in row.iter().zip(inputs.iter()) {
+                sum += w * inp;
             }
             h1[i] = if sum > 0.0 { sum } else { 0.01 * sum };
         }
 
         // 2. Скрытый слой 2 (Linear + Leaky ReLU)
         let mut h2 = [0.0f32; HIDDEN2_SIZE];
-        for i in 0..HIDDEN2_SIZE {
+        for (i, row) in self.w2.iter().enumerate() {
             let mut sum = self.b2[i];
-            let row = &self.w2[i];
-            for j in 0..HIDDEN1_SIZE {
-                sum += row[j] * h1[j];
+            for (&w, &h) in row.iter().zip(h1.iter()) {
+                sum += w * h;
             }
             h2[i] = if sum > 0.0 { sum } else { 0.01 * sum };
         }
 
         // 3. Выходной слой
         let mut out = [0.0f32; OUTPUT_SIZE];
-        for i in 0..OUTPUT_SIZE {
+        for (i, row) in self.w3.iter().enumerate() {
             let mut sum = self.b3[i];
-            let row = &self.w3[i];
-            for j in 0..HIDDEN2_SIZE {
-                sum += row[j] * h2[j];
+            for (&w, &h) in row.iter().zip(h2.iter()) {
+                sum += w * h;
             }
             out[i] = match i {
                 OUT_MOVE_X | OUT_MOVE_Y | OUT_DASH_X | OUT_DASH_Y => sum.tanh(),
@@ -182,65 +179,76 @@ impl NeuralNet {
         out
     }
 
-    /// Мутация синаптических весов для эволюции
+    /// Мутация синаптических весов для эволюции с масштабированием шума по слоям (Fan-in scaling).
+    /// Защищает скрытые представления глубоких слоев от взрыва дисперсии.
     pub fn mutate(&mut self, rate: f32, sigma: f32) {
+        let s1 = sigma * (48.0 / INPUT_SIZE as f32).sqrt();
+        let s2 = sigma * (48.0 / HIDDEN1_SIZE as f32).sqrt();
+        let s3 = sigma;
+
         for row in self.w1.iter_mut() {
             for w in row.iter_mut() {
                 if rand::gen_range(0.0, 1.0) < rate {
-                    *w += rand::gen_range(-sigma, sigma);
+                    *w += rand::gen_range(-s1, s1);
                 }
             }
         }
         for b in self.b1.iter_mut() {
             if rand::gen_range(0.0, 1.0) < rate {
-                *b += rand::gen_range(-sigma, sigma);
+                *b += rand::gen_range(-s1, s1);
             }
         }
 
         for row in self.w2.iter_mut() {
             for w in row.iter_mut() {
                 if rand::gen_range(0.0, 1.0) < rate {
-                    *w += rand::gen_range(-sigma, sigma);
+                    *w += rand::gen_range(-s2, s2);
                 }
             }
         }
         for b in self.b2.iter_mut() {
             if rand::gen_range(0.0, 1.0) < rate {
-                *b += rand::gen_range(-sigma, sigma);
+                *b += rand::gen_range(-s2, s2);
             }
         }
 
         for row in self.w3.iter_mut() {
             for w in row.iter_mut() {
                 if rand::gen_range(0.0, 1.0) < rate {
-                    *w += rand::gen_range(-sigma, sigma);
+                    *w += rand::gen_range(-s3, s3);
                 }
             }
         }
         for b in self.b3.iter_mut() {
             if rand::gen_range(0.0, 1.0) < rate {
-                *b += rand::gen_range(-sigma, sigma);
+                *b += rand::gen_range(-s3, s3);
             }
         }
     }
 
-    /// L2 weight decay: тормозит «раздувание» весов и насыщение tanh/sigmoid.
-    /// Смещения не трогаем — они не создают осцилляций.
+    /// L2 weight decay: тормозит «раздувание» крупных весов и насыщение tanh/sigmoid.
+    /// Не трогает малые веса (|w| <= 1.5), сохраняя полезную тонкую структуру связей.
     pub fn decay(&mut self, factor: f32) {
         let k = (1.0 - factor).clamp(0.0, 1.0);
         for row in self.w1.iter_mut() {
             for w in row.iter_mut() {
-                *w *= k;
+                if w.abs() > 1.5 {
+                    *w *= k;
+                }
             }
         }
         for row in self.w2.iter_mut() {
             for w in row.iter_mut() {
-                *w *= k;
+                if w.abs() > 1.5 {
+                    *w *= k;
+                }
             }
         }
         for row in self.w3.iter_mut() {
             for w in row.iter_mut() {
-                *w *= k;
+                if w.abs() > 1.5 {
+                    *w *= k;
+                }
             }
         }
     }
@@ -504,48 +512,51 @@ impl DirectorBrainNet {
         inputs: &[f32; DIRECTOR_INPUT_SIZE],
         ctx: &DirectorActionContext,
     ) -> DirectorDecision {
-        // 1. Скрытый слой 1
+        // 1. Скрытый слой 1 (SIMD zip dot product)
         let mut h1 = [0.0f32; DIRECTOR_HIDDEN1_SIZE];
-        for i in 0..DIRECTOR_HIDDEN1_SIZE {
+        for (i, row) in self.w1.iter().enumerate() {
             let mut sum = self.b1[i];
-            let row = &self.w1[i];
-            for j in 0..DIRECTOR_INPUT_SIZE {
-                sum += row[j] * inputs[j];
+            for (&w, &inp) in row.iter().zip(inputs.iter()) {
+                sum += w * inp;
             }
             h1[i] = if sum > 0.0 { sum } else { 0.01 * sum };
         }
 
-        // 2. Скрытый слой 2
+        // 2. Скрытый слой 2 (SIMD zip dot product)
         let mut h2 = [0.0f32; DIRECTOR_HIDDEN2_SIZE];
-        for i in 0..DIRECTOR_HIDDEN2_SIZE {
+        for (i, row) in self.w2.iter().enumerate() {
             let mut sum = self.b2[i];
-            let row = &self.w2[i];
-            for j in 0..DIRECTOR_HIDDEN1_SIZE {
-                sum += row[j] * h1[j];
+            for (&w, &h) in row.iter().zip(h1.iter()) {
+                sum += w * h;
             }
             h2[i] = if sum > 0.0 { sum } else { 0.01 * sum };
         }
 
         // 3. Голова алтаря: выбирает ближайший доступный слот, если желаемый занят.
         let mut altar_raw = [0.0f32; DIRECTOR_ALTAR_HEAD_SIZE];
-        for i in 0..DIRECTOR_ALTAR_HEAD_SIZE {
+        for (i, row) in self.w_altar.iter().enumerate() {
             let mut sum = self.b_altar[i];
-            let row = &self.w_altar[i];
-            for j in 0..DIRECTOR_HIDDEN2_SIZE {
-                sum += row[j] * h2[j];
+            for (&w, &h) in row.iter().zip(h2.iter()) {
+                sum += w * h;
             }
             altar_raw[i] = 1.0 / (1.0 + (-sum).exp());
         }
 
-        let altar_tier_index = altar_raw[3..]
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(index, _)| index)
-            .unwrap_or(0);
+        // Маскирование недоступных тиров до argmax: выбираем лучший среди готовых и доступных по очкам
+        let mut best_tier = None;
+        let mut best_score = f32::NEG_INFINITY;
+        for i in 0..16 {
+            if ctx.altar_tier_cooldowns[i] > 0.0 { continue; }
+            if ctx.points < ctx.altar_tier_costs[i] { continue; }
+            let score = altar_raw[3 + i];
+            if score > best_score {
+                best_score = score;
+                best_tier = Some(i);
+            }
+        }
+        let altar_tier_index = best_tier.unwrap_or(0);
         let altar_tier = altar_tier_index as u8 + 1;
-        let altar_ready = ctx.altar_tier_cooldowns[altar_tier_index] <= 0.0
-            && ctx.points >= ctx.altar_tier_costs[altar_tier_index];
+        let altar_ready = best_tier.is_some();
         let sx = (altar_raw[1] * 5.0).floor().clamp(0.0, 4.0) as usize;
         let sy = (altar_raw[2] * 5.0).floor().clamp(0.0, 4.0) as usize;
         let requested_slot = sy * 5 + sx;
@@ -587,9 +598,9 @@ impl DirectorBrainNet {
                         && points_after_altar >= config.cost
                         && ctx.squad_cooldowns[i - 1] <= 0.0
                 }
-                17 => points_after_altar >= 100.0 * (ctx.grade_fury as f32 + 1.0),
-                18 => points_after_altar >= 120.0 * (ctx.grade_carapace as f32 + 1.0),
-                19 => points_after_altar >= 150.0 * (ctx.grade_pestilence as f32 + 1.0),
+                17 => ctx.grade_fury < crate::ecs::world::MAX_DIRECTOR_GRADE && points_after_altar >= 100.0 * (ctx.grade_fury as f32 + 1.0),
+                18 => ctx.grade_carapace < crate::ecs::world::MAX_DIRECTOR_GRADE && points_after_altar >= 120.0 * (ctx.grade_carapace as f32 + 1.0),
+                19 => ctx.grade_pestilence < crate::ecs::world::MAX_DIRECTOR_GRADE && points_after_altar >= 150.0 * (ctx.grade_pestilence as f32 + 1.0),
                 _ => false,
             };
             if !allowed {
@@ -598,8 +609,8 @@ impl DirectorBrainNet {
 
             let mut sum = self.b_econ[i];
             let row = &self.w_econ[i];
-            for j in 0..DIRECTOR_HIDDEN2_SIZE {
-                sum += row[j] * h2[j];
+            for (&w, &h) in row.iter().zip(h2.iter()) {
+                sum += w * h;
             }
             if sum > max_econ_logit {
                 max_econ_logit = sum;
@@ -607,14 +618,13 @@ impl DirectorBrainNet {
             }
         }
 
-        // 5. Голова спавна: 8 секторов вокруг Босса.
+        // 5. Голова спавна: 8 секторов вокруг Босса (SIMD zip dot product)
         let mut spawn_sector = 0usize;
         let mut best_spawn_logit = f32::NEG_INFINITY;
-        for i in 0..DIRECTOR_SPAWN_HEAD_SIZE {
+        for (i, row) in self.w_spawn.iter().enumerate() {
             let mut sum = self.b_spawn[i];
-            let row = &self.w_spawn[i];
-            for j in 0..DIRECTOR_HIDDEN2_SIZE {
-                sum += row[j] * h2[j];
+            for (&w, &h) in row.iter().zip(h2.iter()) {
+                sum += w * h;
             }
             if sum > best_spawn_logit {
                 best_spawn_logit = sum;
@@ -647,8 +657,10 @@ impl DirectorBrainNet {
             }
         }
 
-        mutate_layer(&mut self.w1, &mut self.b1, rate, sigma);
-        mutate_layer(&mut self.w2, &mut self.b2, rate, sigma);
+        let s1 = sigma * (48.0 / DIRECTOR_INPUT_SIZE as f32).sqrt();
+        let s2 = sigma * (48.0 / DIRECTOR_HIDDEN1_SIZE as f32).sqrt();
+        mutate_layer(&mut self.w1, &mut self.b1, rate, s1);
+        mutate_layer(&mut self.w2, &mut self.b2, rate, s2);
         mutate_layer(&mut self.w_econ, &mut self.b_econ, rate, sigma);
         mutate_layer(&mut self.w_altar, &mut self.b_altar, rate, sigma);
         mutate_layer(&mut self.w_spawn, &mut self.b_spawn, rate, sigma);
@@ -665,7 +677,9 @@ impl DirectorBrainNet {
         ] {
             for row in layer.iter_mut() {
                 for w in row.iter_mut() {
-                    *w *= k;
+                    if w.abs() > 1.5 {
+                        *w *= k;
+                    }
                 }
             }
         }

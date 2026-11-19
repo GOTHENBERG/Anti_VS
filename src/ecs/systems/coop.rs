@@ -111,16 +111,7 @@ pub fn update_all_boss_combat(world: &mut World, dt: f32) {
 /// Applies the same Director poison, altar miasma and wall collision to each additional player.
 pub fn update_coop_boss_environment(world: &mut World, dt: f32) {
     let pestilence = world.directors.first().map_or(0, |director| director.grade_pestilence);
-    let altar_positions: Vec<Vec2> = world.structures.iter()
-        .filter(|structure| structure.health.is_alive()
-            && crate::content::structures::is_altar_structure_type(structure.structure_type))
-        .map(|structure| structure.pos)
-        .collect();
-    let wall_positions: Vec<(Vec2, f32)> = world.structures.iter()
-        .filter(|structure| structure.health.is_alive()
-            && structure.structure_type == crate::content::structures::STRUCTURE_WALL)
-        .map(|structure| (structure.pos, structure.radius))
-        .collect();
+    let miasma_rad_sq = 160.0 * 160.0;
 
     for player in &mut world.coop_bosses {
         if !player.boss_health.is_alive() { continue; }
@@ -135,21 +126,30 @@ pub fn update_coop_boss_environment(world: &mut World, dt: f32) {
             if damage > 0.0 { player.boss_damage_taken_timer = 3.0; player.boss_still_time = 0.0; }
             if player.boss_poison_timer <= 0.0 { player.boss_poison_dps = 0.0; }
         }
-        if pestilence > 0 && altar_positions.iter().any(|pos| pos.distance_squared(player.boss_pos) < 160.0 * 160.0) {
-            let resistance = player.boss_resistances.poison_res.clamp(-0.5, 0.85);
-            let damage = (10.0 + pestilence as f32 * 2.5) * (1.0 - resistance) * dt;
-            player.boss_health.take_damage(damage);
-            player.boss_inventory.record_damage_taken(damage, crate::ecs::components::combat::DamageType::Poison,
-                crate::ecs::components::inventory::DamageSourceKind::Hazard);
-            world.total_damage_dealt_to_boss += damage;
-            if damage > 0.0 { player.boss_damage_taken_timer = 3.0; player.boss_still_time = 0.0; }
+        if pestilence > 0 {
+            let in_altar_miasma = world.structures.iter().any(|st| {
+                st.health.is_alive()
+                    && crate::content::structures::is_altar_structure_type(st.structure_type)
+                    && st.pos.distance_squared(player.boss_pos) < miasma_rad_sq
+            });
+            if in_altar_miasma {
+                let resistance = player.boss_resistances.poison_res.clamp(-0.5, 0.85);
+                let damage = (10.0 + pestilence as f32 * 2.5) * (1.0 - resistance) * dt;
+                player.boss_health.take_damage(damage);
+                player.boss_inventory.record_damage_taken(damage, crate::ecs::components::combat::DamageType::Poison,
+                    crate::ecs::components::inventory::DamageSourceKind::Hazard);
+                world.total_damage_dealt_to_boss += damage;
+                if damage > 0.0 { player.boss_damage_taken_timer = 3.0; player.boss_still_time = 0.0; }
+            }
         }
-        for &(wall_pos, radius) in &wall_positions {
-            let diff = player.boss_pos - wall_pos;
-            let min_dist = 18.0 + radius;
-            let dist_sq = diff.length_squared();
-            if dist_sq < min_dist * min_dist && dist_sq > 0.001 {
-                player.boss_pos = wall_pos + diff / dist_sq.sqrt() * min_dist;
+        for st in &world.structures {
+            if st.health.is_alive() && st.structure_type == crate::content::structures::STRUCTURE_WALL {
+                let diff = player.boss_pos - st.pos;
+                let min_dist = 18.0 + st.radius;
+                let dist_sq = diff.length_squared();
+                if dist_sq < min_dist * min_dist && dist_sq > 0.001 {
+                    player.boss_pos = st.pos + diff / dist_sq.sqrt() * min_dist;
+                }
             }
         }
     }
@@ -158,21 +158,23 @@ pub fn update_coop_boss_environment(world: &mut World, dt: f32) {
 /// Progresses revive channels for downed Boss players. A dead player's XP and
 /// inventory stay on their player state; reviving only restores a portion of HP.
 pub fn update_revives(world: &mut World, dt: f32) {
-    let mut alive_positions: Vec<Vec2> = Vec::with_capacity(world.coop_bosses.len() + 1);
+    let mut alive_positions = [Vec2::ZERO; 8];
+    let mut alive_count = 0usize;
     if world.boss_health.is_alive() {
-        alive_positions.push(world.boss_pos);
+        alive_positions[alive_count] = world.boss_pos;
+        alive_count += 1;
     }
-    alive_positions.extend(
-        world
-            .coop_bosses
-            .iter()
-            .filter(|player| player.boss_health.is_alive())
-            .map(|player| player.boss_pos),
-    );
+    for player in &world.coop_bosses {
+        if player.boss_health.is_alive() && alive_count < 8 {
+            alive_positions[alive_count] = player.boss_pos;
+            alive_count += 1;
+        }
+    }
+    let alive_slice = &alive_positions[..alive_count];
 
     if world.boss_health.is_alive() {
         world.boss_revive_progress = 0.0;
-    } else if alive_positions
+    } else if alive_slice
         .iter()
         .any(|pos| pos.distance_squared(world.boss_pos) <= REVIVE_RADIUS * REVIVE_RADIUS)
     {
@@ -195,7 +197,7 @@ pub fn update_revives(world: &mut World, dt: f32) {
             continue;
         }
         let target_pos = world.coop_bosses[index].boss_pos;
-        let has_reviver = alive_positions
+        let has_reviver = alive_slice
             .iter()
             .any(|pos| pos.distance_squared(target_pos) <= REVIVE_RADIUS * REVIVE_RADIUS);
         if !has_reviver {

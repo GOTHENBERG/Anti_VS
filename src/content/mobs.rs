@@ -13,6 +13,18 @@ pub struct SquadConfig {
     pub description: &'static str,
 }
 
+#[inline]
+pub fn is_ranged_tier(tier: u8) -> bool {
+    matches!(tier, 3 | 7 | 8 | 11 | 15 | 16)
+}
+
+impl SquadConfig {
+    #[inline]
+    pub fn is_ranged(&self) -> bool {
+        is_ranged_tier(self.tier)
+    }
+}
+
 pub fn get_squad_config(tier: u8) -> SquadConfig {
     match tier {
         1 => SquadConfig {

@@ -26,6 +26,15 @@ pub struct MobEntity {
     pub attack_timer: f32,
 }
 
+impl MobEntity {
+    #[inline]
+    pub fn is_ranged(&self) -> bool {
+        crate::content::mobs::is_ranged_tier(self.tier)
+    }
+}
+
+pub const MAX_DIRECTOR_GRADE: u32 = 30;
+
 #[derive(Clone, Debug)]
 pub struct ProjectileEntity {
     pub id: usize,

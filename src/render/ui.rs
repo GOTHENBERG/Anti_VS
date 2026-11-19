@@ -569,7 +569,8 @@ pub fn render_ui(
                 interaction.is_mouse_over_ui = true;
             }
 
-            let can_buy = director.points >= *cost;
+            let is_max = *lvl >= crate::ecs::world::MAX_DIRECTOR_GRADE;
+            let can_buy = !is_max && director.points >= *cost;
             let bg = if can_buy {
                 if g_hover { Color::new(0.28, 0.20, 0.42, 0.98) } else { Color::new(0.20, 0.15, 0.30, 0.95) }
             } else {
@@ -580,7 +581,11 @@ pub fn render_ui(
             draw_rectangle(gx, g_y, g_btn_w, g_btn_h, bg);
             draw_rectangle_lines(gx, g_y, g_btn_w, g_btn_h, 1.5, border);
 
-            let title = format!("[{}] {} (Ур. {}) - {:.0}", key, name, lvl, cost);
+            let title = if is_max {
+                format!("[{}] {} (МАКС 30)", key, name)
+            } else {
+                format!("[{}] {} (Ур. {}) - {:.0}", key, name, lvl, cost)
+            };
             fonts.draw_heading(&title, gx + 6.0, g_y + 13.0, 11.0, if can_buy { GOLD } else { LIGHTGRAY });
             fonts.draw_text(desc, gx + 6.0, g_y + 25.0, 10.0, SKYBLUE);
 

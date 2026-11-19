@@ -1465,25 +1465,31 @@ fn execute_command(world: &mut World, cmd: Command) {
             if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
                 match grade_type {
                     0 => {
-                        let cost = 100.0 * (director.grade_fury as f32 + 1.0);
-                        if director.spend_points(cost) {
-                            director.grade_fury += 1;
-                            notification = Some((format!("🔥 ЯРОСТЬ КРОВИ (Ур. {})", director.grade_fury), RED));
+                        if director.grade_fury < crate::ecs::world::MAX_DIRECTOR_GRADE {
+                            let cost = 100.0 * (director.grade_fury as f32 + 1.0);
+                            if director.spend_points(cost) {
+                                director.grade_fury += 1;
+                                notification = Some((format!("🔥 ЯРОСТЬ КРОВИ (Ур. {})", director.grade_fury), RED));
+                            }
                         }
                     }
                     1 => {
-                        let cost = 120.0 * (director.grade_carapace as f32 + 1.0);
-                        if director.spend_points(cost) {
-                            director.grade_carapace += 1;
-                            carapace_upgraded = true;
-                            notification = Some((format!("🛡️ ПАНЦИРЬ (Ур. {})", director.grade_carapace), SKYBLUE));
+                        if director.grade_carapace < crate::ecs::world::MAX_DIRECTOR_GRADE {
+                            let cost = 120.0 * (director.grade_carapace as f32 + 1.0);
+                            if director.spend_points(cost) {
+                                director.grade_carapace += 1;
+                                carapace_upgraded = true;
+                                notification = Some((format!("🛡️ ПАНЦИРЬ (Ур. {})", director.grade_carapace), SKYBLUE));
+                            }
                         }
                     }
                     2 => {
-                        let cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
-                        if director.spend_points(cost) {
-                            director.grade_pestilence += 1;
-                            notification = Some((format!("🧪 ЧУМНЫЕ СПОРЫ (Ур. {})", director.grade_pestilence), LIME));
+                        if director.grade_pestilence < crate::ecs::world::MAX_DIRECTOR_GRADE {
+                            let cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
+                            if director.spend_points(cost) {
+                                director.grade_pestilence += 1;
+                                notification = Some((format!("🧪 ЧУМНЫЕ СПОРЫ (Ур. {})", director.grade_pestilence), LIME));
+                            }
                         }
                     }
                     _ => {}
@@ -1504,7 +1510,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                 let mut upgraded = 0;
                 match grade_type {
                     0 => {
-                        while upgraded < 1000 {
+                        while upgraded < 1000 && director.grade_fury < crate::ecs::world::MAX_DIRECTOR_GRADE {
                             let cost = 100.0 * (director.grade_fury as f32 + 1.0);
                             if director.spend_points(cost) {
                                 director.grade_fury += 1;
@@ -1518,7 +1524,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                         }
                     }
                     1 => {
-                        while upgraded < 1000 {
+                        while upgraded < 1000 && director.grade_carapace < crate::ecs::world::MAX_DIRECTOR_GRADE {
                             let cost = 120.0 * (director.grade_carapace as f32 + 1.0);
                             if director.spend_points(cost) {
                                 director.grade_carapace += 1;
@@ -1533,7 +1539,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                         }
                     }
                     2 => {
-                        while upgraded < 1000 {
+                        while upgraded < 1000 && director.grade_pestilence < crate::ecs::world::MAX_DIRECTOR_GRADE {
                             let cost = 150.0 * (director.grade_pestilence as f32 + 1.0);
                             if director.spend_points(cost) {
                                 director.grade_pestilence += 1;

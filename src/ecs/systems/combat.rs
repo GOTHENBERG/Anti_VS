@@ -80,11 +80,13 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
     let mut kamikaze_explosions = Vec::new();
     let mut boss_contact_hits = Vec::new();
+    // Глобальный переиспользуемый буфер для всех spatial_grid запросов функции update_combat
+    let mut nearby_scratch: Vec<usize> = Vec::with_capacity(128);
 
     // 1. Коллизии мобов с Боссом и контактный урон
     let mut contact_kamikaze_blast = false;
-    let nearby_mobs = world.spatial_grid.query_nearby(boss_pos, 120.0);
-    for idx in nearby_mobs {
+    world.spatial_grid.query_nearby_into(boss_pos, 120.0, &mut nearby_scratch);
+    for &idx in &nearby_scratch {
         if let Some(mob) = world.mobs.get_mut(idx) {
             let dist_sq = mob.pos.distance_squared(boss_pos);
             let collision_dist = mob.radius + boss_radius;
@@ -374,8 +376,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
         }
 
         // Взрыв также наносит урон окружающим объектам
-        let in_exp = world.spatial_grid.query_nearby(exp_pos, exp_radius);
-        for idx in in_exp {
+        world.spatial_grid.query_nearby_into(exp_pos, exp_radius, &mut nearby_scratch);
+        for &idx in &nearby_scratch {
             if let Some(mob) = world.mobs.get_mut(idx) {
                 if mob.pos.distance_squared(exp_pos) < exp_radius * exp_radius {
                     mob.health.take_damage(exp_damage * 0.5);
@@ -442,8 +444,6 @@ pub fn update_combat(world: &mut World, dt: f32) {
     let mut projectile_obelisk_contributions = Vec::new();
     let mut chain_lightning_events: Vec<(Vec2, usize, usize, f32, f32, DamageType)> = Vec::new();
     let mut mortar_explosions: Vec<(Vec2, f32, f32)> = Vec::new();
-    // Переиспользуемый буфер: ноль аллокаций на каждый снаряд.
-    let mut nearby_scratch: Vec<usize> = Vec::with_capacity(64);
 
     for proj in &mut world.projectiles {
         if proj.lifetime <= 0.0 || proj.pierce == 0 {
@@ -682,11 +682,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
         let mut curr_pos = start_pos;
 
         for _ in 0..max_jumps {
-            let nearby = world.spatial_grid.query_nearby(curr_pos, jump_rad);
+            world.spatial_grid.query_nearby_into(curr_pos, jump_rad, &mut nearby_scratch);
             let mut best_target = None;
             let mut min_d_sq = jump_rad * jump_rad;
 
-            for idx in nearby {
+            for &idx in &nearby_scratch {
                 if let Some(other) = world.mobs.get(idx) {
                     if other.health.is_alive() && !hit_ids.contains(&other.id) {
                         let d_sq = other.pos.distance_squared(curr_pos);
@@ -729,8 +729,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
     }
     for (exp_pos, exp_rad, exp_dmg) in mortar_explosions {
         world.spawn_particles(exp_pos, 16, ORANGE, exp_rad);
-        let nearby = world.spatial_grid.query_nearby(exp_pos, exp_rad);
-        for idx in nearby {
+        world.spatial_grid.query_nearby_into(exp_pos, exp_rad, &mut nearby_scratch);
+        for &idx in &nearby_scratch {
             if let Some(mob) = world.mobs.get_mut(idx) {
                 if mob.health.is_alive() && mob.pos.distance_squared(exp_pos) < exp_rad * exp_rad {
                     let packet = DamagePacket {
@@ -964,8 +964,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
     // Обработка взрывов трупов от Hellfire
     for (pos, dmg, radius) in corpse_explosions {
         world.spawn_particles(pos, 18, ORANGE, 140.0);
-        let nearby = world.spatial_grid.query_nearby(pos, radius);
-        for idx in nearby {
+        world.spatial_grid.query_nearby_into(pos, radius, &mut nearby_scratch);
+        for &idx in &nearby_scratch {
             if let Some(mob) = world.mobs.get_mut(idx) {
                 if mob.pos.distance_squared(pos) < radius * radius {
                     mob.health.take_damage(dmg);
