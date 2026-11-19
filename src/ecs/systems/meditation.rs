@@ -12,12 +12,12 @@ pub fn update_meditation(world: &mut World, dt: f32) {
     }
 
     // 1. СТАНДАРТНАЯ МЕДИТАЦИЯ
-    // Проверяем, есть ли рядом мобы (зона блокировки медитации: 450 px)
-    let has_nearby_mobs = world.spatial_grid.query_nearby(boss_pos, 450.0)
+    // Проверяем, есть ли рядом мобы (зона блокировки медитации: 300 px)
+    let has_nearby_mobs = world.spatial_grid.query_nearby(boss_pos, 300.0)
         .iter()
         .any(|&idx| {
             if let Some(mob) = world.mobs.get(idx) {
-                mob.pos.distance_squared(boss_pos) < 450.0 * 450.0
+                mob.pos.distance_squared(boss_pos) < 300.0 * 300.0
             } else {
                 false
             }
@@ -31,9 +31,9 @@ pub fn update_meditation(world: &mut World, dt: f32) {
         let prev_still = world.boss_still_time;
         world.boss_still_time += dt;
 
-        // Если стоит более 2 секунды подряд -> медитация активирована!
-        if world.boss_still_time >= 2.0 {
-            if prev_still < 2.0 {
+        // Если стоит более 1.2 секунды подряд -> медитация активирована!
+        if world.boss_still_time >= 1.2 {
+            if prev_still < 1.2 {
                 world.add_floating_text(boss_pos + Vec2::new(0.0, -35.0), "МЕДИТАЦИЯ (+HP, +XP)".to_string(), GREEN, 2.0);
             }
             // Восстановление 2% от максимального здоровья в секунду

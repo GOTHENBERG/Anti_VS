@@ -236,8 +236,9 @@ pub fn update_combat(world: &mut World, dt: f32) {
     }
     // Звук урона по боссу отключен для чистоты аудиомикса
 
-    // 1.3 Контактный урон аур по разрушаемым Алтарям Крови
-    let mut obelisk_contribution_ids = Vec::new();
+    // 1.3 Контактный урон аур по разрушаемым Алтарям Крови и Обелискам
+    let is_reward_structure = |st_type: u8| crate::content::structures::is_altar_structure_type(st_type) || st_type == crate::content::structures::STRUCTURE_OBELISK;
+    let mut structure_contribution_ids = Vec::new();
     for st in &mut world.structures {
         if !crate::content::structures::boss_can_damage_structure(st) {
             continue;
@@ -253,7 +254,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
-            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+            if is_reward_structure(st.structure_type) && dmg > 0.0 { structure_contribution_ids.push(st.id); }
         }
 
         if has_holy_hammer && dist_sq < (88.0 + st.radius).powi(2) {
@@ -266,7 +267,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
-            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+            if is_reward_structure(st.structure_type) && dmg > 0.0 { structure_contribution_ids.push(st.id); }
         }
 
         if has_divine_shield && dist_sq < (98.0 + st.radius).powi(2) {
@@ -279,7 +280,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
-            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+            if is_reward_structure(st.structure_type) && dmg > 0.0 { structure_contribution_ids.push(st.id); }
             world.boss_health.heal(dmg * 0.05);
         }
 
@@ -293,7 +294,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
-            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+            if is_reward_structure(st.structure_type) && dmg > 0.0 { structure_contribution_ids.push(st.id); }
         }
 
         if has_aegis_orbiters && dist_sq < (106.0 + st.radius).powi(2) {
@@ -306,7 +307,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
-            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+            if is_reward_structure(st.structure_type) && dmg > 0.0 { structure_contribution_ids.push(st.id); }
         }
 
         if has_invincible_bastion && dist_sq < (125.0 + st.radius).powi(2) {
@@ -319,7 +320,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
-            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+            if is_reward_structure(st.structure_type) && dmg > 0.0 { structure_contribution_ids.push(st.id); }
         }
 
         if has_sacred_scriptures && dist_sq < (92.0 + st.radius).powi(2) {
@@ -332,7 +333,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
-            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+            if is_reward_structure(st.structure_type) && dmg > 0.0 { structure_contribution_ids.push(st.id); }
         }
 
         if has_infernal_liturgy && dist_sq < (115.0 + st.radius).powi(2) {
@@ -345,10 +346,10 @@ pub fn update_combat(world: &mut World, dt: f32) {
             };
             let dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(dmg);
-            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && dmg > 0.0 { obelisk_contribution_ids.push(st.id); }
+            if is_reward_structure(st.structure_type) && dmg > 0.0 { structure_contribution_ids.push(st.id); }
         }
     }
-    for id in obelisk_contribution_ids.drain(..) { world.record_obelisk_contribution(id); }
+    for id in structure_contribution_ids.drain(..) { world.record_structure_contribution(id); }
 
     // Обработка детонаций Камикадзе
     for (exp_pos, exp_damage, exp_radius) in kamikaze_explosions {
@@ -427,11 +428,11 @@ pub fn update_combat(world: &mut World, dt: f32) {
         {
             let actual_dmg = st.resistances.calculate_damage(&packet, false);
             st.health.take_damage(actual_dmg);
-            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && actual_dmg > 0.0 { queued_obelisk_contributions.push(st.id); }
+            if is_reward_structure(st.structure_type) && actual_dmg > 0.0 { queued_obelisk_contributions.push(st.id); }
             structure_texts.push((st.pos, format!("-{:.0}", actual_dmg)));
         }
     }
-    for id in queued_obelisk_contributions { world.record_obelisk_contribution(id); }
+    for id in queued_obelisk_contributions { world.record_structure_contribution(id); }
     for (pos, txt) in structure_texts {
         world.add_floating_text(pos, txt, GOLD, 1.0);
     }
@@ -577,7 +578,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     };
                     let actual_dmg = st.resistances.calculate_damage(&packet, false);
                     st.health.take_damage(actual_dmg);
-                    if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && actual_dmg > 0.0 { projectile_obelisk_contributions.push(st.id); }
+                    if is_reward_structure(st.structure_type) && actual_dmg > 0.0 { projectile_obelisk_contributions.push(st.id); }
                     proj.pierce = proj.pierce.saturating_sub(1);
                     if proj.pierce > 0 {
                         proj.homing_strength = 0.0;
@@ -642,7 +643,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
         }
     }
 
-    for id in projectile_obelisk_contributions { world.record_obelisk_contribution(id); }
+    for id in projectile_obelisk_contributions { world.record_structure_contribution(id); }
 
     // Применяем всплывающий урон по структурам
     for (pos, txt) in structure_proj_hits {
@@ -876,10 +877,37 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 world.spawn_particles(st_pos, 35, RED, 150.0);
                 world.spawn_particles(st_pos, 25, GOLD, 130.0);
                 world.add_floating_text(st_pos, format!("АЛТАРЬ ТИРА {} УНИЧТОЖЕН!", altar_tier), GOLD, 1.6);
+
+                let total_altar_xp = 150.0 + altar_tier.saturating_sub(1) as f32 * 40.0;
+                let contributors = world.structure_contributors.remove(&st_id);
+                if let Some(contributors) = contributors {
+                    let k = contributors.len().max(1) as f32;
+                    let share = (total_altar_xp / k).round();
+                    for &contributor_id in &contributors {
+                        world.grant_boss_player_xp(contributor_id, share);
+                        let pos = if world.active_boss_id == contributor_id {
+                            world.boss_pos
+                        } else if let Some(p) = world.coop_bosses.iter().find(|p| p.id == contributor_id) {
+                            p.boss_pos
+                        } else {
+                            st_pos
+                        };
+                        world.add_floating_text(
+                            pos,
+                            format!("+{} XP (Алтарь, 1/{} доля)", share as u32, k as u32),
+                            GOLD,
+                            1.8,
+                        );
+                    }
+                } else {
+                    world.grant_shared_boss_xp(total_altar_xp);
+                }
+
+                // Дропаем утилитный магнит без дублирования опыта
                 dropped_gems.push(SoulGemEntity {
                     id: st_id,
                     pos: st_pos,
-                    xp_value: 150.0 + altar_tier.saturating_sub(1) as f32 * 40.0,
+                    xp_value: 0.0,
                     is_magnet: true,
                 });
             }
@@ -900,9 +928,15 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 let base_xp = crate::content::structures::OBELISK_REWARD_BASE_XP;
                 let pct = crate::content::structures::OBELISK_REWARD_NEXT_LEVEL_PERCENT;
 
-                if let Some(contributors) = world.obelisk_contributors.remove(&st_id) {
+                let contributors = world
+                    .structure_contributors
+                    .remove(&st_id)
+                    .or_else(|| world.obelisk_contributors.remove(&st_id));
+
+                if let Some(contributors) = contributors {
+                    let k = contributors.len().max(1) as f32;
                     for contributor_id in &contributors {
-                        // Обелиск даёт +N XP + процент XP для следующего уровня прокачки
+                        // Обелиск даёт (+N XP + процент XP для следующего уровня) / количество нанесших урон
                         let next_req = if world.active_boss_id == *contributor_id {
                             world.boss_inventory.xp_to_next_level
                         } else if let Some(p) = world.coop_bosses.iter().find(|p| p.id == *contributor_id) {
@@ -910,7 +944,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
                         } else {
                             40.0
                         };
-                        let reward = (base_xp + next_req * pct).round();
+                        let total_reward = base_xp + next_req * pct;
+                        let reward = (total_reward / k).round();
                         world.grant_boss_player_xp(*contributor_id, reward);
 
                         // Восстановление 15% HP и персональный текст награды каждому участнику
@@ -921,7 +956,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                             }
                             world.add_floating_text(
                                 world.boss_pos,
-                                format!("+{} XP (Разлом +{:.0}%)", reward as u32, pct * 100.0),
+                                format!("+{} XP (Разлом, 1/{} доля)", reward as u32, k as u32),
                                 GOLD,
                                 2.2,
                             );
@@ -933,7 +968,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                             let player_pos = player.boss_pos;
                             world.add_floating_text(
                                 player_pos,
-                                format!("+{} XP (Разлом +{:.0}%)", reward as u32, pct * 100.0),
+                                format!("+{} XP (Разлом, 1/{} доля)", reward as u32, k as u32),
                                 GOLD,
                                 2.2,
                             );
@@ -946,14 +981,15 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 world.spawn_particles(st_pos, 40, SKYBLUE, 180.0);
                 world.add_floating_text(
                     st_pos,
-                    format!("ИНФЕРНАЛЬНЫЙ РАЗЛОМ ЗАКРЫТ! (+{} XP + {:.0}% ур.)", base_xp as u32, pct * 100.0),
+                    format!("ИНФЕРНАЛЬНЫЙ РАЗЛОМ ЗАКРЫТ! (+{} XP)", base_xp as u32),
                     GOLD,
                     2.8,
                 );
+                // Дропаем утилитный магнит без повторного начисления XP (xp_value: 0.0)
                 dropped_gems.push(SoulGemEntity {
                     id: st_id,
                     pos: st_pos,
-                    xp_value: base_xp,
+                    xp_value: 0.0,
                     is_magnet: true,
                 });
             }

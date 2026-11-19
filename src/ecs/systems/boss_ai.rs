@@ -188,19 +188,21 @@ pub fn resolve_boss_dash(world: &mut World, dash_dir: Vec2) {
             }
         }
     }
-    let mut obelisk_contribution_ids = Vec::new();
+    let mut structure_contribution_ids = Vec::new();
     for st in &mut world.structures {
         if st.health.is_alive()
             && crate::content::structures::boss_can_damage_structure(st)
             && st.pos.distance_squared(dash_target) < 65.0 * 65.0
         {
             st.health.take_damage(160.0);
-            if st.structure_type == crate::content::structures::STRUCTURE_OBELISK {
-                obelisk_contribution_ids.push(st.id);
+            if crate::content::structures::is_altar_structure_type(st.structure_type)
+                || st.structure_type == crate::content::structures::STRUCTURE_OBELISK
+            {
+                structure_contribution_ids.push(st.id);
             }
         }
     }
-    for id in obelisk_contribution_ids { world.record_obelisk_contribution(id); }
+    for id in structure_contribution_ids { world.record_structure_contribution(id); }
 }
 
 fn clamp_boss_to_arena(world: &mut World) {

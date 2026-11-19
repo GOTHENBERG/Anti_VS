@@ -208,6 +208,98 @@ pub fn spawn_squad_in_sector(world: &mut World, tier: u8, sector: usize) {
     }
 }
 
+pub const MIN_BOSS_MOB_SPAWN_DIST: f32 = 420.0;
+
+/// Проверяет и корректирует координаты спавна моба так, чтобы он гарантированно не
+/// появился внутри хитбокса или в непосредственной опасной зоне (< 420 px) от ЛЮБОГО живого босса.
+pub fn find_safe_mob_spawn_pos(
+    world: &World,
+    raw_pos: Vec2,
+    target_boss_pos: Vec2,
+    min_boss_distance: f32,
+) -> Vec2 {
+    let map_w = crate::core::MAP_WIDTH;
+    let map_h = crate::core::MAP_HEIGHT;
+    let margin = 35.0;
+
+    let mut pos = Vec2::new(
+        raw_pos.x.clamp(margin, map_w - margin),
+        raw_pos.y.clamp(margin, map_h - margin),
+    );
+
+    let mut live_boss_positions = Vec::with_capacity(world.coop_bosses.len() + 1);
+    if world.boss_health.is_alive() {
+        live_boss_positions.push(world.boss_pos);
+    }
+    for player in &world.coop_bosses {
+        if player.boss_health.is_alive() {
+            live_boss_positions.push(player.boss_pos);
+        }
+    }
+
+    if live_boss_positions.is_empty() {
+        return pos;
+    }
+
+    let min_dist_sq = min_boss_distance * min_boss_distance;
+
+    for _ in 0..4 {
+        let mut conflict_found = false;
+        for &boss_p in &live_boss_positions {
+            let diff = pos - boss_p;
+            let dist_sq = diff.length_squared();
+            if dist_sq < min_dist_sq {
+                conflict_found = true;
+                let dist = dist_sq.sqrt();
+                let push_dir = if dist > 1.0 {
+                    diff / dist
+                } else {
+                    let away = boss_p - target_boss_pos;
+                    if away.length_squared() > 1.0 {
+                        away.normalize()
+                    } else {
+                        let center = Vec2::new(map_w * 0.5, map_h * 0.5);
+                        let center_dir = center - boss_p;
+                        if center_dir.length_squared() > 1.0 {
+                            center_dir.normalize()
+                        } else {
+                            Vec2::new(0.0, -1.0)
+                        }
+                    }
+                };
+
+                let mut candidate = boss_p + push_dir * min_boss_distance;
+                let clamped_candidate = Vec2::new(
+                    candidate.x.clamp(margin, map_w - margin),
+                    candidate.y.clamp(margin, map_h - margin),
+                );
+
+                if clamped_candidate.distance_squared(boss_p) < min_dist_sq {
+                    let perp = Vec2::new(-push_dir.y, push_dir.x);
+                    let alt1 = boss_p + perp * min_boss_distance;
+                    let alt2 = boss_p - perp * min_boss_distance;
+                    let alt1_c = Vec2::new(alt1.x.clamp(margin, map_w - margin), alt1.y.clamp(margin, map_h - margin));
+                    let alt2_c = Vec2::new(alt2.x.clamp(margin, map_w - margin), alt2.y.clamp(margin, map_h - margin));
+                    candidate = if alt1_c.distance_squared(boss_p) >= alt2_c.distance_squared(boss_p) {
+                        alt1_c
+                    } else {
+                        alt2_c
+                    };
+                } else {
+                    candidate = clamped_candidate;
+                }
+
+                pos = candidate;
+            }
+        }
+        if !conflict_found {
+            break;
+        }
+    }
+
+    pos
+}
+
 /// Спавн отряда дугой `arc_width` с центром в `center_angle`.
 fn spawn_squad_arc_at(
     world: &mut World,
@@ -219,8 +311,6 @@ fn spawn_squad_arc_at(
     arc_width: f32,
 ) {
     let config = get_squad_config(tier);
-    let map_w = crate::core::MAP_WIDTH;
-    let map_h = crate::core::MAP_HEIGHT;
 
     for i in 0..config.count {
         let id = world.alloc_id();
@@ -231,10 +321,8 @@ fn spawn_squad_arc_at(
         let offset = Vec2::new(angle.cos() * ring_radius, angle.sin() * ring_radius);
         let raw_spawn_pos = boss_pos + offset;
 
-        let spawn_pos = Vec2::new(
-            raw_spawn_pos.x.clamp(20.0, map_w - 20.0),
-            raw_spawn_pos.y.clamp(20.0, map_h - 20.0),
-        );
+        // Гарантируем, что моб не появится в опасной близости от ЛЮБОГО живого босса
+        let spawn_pos = find_safe_mob_spawn_pos(world, raw_spawn_pos, boss_pos, MIN_BOSS_MOB_SPAWN_DIST);
 
         let (base_hp, base_spd, base_dmg, base_rad, mut flat_armor, mut phys_res, ice_res, fire_res, is_undead, knockback_immune) = match tier {
             1 => (32.0, 105.0, 7.0, 10.0, 0.0, 0.05, 0.0, 0.0, true, false), // Скелет
@@ -410,4 +498,32 @@ pub fn spawn_single_mob_at_pos(world: &mut World, tier: u8, pos: Vec2) {
 /// Спавн элитного стража (гарантированный золотой статус, усиленные HP и урон)
 pub fn spawn_elite_guard_at_pos(world: &mut World, tier: u8, pos: Vec2) {
     spawn_single_mob_at_pos_with_elite(world, tier, pos, true);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_spawn_avoids_nearby_bosses() {
+        let mut world = World::new();
+        // Босс 1 в точке (1000, 1000)
+        world.boss_pos = Vec2::new(1000.0, 1000.0);
+        world.boss_health.current = 1000.0;
+
+        // Босс 2 в точке (1820, 1000) - ровно на расстоянии радиуса кольца спавна (820 px)!
+        world.add_coop_boss(2, Vec2::new(1820.0, 1000.0), "Boss2".to_string(), 0);
+
+        // Сырая точка спавна от Босса 1 строго по оси X в сторону Босса 2: (1000 + 820, 1000) = (1820, 1000)
+        let raw_point = Vec2::new(1820.0, 1000.0);
+        assert_eq!(raw_point.distance(world.coop_bosses[0].boss_pos), 0.0);
+
+        // Безопасный спавн должен вытолкнуть моба минимум на 420 px от Босса 2
+        let safe_pos = find_safe_mob_spawn_pos(&world, raw_point, world.boss_pos, MIN_BOSS_MOB_SPAWN_DIST);
+        let dist_to_boss2 = safe_pos.distance(world.coop_bosses[0].boss_pos);
+        let dist_to_boss1 = safe_pos.distance(world.boss_pos);
+
+        assert!(dist_to_boss2 >= MIN_BOSS_MOB_SPAWN_DIST - 1.0, "Моб слишком близко к Боссу 2: dist={}", dist_to_boss2);
+        assert!(dist_to_boss1 >= MIN_BOSS_MOB_SPAWN_DIST - 1.0, "Моб слишком близко к Боссу 1: dist={}", dist_to_boss1);
+    }
 }

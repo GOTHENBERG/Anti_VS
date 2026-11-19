@@ -312,6 +312,7 @@ pub struct World {
     pub death_ray_active: Option<(Vec2, Vec2, f32)>,
     pub coop_bosses: Vec<BossPlayerState>,
     pub obelisk_contributors: HashMap<usize, HashSet<u8>>,
+    pub structure_contributors: HashMap<usize, HashSet<u8>>,
     pub game_time: f32, // Игровое время симуляции / сессии
     pub match_duration_secs: f32,
 
@@ -435,7 +436,15 @@ impl World {
         target
     }
 
+    pub fn record_structure_contribution(&mut self, structure_id: usize) {
+        self.structure_contributors
+            .entry(structure_id)
+            .or_default()
+            .insert(self.active_boss_id);
+    }
+
     pub fn record_obelisk_contribution(&mut self, structure_id: usize) {
+        self.record_structure_contribution(structure_id);
         self.obelisk_contributors
             .entry(structure_id)
             .or_default()
@@ -444,14 +453,18 @@ impl World {
 
     pub fn grant_boss_player_xp(&mut self, player_id: u8, amount: f32) {
         if self.active_boss_id == player_id {
-            self.boss_pending_level_ups += self.boss_inventory.add_xp(amount);
+            if self.boss_health.is_alive() {
+                self.boss_pending_level_ups += self.boss_inventory.add_xp(amount);
+            }
         } else if let Some(player) = self.coop_bosses.iter_mut().find(|player| player.id == player_id) {
-            player.pending_level_ups += player.boss_inventory.add_xp(amount);
+            if player.boss_health.is_alive() {
+                player.pending_level_ups += player.boss_inventory.add_xp(amount);
+            }
         }
     }
 
-    /// Distributes XP among living Bosses; downed players receive the same share
-    /// without reducing the living players' share, as required by the co-op rules.
+    /// Распределяет опыт между живыми Боссами кратно их количеству.
+    /// Поверженные боссы не получают опыт до воскрешения.
     pub fn grant_shared_boss_xp(&mut self, total_xp: f32) {
         if total_xp <= 0.0 {
             return;
@@ -461,9 +474,13 @@ impl World {
             return;
         }
         let share = total_xp / living_count as f32;
-        self.boss_pending_level_ups += self.boss_inventory.add_xp(share);
+        if self.boss_health.is_alive() {
+            self.boss_pending_level_ups += self.boss_inventory.add_xp(share);
+        }
         for player in &mut self.coop_bosses {
-            player.pending_level_ups += player.boss_inventory.add_xp(share);
+            if player.boss_health.is_alive() {
+                player.pending_level_ups += player.boss_inventory.add_xp(share);
+            }
         }
     }
 
@@ -517,6 +534,7 @@ impl World {
             death_ray_active: None,
             coop_bosses: Vec::new(),
             obelisk_contributors: HashMap::new(),
+            structure_contributors: HashMap::new(),
             game_time: 0.0,
             match_duration_secs: crate::core::time::GAME_DURATION_SECS,
             spatial_grid: SpatialGrid::new(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT),
