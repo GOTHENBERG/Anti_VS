@@ -1789,74 +1789,87 @@ pub fn update_world_structures(world: &mut World, dt: f32) {
         }
     }
 
-    // 3.1 Цикл активации Угловых Инфернальных Разломов (раз в 60 секунд)
-    world.obelisk_cycle_timer -= dt;
-    if world.obelisk_cycle_timer <= 0.0 {
-        world.obelisk_cycle_timer = 60.0;
-        let obelisk_indices: Vec<usize> = world.structures
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.structure_type == crate::content::structures::STRUCTURE_OBELISK && !s.is_active)
-            .map(|(i, _)| i)
-            .collect();
+    // 3.1 Цикл активации Угловых Инфернальных Разломов (раз в 60 секунд после закрытия/прорыва предыдущего)
+    let any_obelisk_active = world.structures.iter().any(|s| {
+        s.structure_type == crate::content::structures::STRUCTURE_OBELISK && s.is_active
+    });
 
-        if !obelisk_indices.is_empty() {
-            let choice = rand::gen_range(0, obelisk_indices.len());
-            let target_idx = obelisk_indices[choice];
-            if let Some(obelisk) = world.structures.get_mut(target_idx) {
-                obelisk.is_active = true;
-                obelisk.state_timer = 20.0;
-                obelisk.health.current = obelisk.health.max;
-                let pos = obelisk.pos;
+    if !any_obelisk_active {
+        world.obelisk_cycle_timer -= dt;
+        if world.obelisk_cycle_timer <= 0.0 {
+            world.obelisk_cycle_timer = 60.0;
+            let obelisk_indices: Vec<usize> = world.structures
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.structure_type == crate::content::structures::STRUCTURE_OBELISK && !s.is_active)
+                .map(|(i, _)| i)
+                .collect();
 
-                let corner_name = if pos.x < 1000.0 && pos.y < 1000.0 {
-                    "Северо-Запад"
-                } else if pos.x > 1000.0 && pos.y < 1000.0 {
-                    "Северо-Восток"
-                } else if pos.x < 1000.0 && pos.y > 1000.0 {
-                    "Юго-Запад"
-                } else {
-                    "Юго-Восток"
-                };
+            if !obelisk_indices.is_empty() {
+                let obelisk_hp = crate::content::structures::OBELISK_BASE_HP_PER_BOSS * world.living_boss_count().max(1) as f32;
+                let choice = rand::gen_range(0, obelisk_indices.len());
+                let target_idx = obelisk_indices[choice];
+                if let Some(obelisk) = world.structures.get_mut(target_idx) {
+                    obelisk.is_active = true;
+                    obelisk.state_timer = crate::content::structures::OBELISK_CHARGE_SECONDS;
+                    obelisk.health.max = obelisk_hp;
+                    obelisk.health.current = obelisk_hp;
+                    let pos = obelisk.pos;
 
-                world.screen_shake = 16.0;
-                world.add_floating_text(
-                    pos,
-                    format!("РАЗЛОМ [{}]! 20с до Прорыва!", corner_name),
-                    GOLD,
-                    3.0,
-                );
+                    let corner_name = if pos.x < 1000.0 && pos.y < 1000.0 {
+                        "Северо-Запад"
+                    } else if pos.x > 1000.0 && pos.y < 1000.0 {
+                        "Северо-Восток"
+                    } else if pos.x < 1000.0 && pos.y > 1000.0 {
+                        "Юго-Запад"
+                    } else {
+                        "Юго-Восток"
+                    };
 
-                // Спавн элитных стражей Разлома вокруг активированного обелиска
-                let guard_tier = match world.boss_player_count() {
-                    1 => 4, // Голем (Tier 4)
-                    2 => 6, // Демон теней (Tier 6)
-                    _ => 8, // Жнец Смерти (Tier 8)
-                };
-                let guard_count = (2 * world.boss_player_count()).clamp(2, 8);
-                for i in 0..guard_count {
-                    let angle = (i as f32 / guard_count as f32) * std::f32::consts::TAU;
-                    let guard_pos = pos + Vec2::new(angle.cos(), angle.sin()) * 115.0;
-                    crate::content::mobs::spawn_elite_guard_at_pos(world, guard_tier, guard_pos);
+                    world.screen_shake = 16.0;
+                    world.add_floating_text(
+                        pos,
+                        format!("ИНФЕРНАЛЬНЫЙ РАЗЛОМ [{}]! 3 МИНУТЫ ДО ПРОРЫВА!", corner_name),
+                        GOLD,
+                        3.5,
+                    );
+
+                    // Спавн элитных стражей Разлома вокруг активированного обелиска
+                    let guard_tier = match world.boss_player_count() {
+                        1 => 4, // Голем (Tier 4)
+                        2 => 6, // Демон теней (Tier 6)
+                        _ => 8, // Жнец Смерти (Tier 8)
+                    };
+                    let guard_count = (2 * world.boss_player_count()).clamp(2, 8);
+                    for i in 0..guard_count {
+                        let angle = (i as f32 / guard_count as f32) * std::f32::consts::TAU;
+                        let guard_pos = pos + Vec2::new(angle.cos(), angle.sin()) * 115.0;
+                        crate::content::mobs::spawn_elite_guard_at_pos(world, guard_tier, guard_pos);
+                    }
                 }
             }
         }
     }
 
     // 3.2 Таймер зарядки активного разлома и Прорыв
-    let mut breach_event_pos = None;
+    let obelisk_reset_hp = crate::content::structures::OBELISK_BASE_HP_PER_BOSS * world.living_boss_count().max(1) as f32;
+    let mut breach_event = None;
     for st in &mut world.structures {
         if st.structure_type == crate::content::structures::STRUCTURE_OBELISK && st.is_active {
             st.state_timer -= dt;
             if st.state_timer <= 0.0 {
                 st.is_active = false;
-                breach_event_pos = Some(st.pos);
+                st.health.max = obelisk_reset_hp;
+                st.health.current = st.health.max;
+                breach_event = Some((st.id, st.pos));
             }
         }
     }
 
     // ИНФЕРНАЛЬНЫЙ ПРОРЫВ: призыв элитного легиона по формуле (доход игрока * 15)
-    if let Some(pos) = breach_event_pos {
+    if let Some((st_id, pos)) = breach_event {
+        world.structure_contributors.remove(&st_id);
+        world.obelisk_contributors.remove(&st_id);
         world.screen_shake = 22.0;
         world.spawn_particles(pos, 50, PURPLE, 240.0);
         world.spawn_particles(pos, 35, RED, 180.0);

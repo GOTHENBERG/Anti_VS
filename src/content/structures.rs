@@ -19,6 +19,8 @@ pub const WALL_LIFETIME: f32 = 60.0;
 pub const WALL_RADIUS: f32 = 25.0; // 50x50 px баррикада
 pub const OBELISK_RADIUS: f32 = 75.0; // 300x300 px визуальный размер
 pub const OBELISK_FOOTPRINT_HALF_EXTENT: f32 = OBELISK_RADIUS * 2.0;
+pub const OBELISK_BASE_HP_PER_BOSS: f32 = 2400.0; // 2400 HP на каждого живого босса
+pub const OBELISK_CHARGE_SECONDS: f32 = 180.0; // 3 минуты до инфернального прорыва
 pub const OBELISK_REWARD_BASE_XP: f32 = 350.0;
 pub const OBELISK_REWARD_NEXT_LEVEL_PERCENT: f32 = 0.25; // +25% от шкалы опыта следующего уровня
 
@@ -348,7 +350,7 @@ pub fn spawn_corner_obelisks(world: &mut World) {
         world.structures.push(StructureEntity {
             id,
             pos,
-            health: Health::new(1500.0 * world.boss_player_count() as f32),
+            health: Health::new(OBELISK_BASE_HP_PER_BOSS * world.living_boss_count().max(1) as f32),
             resistances,
             faction: Faction::Director,
             radius: OBELISK_RADIUS,
@@ -360,5 +362,60 @@ pub fn spawn_corner_obelisks(world: &mut World) {
             is_active: false,
             state_timer: 0.0,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_obelisk_hp_scaling_and_relic_reward() {
+        let mut world = World::new();
+        // Босс 1 жив
+        assert_eq!(world.living_boss_count(), 1);
+
+        // Проверяем изначальное здоровье обелисков для 1 живого босса
+        spawn_corner_obelisks(&mut world);
+        assert_eq!(world.structures.len(), 4);
+        for st in &world.structures {
+            assert_eq!(st.health.max, 2400.0);
+            assert_eq!(st.health.current, 2400.0);
+            assert!(!st.is_active);
+        }
+
+        // Добавляем второго живого босса
+        world.add_coop_boss(2, Vec2::new(1200.0, 1200.0), "Boss2".to_string(), 0);
+        assert_eq!(world.living_boss_count(), 2);
+
+        // При 2 боссах обелиски должны отмасштабироваться до 4800 HP
+        for st in &world.structures {
+            assert_eq!(st.health.max, 4800.0);
+            assert_eq!(st.health.current, 4800.0);
+        }
+
+        // Активируем первый обелиск (на 3 минуты = 180с)
+        let obelisk_id = world.structures[0].id;
+        world.structures[0].is_active = true;
+        world.structures[0].state_timer = OBELISK_CHARGE_SECONDS;
+        assert_eq!(world.structures[0].state_timer, 180.0);
+
+        // Записываем урон от активного босса (ID 1)
+        world.record_obelisk_contribution(obelisk_id);
+        assert_eq!(world.boss_inventory.passives.len(), 0);
+
+        // Уничтожаем активный обелиск
+        world.structures[0].health.current = 0.0;
+        crate::ecs::systems::combat::update_combat(&mut world, 0.016);
+
+        // Проверяем, что босс получил в награду Реликвию!
+        assert_eq!(world.boss_inventory.passives.len(), 1);
+        assert_eq!(world.boss_obelisks_deactivated_total, 1);
+
+        // Проверяем, что обелиск деактивировался, а HP сбросилось до полного значения для 2 боссов
+        let obelisk = world.structures.iter().find(|s| s.id == obelisk_id).unwrap();
+        assert!(!obelisk.is_active);
+        assert_eq!(obelisk.state_timer, 0.0);
+        assert_eq!(obelisk.health.current, 4800.0);
     }
 }
