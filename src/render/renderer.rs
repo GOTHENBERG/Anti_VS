@@ -86,19 +86,14 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
 
         match structure.structure_type {
             altar_type if crate::content::structures::is_altar_structure_type(altar_type) => {
-                draw_circle_lines(
-                    structure.pos.x,
-                    structure.pos.y,
-                    structure.radius,
-                    1.8,
-                    Color::new(1.0, 0.78, 0.35, 0.72),
-                );
-                draw_circle_lines(
-                    structure.pos.x,
-                    structure.pos.y,
-                    crate::content::structures::ALTAR_MIN_SPACING,
-                    1.0,
-                    Color::new(1.0, 0.78, 0.35, 0.18),
+                let half = crate::content::structures::ALTAR_HALF_EXTENT;
+                draw_rectangle_lines(
+                    structure.pos.x - half,
+                    structure.pos.y - half,
+                    half * 2.0,
+                    half * 2.0,
+                    1.5,
+                    Color::new(1.0, 0.45, 0.35, 0.50),
                 );
             }
             crate::content::structures::STRUCTURE_WALL => {

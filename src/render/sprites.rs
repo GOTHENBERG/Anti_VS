@@ -571,52 +571,52 @@ pub fn draw_blood_altar(pos: Vec2, current_hp: f32, max_hp: f32, tier: u8, time:
     draw_line(fp_x + fp_w, fp_y + fp_h, fp_x + fp_w, fp_y + fp_h - marker_len, 2.5, mcol);
 
     if let Some(altar_tex) = textures.altar.as_ref() {
-        draw_ellipse(pos.x, pos.y + 18.0, 28.0, 10.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.55));
+        draw_ellipse(pos.x, pos.y + 36.0, 44.0, 14.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.55));
         let pulse = (time * 4.0).sin() * 2.0;
-        draw_circle(pos.x, pos.y + 4.0, 22.0 + pulse, Color::new(tier_color.r, tier_color.g, tier_color.b, 0.35));
+        draw_circle(pos.x, pos.y + 8.0, 36.0 + pulse, Color::new(tier_color.r, tier_color.g, tier_color.b, 0.35));
 
         draw_texture_ex(
             altar_tex,
-            pos.x - 20.0,
-            pos.y - 40.0,
+            pos.x - 42.0,
+            pos.y - 66.0,
             tier_color,
             DrawTextureParams {
-                dest_size: Some(Vec2::new(40.0, 64.0)),
+                dest_size: Some(Vec2::new(84.0, 108.0)),
                 ..Default::default()
             },
         );
 
         let hp_pct = (current_hp / max_hp).clamp(0.0, 1.0);
-        draw_rectangle(pos.x - 25.0, pos.y - 48.0, 50.0, 6.0, DARKGRAY);
-        draw_rectangle(pos.x - 25.0, pos.y - 48.0, 50.0 * hp_pct, 6.0, RED);
-        draw_rectangle_lines(pos.x - 25.0, pos.y - 48.0, 50.0, 6.0, 1.5, WHITE);
+        draw_rectangle(pos.x - 36.0, pos.y - 74.0, 72.0, 6.5, DARKGRAY);
+        draw_rectangle(pos.x - 36.0, pos.y - 74.0, 72.0 * hp_pct, 6.5, RED);
+        draw_rectangle_lines(pos.x - 36.0, pos.y - 74.0, 72.0, 6.5, 1.5, WHITE);
     } else {
-        draw_ellipse(pos.x, pos.y + 20.0, 38.0, 16.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.5));
-        draw_circle(pos.x, pos.y, 28.0, Color::new(0.18, 0.12, 0.22, 1.0));
-        draw_circle_lines(pos.x, pos.y, 28.0, 3.0, Color::new(0.5, 0.1, 0.65, 1.0));
+        draw_ellipse(pos.x, pos.y + 36.0, 48.0, 18.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.5));
+        draw_circle(pos.x, pos.y, 42.0, Color::new(0.18, 0.12, 0.22, 1.0));
+        draw_circle_lines(pos.x, pos.y, 42.0, 3.5, Color::new(0.5, 0.1, 0.65, 1.0));
 
-        let blood_pulse = (time * 4.0).sin() * 2.0;
-        draw_circle(pos.x, pos.y, 18.0 + blood_pulse, Color::new(0.7, 0.05, 0.15, 1.0));
-        draw_circle(pos.x, pos.y, 8.0, Color::new(0.9, 0.1, 0.2, 0.8));
+        let blood_pulse = (time * 4.0).sin() * 2.5;
+        draw_circle(pos.x, pos.y, 28.0 + blood_pulse, Color::new(0.7, 0.05, 0.15, 1.0));
+        draw_circle(pos.x, pos.y, 14.0, Color::new(0.9, 0.1, 0.2, 0.8));
 
         let hp_pct = (current_hp / max_hp).clamp(0.0, 1.0);
-        draw_rectangle(pos.x - 25.0, pos.y - 38.0, 50.0, 6.0, DARKGRAY);
-        draw_rectangle(pos.x - 25.0, pos.y - 38.0, 50.0 * hp_pct, 6.0, RED);
-        draw_rectangle_lines(pos.x - 25.0, pos.y - 38.0, 50.0, 6.0, 1.5, WHITE);
+        draw_rectangle(pos.x - 36.0, pos.y - 64.0, 72.0, 6.5, DARKGRAY);
+        draw_rectangle(pos.x - 36.0, pos.y - 64.0, 72.0 * hp_pct, 6.5, RED);
+        draw_rectangle_lines(pos.x - 36.0, pos.y - 64.0, 72.0, 6.5, 1.5, WHITE);
     }
 
     // A tier-specific summon portrait reuses the project's matching mob sprite,
     // making every altar type readable without adding third-party art.
-    draw_circle(pos.x, pos.y - 24.0, 11.0, Color::new(0.06, 0.07, 0.10, 0.95));
-    draw_circle_lines(pos.x, pos.y - 24.0, 11.0, 1.6, tier_color);
+    draw_circle(pos.x, pos.y - 38.0, 14.0, Color::new(0.06, 0.07, 0.10, 0.95));
+    draw_circle_lines(pos.x, pos.y - 38.0, 14.0, 2.0, tier_color);
     if let Some(mob_portrait) = textures.get_mob_texture(tier, 0) {
         draw_texture_ex(
             mob_portrait,
-            pos.x - 8.0,
-            pos.y - 32.0,
+            pos.x - 10.0,
+            pos.y - 48.0,
             WHITE,
             DrawTextureParams {
-                dest_size: Some(Vec2::new(16.0, 16.0)),
+                dest_size: Some(Vec2::new(20.0, 20.0)),
                 ..Default::default()
             },
         );

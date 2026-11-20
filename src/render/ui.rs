@@ -64,6 +64,25 @@ pub fn draw_pixel_lock(x: f32, y: f32, color: Color) {
     draw_line(x + 4.25, y + 7.0, x + 4.25, y + 9.0, 1.0, hole_col);
 }
 
+/// Процедурная отрисовка крупного пиксельного замка (Pixel Padlock Large)
+/// для красивой блокировки всей карточки моба и алтаря
+pub fn draw_pixel_lock_large(cx: f32, cy: f32, color: Color) {
+    let shackle_color = Color::new(color.r * 0.9 + 0.1, color.g * 0.9 + 0.1, color.b * 0.9 + 0.1, color.a);
+    // Дужка замка (толстая U-образная)
+    draw_line(cx - 6.0, cy - 8.0, cx + 6.0, cy - 8.0, 2.2, shackle_color);
+    draw_line(cx - 6.0, cy - 8.0, cx - 6.0, cy - 1.0, 2.2, shackle_color);
+    draw_line(cx + 6.0, cy - 8.0, cx + 6.0, cy - 1.0, 2.2, shackle_color);
+
+    // Корпус замка (18x14 пикселей)
+    draw_rectangle(cx - 9.0, cy - 1.0, 18.0, 14.0, color);
+    draw_rectangle_lines(cx - 9.0, cy - 1.0, 18.0, 14.0, 1.2, Color::new(color.r * 0.45, color.g * 0.45, color.b * 0.45, color.a));
+
+    // Замочная скважина
+    let hole_col = Color::new(0.08, 0.05, 0.08, color.a);
+    draw_circle(cx, cy + 3.5, 2.0, hole_col);
+    draw_line(cx, cy + 3.5, cx, cy + 9.0, 1.8, hole_col);
+}
+
 /// Процедурная отрисовка пиксельной молнии (Pixel Lightning Spark)
 pub fn draw_pixel_lightning(x: f32, y: f32, color: Color) {
     draw_line(x + 4.0, y, x + 1.0, y + 5.0, 1.5, color);
@@ -149,9 +168,16 @@ pub fn render_ui(
     }
     draw_rectangle(track_btn_x, track_btn_y, track_btn_w, track_btn_h, if track_hover { Color::new(0.20, 0.25, 0.38, 1.0) } else { Color::new(0.10, 0.11, 0.15, 0.95) });
     draw_rectangle_lines(track_btn_x, track_btn_y, track_btn_w, track_btn_h, 1.2, if track_hover { SKYBLUE } else { DARKGRAY });
-    let t_label = "Трек [N] >";
+    let t_label = "Трек [N]";
     let tw = fonts.measure_heading(t_label, 11.0).width;
-    fonts.draw_heading(t_label, track_btn_x + (track_btn_w - tw) / 2.0, track_btn_y + 16.0, 11.0, if track_hover { GOLD } else { SKYBLUE });
+    let t_col = if track_hover { GOLD } else { SKYBLUE };
+    let t_start_x = track_btn_x + (track_btn_w - (tw + 12.0)) / 2.0;
+    fonts.draw_heading(t_label, t_start_x, track_btn_y + 16.0, 11.0, t_col);
+    // Процедурные стрелки вперед [►►] вместо символа '>'
+    let ar_x = t_start_x + tw + 4.0;
+    let ar_y = track_btn_y + track_btn_h / 2.0;
+    draw_triangle(Vec2::new(ar_x + 4.0, ar_y), Vec2::new(ar_x, ar_y - 3.5), Vec2::new(ar_x, ar_y + 3.5), t_col);
+    draw_triangle(Vec2::new(ar_x + 8.0, ar_y), Vec2::new(ar_x + 4.0, ar_y - 3.5), Vec2::new(ar_x + 4.0, ar_y + 3.5), t_col);
 
     if is_mouse_button_pressed(MouseButton::Left) && track_hover {
         interaction.clicked_next_track = true;
@@ -422,9 +448,9 @@ pub fn render_ui(
 
     // 7. СТИЛЬНАЯ ПАНЕЛЬ ОЧКОВ ДУШ И ДОХОДА В ОДНУ СТРОКУ (Справа внизу)
     if let Some(director) = world.directors.first() {
-        let panel_w = 264.0;
+        let panel_w = 236.0;
         let panel_h = 40.0;
-        let panel_x = screen_w - panel_w - 18.0;
+        let panel_x = screen_w - panel_w - 14.0;
         let panel_y = screen_h - panel_h - 16.0;
 
         if mx >= panel_x && mx <= panel_x + panel_w && my >= panel_y && my <= panel_y + panel_h {
@@ -587,17 +613,19 @@ pub fn render_ui(
         let w_cnt = format!("Жизнь: {} шт", live_walls);
         fonts.draw_text(&w_cnt, w_cx, sw_y + 46.0, 9.5, LIGHTGRAY);
 
-        // 8. ПАНЕЛЬ ГРЕЙДОВ МОБОВ ДИРЕКТОРА [F, G, H] (Над карточками мобов, поддержка Shift для прокачки на все)
+        // 8. ПАНЕЛЬ ГРЕЙДОВ МОБОВ ДИРЕКТОРА [Z, X, C] И ПЕРЕКЛЮЧЕНИЯ СТРАНИЦ [ОРДА / ЛЕГИОН]
         let is_shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         let card_w = 78.0;
         let card_gap = 5.0;
-        let total_cards_w = 8.0 * card_w + 7.0 * card_gap; // 659px
+        let total_cards_w = 8.0 * card_w + 7.0 * card_gap; // 659.0px
         let cards_start_x = (screen_w - total_cards_w) / 2.0;
 
-        let g_btn_w = (total_cards_w - 16.0) / 3.0; // 214.3px
-        let g_btn_h = 30.0;
+        let page_tab_w = 82.0;
+        let g_gap = 6.0;
+        let g_btn_w = (total_cards_w - 2.0 * page_tab_w - 4.0 * g_gap) / 3.0; // 157.0px
+        let g_btn_h = 28.0;
         let card_h = 146.0;
-        let cards_y = screen_h - card_h - 16.0;
+        let cards_y = screen_h - card_h - 14.0;
         let g_y = cards_y - g_btn_h - 6.0;
 
         let grades = [
@@ -607,7 +635,7 @@ pub fn render_ui(
         ];
 
         for (i, (key, name, lvl, cost, desc)) in grades.iter().enumerate() {
-            let gx = cards_start_x + (i as f32) * (g_btn_w + 8.0);
+            let gx = cards_start_x + (i as f32) * (g_btn_w + g_gap);
             let g_hover = mx >= gx && mx <= gx + g_btn_w && my >= g_y && my <= g_y + g_btn_h;
             if g_hover {
                 interaction.is_mouse_over_ui = true;
@@ -630,8 +658,8 @@ pub fn render_ui(
             } else {
                 format!("[{}] {} (Ур. {}) - {:.0}", key, name, lvl, cost)
             };
-            fonts.draw_heading(&title, gx + 6.0, g_y + 13.0, 11.0, if can_buy { GOLD } else { LIGHTGRAY });
-            fonts.draw_text(desc, gx + 6.0, g_y + 25.0, 10.0, SKYBLUE);
+            fonts.draw_heading(&title, gx + 6.0, g_y + 13.0, 10.5, if can_buy { GOLD } else { LIGHTGRAY });
+            fonts.draw_text(desc, gx + 6.0, g_y + 25.0, 9.5, SKYBLUE);
 
             if is_mouse_button_pressed(MouseButton::Left) && g_hover && can_buy {
                 if is_shift {
@@ -643,10 +671,9 @@ pub fn render_ui(
         }
 
         // Переключатели Страниц Мобов: [Страница 1: Тиры 1-8] и [Страница 2: Тиры 9-16]
-        let page_tab_w = 110.0;
         let page_tab_h = g_btn_h;
-        let p1_x = cards_start_x + 3.0 * (g_btn_w + 8.0);
-        let p2_x = p1_x + page_tab_w + 6.0;
+        let p1_x = cards_start_x + 3.0 * (g_btn_w + g_gap);
+        let p2_x = p1_x + page_tab_w + g_gap;
 
         let p1_hover = mx >= p1_x && mx <= p1_x + page_tab_w && my >= g_y && my <= g_y + page_tab_h;
         let p2_hover = mx >= p2_x && mx <= p2_x + page_tab_w && my >= g_y && my <= g_y + page_tab_h;
@@ -660,8 +687,8 @@ pub fn render_ui(
         // Кнопка Страница 1
         draw_rectangle(p1_x, g_y, page_tab_w, page_tab_h, if p1_active { Color::new(0.24, 0.18, 0.38, 0.98) } else { Color::new(0.10, 0.10, 0.14, 0.90) });
         draw_rectangle_lines(p1_x, g_y, page_tab_w, page_tab_h, if p1_active { 2.0 } else { 1.0 }, if p1_active { GOLD } else { GRAY });
-        fonts.draw_heading("ОРДА [1]", p1_x + 12.0, g_y + 13.0, 11.0, if p1_active { GOLD } else { LIGHTGRAY });
-        fonts.draw_text("Базовые [Tab]", p1_x + 12.0, g_y + 25.0, 9.5, if p1_active { WHITE } else { GRAY });
+        fonts.draw_heading("ОРДА [1]", p1_x + 10.0, g_y + 13.0, 11.0, if p1_active { GOLD } else { LIGHTGRAY });
+        fonts.draw_text("Базовые [Tab]", p1_x + 10.0, g_y + 25.0, 9.5, if p1_active { WHITE } else { GRAY });
         if is_mouse_button_pressed(MouseButton::Left) && p1_hover {
             interaction.set_mob_page = Some(0);
         }
@@ -693,22 +720,22 @@ pub fn render_ui(
             }
 
             // Кнопка [i] инфо в верхнем правом углу карточки
-            let info_btn_w = 18.0;
-            let info_btn_h = 18.0;
-            let info_btn_x = cx + card_w - info_btn_w - 4.0;
-            let info_btn_y = cy + 4.0;
+            let info_btn_w = 15.0;
+            let info_btn_h = 15.0;
+            let info_btn_x = cx + card_w - info_btn_w - 3.0;
+            let info_btn_y = cy + 3.0;
             let is_info_hover = mx >= info_btn_x && mx <= info_btn_x + info_btn_w && my >= info_btn_y && my <= info_btn_y + info_btn_h;
 
             let bg_color = if !is_unlocked {
-                Color::new(0.09, 0.09, 0.12, 0.95)
+                Color::new(0.08, 0.08, 0.11, 0.95)
             } else if can_afford {
                 if card_hover && !is_info_hover { Color::new(0.16, 0.38, 0.22, 0.98) } else { Color::new(0.11, 0.28, 0.16, 0.95) }
             } else {
-                Color::new(0.20, 0.12, 0.14, 0.95)
+                Color::new(0.18, 0.11, 0.13, 0.95)
             };
 
             let border_color = if !is_unlocked {
-                Color::new(0.35, 0.35, 0.40, 0.8)
+                Color::new(0.30, 0.28, 0.35, 0.70)
             } else if card_hover && !is_info_hover {
                 GOLD
             } else if can_afford {
@@ -719,30 +746,30 @@ pub fn render_ui(
 
             // Фон карты
             draw_rectangle(cx, cy, card_w, card_h, bg_color);
-            draw_rectangle_lines(cx, cy, card_w, card_h, if card_hover && !is_info_hover { 2.5 } else { 1.5 }, border_color);
+            draw_rectangle_lines(cx, cy, card_w, card_h, if card_hover && !is_info_hover { 2.2 } else { 1.2 }, border_color);
 
             // Верхняя плашка: Горячая клавиша [Q..F] слева
             let hotkey_badge = format!("[{}]", mob_keys[i]);
-            fonts.draw_heading(&hotkey_badge, cx + 4.0, cy + 15.0, 11.5, if is_unlocked { GOLD } else { GRAY });
+            fonts.draw_heading(&hotkey_badge, cx + 4.0, cy + 13.0, 10.5, if is_unlocked { GOLD } else { GRAY });
 
-            // Кнопка [i] справа вверху
+            // Кнопка [i] справа вверху (только для открытых мобов)
             if is_unlocked {
                 draw_rectangle(info_btn_x, info_btn_y, info_btn_w, info_btn_h, if is_info_hover { Color::new(0.35, 0.15, 0.45, 0.95) } else { Color::new(0.12, 0.12, 0.18, 0.85) });
-                draw_rectangle_lines(info_btn_x, info_btn_y, info_btn_w, info_btn_h, 1.2, if is_info_hover { GOLD } else { GRAY });
-                fonts.draw_heading("i", info_btn_x + 6.0, info_btn_y + 13.0, 11.5, if is_info_hover { GOLD } else { LIGHTGRAY });
+                draw_rectangle_lines(info_btn_x, info_btn_y, info_btn_w, info_btn_h, 1.0, if is_info_hover { GOLD } else { GRAY });
+                fonts.draw_heading("i", info_btn_x + 5.0, info_btn_y + 11.0, 10.5, if is_info_hover { GOLD } else { LIGHTGRAY });
             }
 
             // Иконка / Спрайт моба
             if let Some(mob_tex) = textures.get_mob_texture(tier, 0) {
-                let p_size = 34.0;
+                let p_size = 28.0;
                 let (pw, ph) = if tier == 2 || tier == 10 { (p_size * 1.3, p_size * 0.65) } else { (p_size, p_size) };
                 let px = cx + (card_w - pw) / 2.0;
-                let py = cy + 22.0 + (p_size - ph) / 2.0;
+                let py = cy + 15.0 + (p_size - ph) / 2.0;
                 draw_texture_ex(
                     mob_tex,
                     px,
                     py,
-                    if is_unlocked { WHITE } else { Color::new(0.35, 0.35, 0.35, 0.6) },
+                    if is_unlocked { WHITE } else { Color::new(0.28, 0.28, 0.32, 0.50) },
                     DrawTextureParams {
                         dest_size: Some(Vec2::new(pw, ph)),
                         ..Default::default()
@@ -769,176 +796,260 @@ pub fn render_ui(
                 15 => "Архонты",
                 _ => "Аватар",
             };
-            let nw = fonts.measure_heading(short_name, 11.0).width;
-            fonts.draw_heading(short_name, cx + (card_w - nw) / 2.0, cy + 68.0, 11.0, if is_unlocked { WHITE } else { LIGHTGRAY });
-
-            // Стоимость душ с дымчатой иконкой
-            let cost_val = format!("{:.0}", config.cost);
-            let cost_num_w = fonts.measure_heading(&cost_val, 12.0).width;
-            let icon_s = 13.0;
-            let total_cost_w = cost_num_w + icon_s + 2.0;
-            let start_cost_x = cx + (card_w - total_cost_w) / 2.0;
-            let cost_col = if !is_unlocked { GRAY } else if can_afford { GOLD } else { Color::new(1.0, 0.4, 0.4, 1.0) };
-
-            if let Some(sm_tex) = textures.soul_ethereal_sm.as_ref() {
-                draw_texture_ex(
-                    sm_tex,
-                    start_cost_x,
-                    cy + 73.0,
-                    WHITE,
-                    DrawTextureParams {
-                        dest_size: Some(Vec2::new(icon_s, icon_s)),
-                        ..Default::default()
-                    },
-                );
-            }
-            fonts.draw_heading(&cost_val, start_cost_x + icon_s + 2.0, cy + 85.0, 12.0, cost_col);
-
-            // Роль
-            let role_str = match tier {
-                1 => "x8 бойцов",
-                2 => "x5 скор.",
-                3 => "Дальники",
-                4 => "Танк 380",
-                5 => "Взрыв 220",
-                6 => "Телепорт",
-                7 => "Магия огня",
-                8 => "Титан коса",
-                9 => "x8 щитов",
-                10 => "x5 ад.псов",
-                11 => "Снайперы",
-                12 => "Танк 1450",
-                13 => "Взрыв 550",
-                14 => "Ловчие фазы",
-                15 => "Архонты огня",
-                _ => "Колосс 8500",
-            };
-            let rw = fonts.measure_text(role_str, 10.0).width;
-            fonts.draw_text(role_str, cx + (card_w - rw) / 2.0, cy + 98.0, 10.0, if is_unlocked { SKYBLUE } else { GRAY });
-
-            // Нижняя строка: ЛКМ Призыв
-            if is_unlocked {
-                if is_shift {
-                    let call_hint = "ВСЕ [Shift]";
-                    let ch_w = fonts.measure_text(call_hint, 9.5).width;
-                    let spark_x = cx + (card_w - ch_w) / 2.0 - 7.0;
-                    draw_pixel_lightning(spark_x, cy + 104.0, YELLOW);
-                    fonts.draw_text(call_hint, spark_x + 9.0, cy + 112.0, 9.5, if card_hover { YELLOW } else { GOLD });
-                } else {
-                    let call_hint = "Призыв";
-                    let ch_w = fonts.measure_text(call_hint, 9.5).width;
-                    fonts.draw_text(call_hint, cx + (card_w - ch_w) / 2.0, cy + 112.0, 9.5, if card_hover { YELLOW } else { LIGHTGRAY });
-                }
-            } else {
-                let cost_num = format!("{:.0}", config.unlock_spent_threshold);
-                let nw = fonts.measure_text(&cost_num, 9.5).width;
-                let total_w = 11.0 + nw;
-                let lock_x = cx + (card_w - total_w) / 2.0;
-                draw_pixel_lock(lock_x, cy + 102.5, Color::new(0.9, 0.3, 0.3, 1.0));
-                fonts.draw_text(&cost_num, lock_x + 12.0, cy + 112.0, 9.5, RED);
-            }
+            let nw = fonts.measure_heading(short_name, 10.0).width;
+            fonts.draw_heading(short_name, cx + (card_w - nw) / 2.0, cy + 49.0, 10.0, if is_unlocked { WHITE } else { GRAY });
 
             let altar_cooldown = director.altar_cooldown_for_tier(tier);
             let altar_cost = crate::content::structures::altar_cost(tier);
             let altar_affordable = director.points >= altar_cost;
             let altar_can_build = is_unlocked && altar_affordable && altar_cooldown <= 0.0;
-            let altar_button = Rect::new(cx + 3.0, cy + 119.0, card_w - 6.0, 24.0);
+            let altar_button = Rect::new(cx + 3.0, cy + 93.0, card_w - 6.0, 49.0);
             let altar_button_hover = mx >= altar_button.x
                 && mx <= altar_button.x + altar_button.w
                 && my >= altar_button.y
                 && my <= altar_button.y + altar_button.h;
-            let hotkey_badge = format!("Ctrl+{}", mob_keys[i]);
-            if altar_button_hover {
-                interaction.is_mouse_over_ui = true;
-                hovered_tooltip = Some(HoverTooltip::AltarButton {
-                    tier,
-                    hotkey: hotkey_badge.clone(),
-                    bx: altar_button.x,
-                    by: altar_button.y,
-                });
-                if is_mouse_button_pressed(MouseButton::Left) && altar_can_build {
-                    interaction.start_altar_placement = true;
-                    interaction.altar_tier = Some(tier);
-                }
-            }
 
-            let pulse = (macroquad::time::get_time() * 4.5).sin() as f32 * 0.5 + 0.5;
+            if !is_unlocked {
+                // ЕДИНЫЙ БОЛЬШОЙ ЗАМОК НА ВСЮ КАРТОЧКУ (объединяет моба и алтарь, без дублирования)
+                let lock_panel = Rect::new(cx + 3.0, cy + 54.0, card_w - 6.0, card_h - 58.0);
+                draw_rectangle(lock_panel.x, lock_panel.y, lock_panel.w, lock_panel.h, Color::new(0.06, 0.05, 0.08, 0.88));
+                draw_rectangle_lines(lock_panel.x, lock_panel.y, lock_panel.w, lock_panel.h, 1.0, Color::new(0.38, 0.20, 0.22, 0.70));
 
-            // Визуальное оформление кнопки алтаря
-            if altar_can_build {
-                // Светящийся неоновый ореол готовности (Glow)
-                draw_rectangle(
-                    altar_button.x - 1.0,
-                    altar_button.y - 1.0,
-                    altar_button.w + 2.0,
-                    altar_button.h + 2.0,
-                    Color::new(0.95, 0.25, 0.45, 0.20 + 0.25 * pulse),
-                );
-                // Пульсирующий багряно-рубиновый фон
-                draw_rectangle(
-                    altar_button.x,
-                    altar_button.y,
-                    altar_button.w,
-                    altar_button.h,
-                    Color::new(0.24 + 0.12 * pulse, 0.05, 0.14 + 0.08 * pulse, 0.98),
-                );
-                // Двойная золотая / рубиновая рамка
-                let border_col = if altar_button_hover { GOLD } else { Color::new(1.0, 0.35 + 0.35 * pulse, 0.45, 1.0) };
-                draw_rectangle_lines(altar_button.x, altar_button.y, altar_button.w, altar_button.h, if altar_button_hover { 2.0 } else { 1.5 }, border_col);
-            } else if altar_cooldown > 0.0 {
-                draw_rectangle(altar_button.x, altar_button.y, altar_button.w, altar_button.h, Color::new(0.08, 0.05, 0.06, 0.96));
-                draw_rectangle_lines(altar_button.x, altar_button.y, altar_button.w, altar_button.h, 1.0, Color::new(0.75, 0.28, 0.22, 0.85));
-                // Полоса прогресса отката кулдауна
-                let max_cd = crate::content::structures::altar_cooldown(tier);
-                let prog = (1.0 - altar_cooldown / max_cd).clamp(0.0, 1.0);
-                draw_rectangle(altar_button.x + 2.0, altar_button.y + altar_button.h - 3.0, (altar_button.w - 4.0) * prog, 2.0, Color::new(0.9, 0.3, 0.3, 0.9));
-            } else if !altar_affordable {
-                draw_rectangle(altar_button.x, altar_button.y, altar_button.w, altar_button.h, Color::new(0.07, 0.06, 0.09, 0.95));
-                draw_rectangle_lines(altar_button.x, altar_button.y, altar_button.w, altar_button.h, 1.0, Color::new(0.40, 0.35, 0.45, 0.8));
-            } else {
-                draw_rectangle(altar_button.x, altar_button.y, altar_button.w, altar_button.h, Color::new(0.05, 0.05, 0.07, 0.92));
-                draw_rectangle_lines(altar_button.x, altar_button.y, altar_button.w, altar_button.h, 1.0, Color::new(0.25, 0.25, 0.30, 0.7));
-            }
+                // Крупный навесной замок по центру
+                draw_pixel_lock_large(lock_panel.x + lock_panel.w / 2.0, lock_panel.y + 22.0, Color::new(0.90, 0.35, 0.35, 1.0));
 
-            // Иконка Алтаря Крови (ассет structure_altar)
-            if let Some(ref alt_tex) = textures.altar {
-                let icon_col = if altar_can_build {
-                    Color::new(1.0, 0.85 + 0.15 * pulse, 0.85 + 0.15 * pulse, 1.0)
-                } else if is_unlocked {
-                    Color::new(0.8, 0.45, 0.45, 0.9)
-                } else {
-                    GRAY
-                };
-                draw_texture_ex(
-                    alt_tex,
-                    altar_button.x + 2.5,
-                    altar_button.y + 4.0,
-                    icon_col,
-                    DrawTextureParams {
-                        dest_size: Some(Vec2::splat(15.0)),
-                        ..Default::default()
-                    },
-                );
-            }
-
-            // Текст внутри кнопки: бейдж хоткея и статус
-            let ctrl_str = format!("^{}", mob_keys[i]); // ^Q / ^W / ^E
-            let text_left = altar_button.x + 19.0;
-            if altar_can_build {
-                fonts.draw_heading(&ctrl_str, text_left, altar_button.y + 11.0, 9.5, GOLD);
-                fonts.draw_text("АЛТАРЬ", text_left + 16.0, altar_button.y + 11.0, 8.5, WHITE);
-                fonts.draw_heading(&format!("{:.0}", altar_cost), text_left, altar_button.y + 20.0, 9.0, Color::new(1.0, 0.75, 0.4, 1.0));
-            } else if altar_cooldown > 0.0 {
-                fonts.draw_heading(&ctrl_str, text_left, altar_button.y + 11.0, 8.5, GRAY);
-                let cd_str = format!("{:.0}с", altar_cooldown);
-                fonts.draw_heading(&cd_str, text_left + 14.0, altar_button.y + 12.0, 9.5, Color::new(1.0, 0.45, 0.35, 1.0));
-            } else if !is_unlocked {
+                // Требуемое число душ
                 let cost_num = format!("{:.0}", config.unlock_spent_threshold);
-                draw_pixel_lock(text_left, altar_button.y + 6.0, Color::new(0.9, 0.35, 0.35, 1.0));
-                fonts.draw_text(&cost_num, text_left + 12.0, altar_button.y + 15.0, 8.5, RED);
-            } else if !altar_affordable {
-                fonts.draw_heading(&ctrl_str, text_left, altar_button.y + 11.0, 8.5, GRAY);
-                fonts.draw_text(&format!("{:.0}", altar_cost), text_left + 14.0, altar_button.y + 13.0, 9.0, Color::new(1.0, 0.4, 0.4, 1.0));
+                let nw = fonts.measure_heading(&cost_num, 11.0).width;
+                fonts.draw_heading(&cost_num, lock_panel.x + (lock_panel.w - nw) / 2.0, lock_panel.y + 46.0, 11.0, RED);
+
+                // Аккуратный затемненный бейдж хоткея алтаря внизу
+                let pill_w = 46.0;
+                let pill_h = 14.0;
+                let pill_x = lock_panel.x + (lock_panel.w - pill_w) / 2.0;
+                let pill_y = lock_panel.y + 60.0;
+                draw_rectangle(pill_x, pill_y, pill_w, pill_h, Color::new(0.08, 0.08, 0.10, 0.85));
+                draw_rectangle_lines(pill_x, pill_y, pill_w, pill_h, 1.0, Color::new(0.28, 0.28, 0.32, 0.50));
+                if let Some(ref alt_tex) = textures.altar {
+                    draw_texture_ex(
+                        alt_tex,
+                        pill_x + 3.0,
+                        pill_y + 1.5,
+                        Color::new(0.4, 0.4, 0.45, 0.7),
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::splat(11.0)),
+                            ..Default::default()
+                        },
+                    );
+                }
+                let hk_badge = format!("Ctrl+{}", mob_keys[i]);
+                let hk_w = fonts.measure_text(&hk_badge, 8.5).width;
+                fonts.draw_text(&hk_badge, pill_x + 16.0 + (pill_w - 18.0 - hk_w) / 2.0, pill_y + 10.5, 8.5, GRAY);
+            } else {
+                // ОТКРЫТЫЙ ТИР: Стоимость призыва моба, роль, подсказка и кнопка алтаря
+                let cost_val = format!("{:.0}", config.cost);
+                let cost_num_w = fonts.measure_heading(&cost_val, 10.5).width;
+                let icon_s = 11.0;
+                let total_cost_w = cost_num_w + icon_s + 2.0;
+                let start_cost_x = cx + (card_w - total_cost_w) / 2.0;
+                let cost_col = if can_afford { GOLD } else { Color::new(1.0, 0.4, 0.4, 1.0) };
+
+                if let Some(sm_tex) = textures.soul_ethereal_sm.as_ref() {
+                    draw_texture_ex(
+                        sm_tex,
+                        start_cost_x,
+                        cy + 54.0,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::new(icon_s, icon_s)),
+                            ..Default::default()
+                        },
+                    );
+                }
+                fonts.draw_heading(&cost_val, start_cost_x + icon_s + 2.0, cy + 63.5, 10.5, cost_col);
+
+                // Роль
+                let role_str = match tier {
+                    1 => "x8 бойцов",
+                    2 => "x5 скор.",
+                    3 => "Дальники",
+                    4 => "Танк 380",
+                    5 => "Взрыв 220",
+                    6 => "Телепорт",
+                    7 => "Магия огня",
+                    8 => "Титан коса",
+                    9 => "x8 щитов",
+                    10 => "x5 ад.псов",
+                    11 => "Снайперы",
+                    12 => "Танк 1450",
+                    13 => "Взрыв 550",
+                    14 => "Ловчие фазы",
+                    15 => "Архонты огня",
+                    _ => "Колосс 8500",
+                };
+                let rw = fonts.measure_text(role_str, 9.0).width;
+                fonts.draw_text(role_str, cx + (card_w - rw) / 2.0, cy + 74.5, 9.0, SKYBLUE);
+
+                // Строка призыва
+                if is_shift {
+                    let call_hint = "ВСЕ [Shift]";
+                    let ch_w = fonts.measure_text(call_hint, 8.5).width;
+                    let spark_x = cx + (card_w - ch_w) / 2.0 - 6.0;
+                    draw_pixel_lightning(spark_x, cy + 77.0, YELLOW);
+                    fonts.draw_text(call_hint, spark_x + 8.0, cy + 85.5, 8.5, if card_hover { YELLOW } else { GOLD });
+                } else {
+                    let call_hint = "Призыв";
+                    let ch_w = fonts.measure_text(call_hint, 8.5).width;
+                    fonts.draw_text(call_hint, cx + (card_w - ch_w) / 2.0, cy + 85.5, 8.5, if card_hover { YELLOW } else { LIGHTGRAY });
+                }
+
+                // Кнопка алтаря
+                let hotkey_badge = format!("Ctrl+{}", mob_keys[i]);
+                if altar_button_hover {
+                    interaction.is_mouse_over_ui = true;
+                    hovered_tooltip = Some(HoverTooltip::AltarButton {
+                        tier,
+                        hotkey: hotkey_badge.clone(),
+                        bx: altar_button.x,
+                        by: altar_button.y,
+                    });
+                    if is_mouse_button_pressed(MouseButton::Left) && altar_can_build {
+                        interaction.start_altar_placement = true;
+                        interaction.altar_tier = Some(tier);
+                    }
+                }
+
+                let pulse = (macroquad::time::get_time() * 4.5).sin() as f32 * 0.5 + 0.5;
+
+                if altar_can_build {
+                    // Неоновый ореол готовности
+                    draw_rectangle(
+                        altar_button.x - 1.0,
+                        altar_button.y - 1.0,
+                        altar_button.w + 2.0,
+                        altar_button.h + 2.0,
+                        Color::new(0.95, 0.25, 0.45, 0.20 + 0.25 * pulse),
+                    );
+                    draw_rectangle(
+                        altar_button.x,
+                        altar_button.y,
+                        altar_button.w,
+                        altar_button.h,
+                        Color::new(0.24 + 0.12 * pulse, 0.05, 0.14 + 0.08 * pulse, 0.98),
+                    );
+                    let border_col = if altar_button_hover { GOLD } else { Color::new(1.0, 0.40 + 0.40 * pulse, 0.50, 1.0) };
+                    draw_rectangle_lines(altar_button.x, altar_button.y, altar_button.w, altar_button.h, if altar_button_hover { 2.0 } else { 1.5 }, border_col);
+                } else if altar_cooldown > 0.0 {
+                    draw_rectangle(altar_button.x, altar_button.y, altar_button.w, altar_button.h, Color::new(0.08, 0.05, 0.06, 0.96));
+                    draw_rectangle_lines(altar_button.x, altar_button.y, altar_button.w, altar_button.h, 1.0, Color::new(0.65, 0.25, 0.20, 0.85));
+                } else {
+                    draw_rectangle(altar_button.x, altar_button.y, altar_button.w, altar_button.h, Color::new(0.08, 0.07, 0.10, 0.95));
+                    draw_rectangle_lines(altar_button.x, altar_button.y, altar_button.w, altar_button.h, 1.0, Color::new(0.40, 0.32, 0.40, 0.75));
+                }
+
+                // Строка 1: Иконка Алтаря + бейдж Ctrl+Q..F (без слова "АЛТАРЬ"!)
+                let row1_y = altar_button.y + 3.0;
+                if let Some(ref alt_tex) = textures.altar {
+                    let icon_col = if altar_can_build {
+                        Color::new(1.0, 0.85 + 0.15 * pulse, 0.85 + 0.15 * pulse, 1.0)
+                    } else {
+                        Color::new(0.8, 0.45, 0.45, 0.85)
+                    };
+                    draw_texture_ex(
+                        alt_tex,
+                        altar_button.x + 3.0,
+                        row1_y,
+                        icon_col,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2::splat(14.0)),
+                            ..Default::default()
+                        },
+                    );
+                }
+                let pill_x = altar_button.x + 19.0;
+                let pill_y = row1_y;
+                let pill_w = altar_button.w - 22.0;
+                let pill_h = 14.0;
+                let pill_bg = if altar_can_build {
+                    Color::new(0.12, 0.06, 0.15, 0.95)
+                } else {
+                    Color::new(0.08, 0.08, 0.10, 0.90)
+                };
+                let pill_border = if altar_can_build {
+                    if altar_button_hover { GOLD } else { Color::new(0.85, 0.65, 0.2, 0.85) }
+                } else {
+                    Color::new(0.35, 0.35, 0.40, 0.60)
+                };
+                draw_rectangle(pill_x, pill_y, pill_w, pill_h, pill_bg);
+                draw_rectangle_lines(pill_x, pill_y, pill_w, pill_h, 1.0, pill_border);
+                let hk_w = fonts.measure_heading(&hotkey_badge, 9.0).width;
+                let hk_col = if altar_can_build { GOLD } else { LIGHTGRAY };
+                fonts.draw_heading(&hotkey_badge, pill_x + (pill_w - hk_w) / 2.0, pill_y + 10.5, 9.0, hk_col);
+
+                // Строка 2: Отдельная строка статуса / таймера / стоимости
+                if altar_can_build {
+                    let cost_str = format!("{:.0}", altar_cost);
+                    let c_w = fonts.measure_heading(&cost_str, 10.0).width;
+                    let s_icon_s = 10.0;
+                    let g_w = fonts.measure_heading("ГОТОВ", 9.0).width;
+                    let total_r2 = s_icon_s + 2.0 + c_w + 4.0 + g_w;
+                    let r2_x = altar_button.x + (altar_button.w - total_r2) / 2.0;
+
+                    if let Some(sm_tex) = textures.soul_ethereal_sm.as_ref() {
+                        draw_texture_ex(
+                            sm_tex,
+                            r2_x,
+                            altar_button.y + 21.0,
+                            WHITE,
+                            DrawTextureParams {
+                                dest_size: Some(Vec2::new(s_icon_s, s_icon_s)),
+                                ..Default::default()
+                            },
+                        );
+                    }
+                    fonts.draw_heading(&cost_str, r2_x + s_icon_s + 2.0, altar_button.y + 30.0, 10.0, GOLD);
+                    fonts.draw_heading("ГОТОВ", r2_x + s_icon_s + 2.0 + c_w + 4.0, altar_button.y + 30.0, 9.0, GREEN);
+
+                    let hint_str = "[ЛКМ] Спавн";
+                    let hw = fonts.measure_text(hint_str, 8.0).width;
+                    fonts.draw_text(hint_str, altar_button.x + (altar_button.w - hw) / 2.0, altar_button.y + 42.0, 8.0, if altar_button_hover { YELLOW } else { SKYBLUE });
+                } else if altar_cooldown > 0.0 {
+                    let cd_str = format!("Откат: {:.1}с", altar_cooldown);
+                    let cdw = fonts.measure_heading(&cd_str, 9.5).width;
+                    fonts.draw_heading(&cd_str, altar_button.x + (altar_button.w - cdw) / 2.0, altar_button.y + 30.0, 9.5, Color::new(1.0, 0.45, 0.35, 1.0));
+
+                    // Полоса прогресса отката
+                    let max_cd = crate::content::structures::altar_cooldown(tier);
+                    let prog = (1.0 - altar_cooldown / max_cd).clamp(0.0, 1.0);
+                    let bar_x = altar_button.x + 4.0;
+                    let bar_y = altar_button.y + 37.0;
+                    let bar_w = altar_button.w - 8.0;
+                    let bar_h = 4.0;
+                    draw_rectangle(bar_x, bar_y, bar_w, bar_h, Color::new(0.20, 0.08, 0.08, 0.95));
+                    draw_rectangle(bar_x, bar_y, bar_w * prog, bar_h, Color::new(0.95, 0.35, 0.30, 0.95));
+                    draw_rectangle_lines(bar_x, bar_y, bar_w, bar_h, 1.0, Color::new(0.50, 0.20, 0.20, 0.80));
+                } else {
+                    // Не хватает душ: только число стоимости красным цветом с иконкой душ (без текста "не хватает душ"!)
+                    let cost_str = format!("{:.0}", altar_cost);
+                    let c_w = fonts.measure_heading(&cost_str, 10.5).width;
+                    let s_icon_s = 10.0;
+                    let total_r2 = s_icon_s + 2.0 + c_w;
+                    let r2_x = altar_button.x + (altar_button.w - total_r2) / 2.0;
+
+                    if let Some(sm_tex) = textures.soul_ethereal_sm.as_ref() {
+                        draw_texture_ex(
+                            sm_tex,
+                            r2_x,
+                            altar_button.y + 26.0,
+                            WHITE,
+                            DrawTextureParams {
+                                dest_size: Some(Vec2::new(s_icon_s, s_icon_s)),
+                                ..Default::default()
+                            },
+                        );
+                    }
+                    fonts.draw_heading(&cost_str, r2_x + s_icon_s + 2.0, altar_button.y + 35.0, 10.5, Color::new(1.0, 0.4, 0.4, 1.0));
+                }
             }
 
             // Клик по карте:

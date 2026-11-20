@@ -78,7 +78,6 @@ fn shuffle<T>(items: &mut [T]) {
 /// - 200 за долю снятого здоровья Босса;
 /// - 150 за среднюю долю времени жизни построенных алтарей;
 /// - 50 за конверсию душ в действия (spent / (spent + unspent + 100));
-/// - -100 за уровень Босса (чтобы Директор не «кормил» его опытом).
 /// - отрицательный бонус Директору за уничтоженные алтари и деактивированные обелиски.
 fn director_utility(res: &MatchResult) -> f32 {
     let cap = res.match_cap.max(1.0);
@@ -105,12 +104,10 @@ fn director_utility(res: &MatchResult) -> f32 {
     let economy_denom = res.director_points_spent + res.director_points_unspent + 100.0;
     let economy_reward =
         (res.director_points_spent / economy_denom).clamp(0.0, 1.0) * 50.0;
-    let level_penalty = (res.boss_level as f32 / 50.0).clamp(0.0, 1.0) * 100.0;
-    let boss_structure_reward = res.altars_destroyed.min(12) as f32 * 6.0
-        + res.obelisks_deactivated.min(4) as f32 * 20.0;
+    let boss_structure_reward = res.altars_destroyed.min(12) as f32 * 8.0
+        + res.obelisks_deactivated.min(4) as f32 * 25.0;
 
     (time_reward + kill_bonus + damage_reward + altar_reward + economy_reward
-        - level_penalty
         - boss_structure_reward)
         .clamp(-1400.0, 1400.0)
 }
@@ -1086,7 +1083,7 @@ fn save_models(
         best_director_kill_time: director_out.avg_boss_kill_time,
         timestamp: utc_timestamp(),
         fitness_formula: "zero-sum: Boss = -DirectorUtility; Director = +DirectorUtility \
-            (time 600 + kill 400 + damage 200 + altar uptime 150 + economy 50 - boss level 100)"
+            (time 600 + kill 400 + damage 200 + altar uptime 150 + economy 50 - structure reward: 8/altar, 25/obelisk)"
             .to_string(),
     };
 

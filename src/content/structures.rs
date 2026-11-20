@@ -9,9 +9,13 @@ pub const STRUCTURE_TIER_ALTAR_BASE: u8 = 20;
 pub const MAX_ALTAR_TIER: u8 = 16;
 
 pub const BLOOD_ALTAR_COST: f32 = 50.0;
-pub const ALTAR_MIN_SPACING: f32 = 120.0;
+pub const ALTAR_GRID_SIZE: f32 = 100.0;
+pub const ALTAR_HALF_EXTENT: f32 = 50.0; // Хитбокс алтаря 100x100 px
+pub const ALTAR_RADIUS: f32 = 50.0;      // Физический радиус для коллизий и урона
+pub const ALTAR_MIN_SPACING: f32 = ALTAR_GRID_SIZE;
 pub const BUILD_GRID_SIZE: f32 = 50.0;
-pub const ALTAR_BASE_COOLDOWN_SECONDS: f32 = 45.0;
+pub const ALTAR_BASE_COOLDOWN_SECONDS: f32 = 14.0;
+pub const ALTAR_COOLDOWN_TIER_STEP: f32 = 7.0;
 
 pub const WALL_COST: f32 = 10.0;
 pub const WALL_MAX_COOLDOWN: f32 = 2.0;
@@ -44,19 +48,27 @@ pub fn is_altar_structure_type(structure_type: u8) -> bool {
 }
 
 pub fn altar_cost(tier: u8) -> f32 {
-    if tier <= 1 {
-        BLOOD_ALTAR_COST
-    } else {
-        crate::content::mobs::get_squad_config(tier).cost * 1.6
-    }
+    let squad_cost = crate::content::mobs::get_squad_config(tier).cost;
+    (squad_cost * 2.5).max(BLOOD_ALTAR_COST)
 }
 
 pub fn altar_cooldown(tier: u8) -> f32 {
-    ALTAR_BASE_COOLDOWN_SECONDS + tier.saturating_sub(1) as f32 * 1.5
+    let tier = tier.clamp(1, MAX_ALTAR_TIER);
+    ALTAR_BASE_COOLDOWN_SECONDS + tier.saturating_sub(1) as f32 * ALTAR_COOLDOWN_TIER_STEP
 }
 
 pub fn altar_spawn_interval(tier: u8) -> f32 {
-    1.0 + tier.saturating_sub(1) as f32 * 0.15
+    let squad_count = crate::content::mobs::get_squad_config(tier).count.max(1);
+    8.0 / squad_count as f32
+}
+
+/// Привязывает координату центра алтаря 100x100 к узлам сетки 100 px (2x2 клетки 50 px)
+pub fn snap_altar_to_grid(pos: Vec2) -> Vec2 {
+    let snap_axis = |value: f32, extent: f32| {
+        ((value / ALTAR_GRID_SIZE).floor() * ALTAR_GRID_SIZE + ALTAR_HALF_EXTENT)
+            .clamp(ALTAR_HALF_EXTENT + 5.0, extent - ALTAR_HALF_EXTENT - 5.0)
+    };
+    Vec2::new(snap_axis(pos.x, crate::core::MAP_WIDTH), snap_axis(pos.y, crate::core::MAP_HEIGHT))
 }
 
 /// Converts a world coordinate to the center of its 50 px placement cell.
@@ -96,10 +108,12 @@ pub fn boss_can_damage_structure(structure: &StructureEntity) -> bool {
     structure.structure_type != STRUCTURE_OBELISK || structure.is_active
 }
 
-/// Проверяет, можно ли поставить алтарь в запрошенной точке.
+/// Проверяет, можно ли поставить алтарь (100x100 px) в запрошенной точке.
+/// Алтари можно ставить вплотную к чему угодно (к стенам, другим алтарям и обелискам).
+/// Запрещено накладываться на другие алтари, стены и обелиски.
 pub fn can_place_blood_altar(world: &World, requested: Vec2) -> bool {
-    let requested = snap_to_build_grid(requested);
-    let margin = 45.0;
+    let requested = snap_altar_to_grid(requested);
+    let margin = ALTAR_HALF_EXTENT;
     if requested.x < margin
         || requested.x > crate::core::MAP_WIDTH - margin
         || requested.y < margin
@@ -107,11 +121,25 @@ pub fn can_place_blood_altar(world: &World, requested: Vec2) -> bool {
     {
         return false;
     }
-    let min_spacing_sq = ALTAR_MIN_SPACING * ALTAR_MIN_SPACING;
-    !world
-        .structures
-        .iter()
-        .any(|s| s.health.is_alive() && s.pos.distance_squared(requested) < min_spacing_sq)
+    !world.structures.iter().any(|s| {
+        if !s.health.is_alive() {
+            return false;
+        }
+        let dx = (s.pos.x - requested.x).abs();
+        let dy = (s.pos.y - requested.y).abs();
+        if is_altar_structure_type(s.structure_type) {
+            // Другой алтарь 100x100: расстояние между центрами должно быть не менее 100 по X или Y
+            dx < 95.0 && dy < 95.0
+        } else if s.structure_type == STRUCTURE_WALL {
+            // Стена 50x50: расстояние между центром алтаря (50) и стены (25) не менее 75 по X или Y
+            dx < 70.0 && dy < 70.0
+        } else if s.structure_type == STRUCTURE_OBELISK {
+            // Обелиск 150x150 (half 75): расстояние не менее 75 + 50 = 125 по X или Y
+            dx < 120.0 && dy < 120.0
+        } else {
+            dx < (s.radius + ALTAR_HALF_EXTENT - 5.0) && dy < (s.radius + ALTAR_HALF_EXTENT - 5.0)
+        }
+    })
 }
 
 /// Находит наилучшую клетку для постройки алтаря по алгоритму Maximin Distance от всех живых боссов.
@@ -133,7 +161,7 @@ pub fn find_furthest_altar_spawn(world: &World) -> Option<Vec2> {
     }
 
     if living_count == 0 {
-        let center = snap_to_build_grid(Vec2::new(crate::core::MAP_WIDTH * 0.5, crate::core::MAP_HEIGHT * 0.5));
+        let center = snap_altar_to_grid(Vec2::new(crate::core::MAP_WIDTH * 0.5, crate::core::MAP_HEIGHT * 0.5));
         return if can_place_blood_altar(world, center) { Some(center) } else { None };
     }
 
@@ -172,7 +200,7 @@ pub fn find_furthest_altar_spawn(world: &World) -> Option<Vec2> {
             Vec2::new(crate::core::MAP_WIDTH - 70.0, crate::core::MAP_HEIGHT - 70.0),
         ];
         for corner in corners {
-            let candidate = snap_to_build_grid(corner);
+            let candidate = snap_altar_to_grid(corner);
             if can_place_blood_altar(world, candidate) {
                 let mut min_dist_sq = f32::MAX;
                 for &boss_pos in living_slice {
@@ -194,7 +222,7 @@ pub fn find_furthest_altar_spawn(world: &World) -> Option<Vec2> {
 
 /// Пытается построить алтарь в запрошенной точке.
 pub fn try_spawn_blood_altar(world: &mut World, requested: Vec2) -> bool {
-    let requested = snap_to_build_grid(requested);
+    let requested = snap_altar_to_grid(requested);
     if !can_place_blood_altar(world, requested) {
         return false;
     }
@@ -208,7 +236,7 @@ pub fn spawn_blood_altar(world: &mut World, pos: Vec2) {
 }
 
 pub fn try_spawn_tier_altar(world: &mut World, requested: Vec2, tier: u8) -> bool {
-    let requested = snap_to_build_grid(requested);
+    let requested = snap_altar_to_grid(requested);
     if !can_place_blood_altar(world, requested) {
         return false;
     }
@@ -217,7 +245,7 @@ pub fn try_spawn_tier_altar(world: &mut World, requested: Vec2, tier: u8) -> boo
 }
 
 pub fn spawn_tier_altar(world: &mut World, pos: Vec2, tier: u8) {
-    let pos = snap_to_build_grid(pos);
+    let pos = snap_altar_to_grid(pos);
     let tier = tier.clamp(1, MAX_ALTAR_TIER);
     let id = world.alloc_id();
     let carapace_level = world.directors.first().map_or(0, |director| director.grade_carapace);
@@ -236,7 +264,7 @@ pub fn spawn_tier_altar(world: &mut World, pos: Vec2, tier: u8) {
         health: Health::new(650.0 + (tier.saturating_sub(1) as f32 * 180.0)),
         resistances,
         faction: Faction::Director,
-        radius: 30.0,
+        radius: ALTAR_RADIUS,
         structure_type: structure_type_for_altar_tier(tier),
         pulse_timer: 0.0,
         spawn_timer: 0.0,
@@ -246,7 +274,7 @@ pub fn spawn_tier_altar(world: &mut World, pos: Vec2, tier: u8) {
         state_timer: 0.0,
     });
 
-    world.spawn_particles(pos, 25, Color::new(0.6, 0.0, 0.8, 1.0), 90.0);
+    world.spawn_particles(pos, 35, Color::new(0.6, 0.0, 0.8, 1.0), 120.0);
     world.add_floating_text(pos, format!("АЛТАРЬ ТИРА {}", tier), PURPLE, 1.2);
 }
 
@@ -262,16 +290,18 @@ pub fn can_place_wall(world: &World, requested: Vec2) -> bool {
         if !structure.health.is_alive() {
             return false;
         }
+        let dx = (structure.pos.x - requested.x).abs();
+        let dy = (structure.pos.y - requested.y).abs();
         if structure.structure_type == STRUCTURE_WALL {
-            let dx = (structure.pos.x - requested.x).abs();
-            let dy = (structure.pos.y - requested.y).abs();
-            dx < BUILD_GRID_SIZE && dy < BUILD_GRID_SIZE
+            dx < 45.0 && dy < 45.0
         } else if structure.structure_type == STRUCTURE_OBELISK {
             // Match the visible 300x300 obelisk boundary. Wall cells may touch its
             // edge, but may not overlap the sprite or leave a misleading inner ring.
             let half_extent = OBELISK_FOOTPRINT_HALF_EXTENT + WALL_RADIUS;
-            (structure.pos.x - requested.x).abs() < half_extent
-                && (structure.pos.y - requested.y).abs() < half_extent
+            dx < (half_extent - 5.0) && dy < (half_extent - 5.0)
+        } else if is_altar_structure_type(structure.structure_type) {
+            // Алтарь 100x100: стена 50x50 не может пересекать его хитбокс (half 50 + half 25 = 75)
+            dx < 70.0 && dy < 70.0
         } else {
             distance_sq_to_wall_aabb(structure.pos, requested) < structure.radius * structure.radius
         }

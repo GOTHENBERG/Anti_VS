@@ -4,7 +4,7 @@ use crate::content::structures::{can_place_blood_altar, BLOOD_ALTAR_COST};
 use crate::ecs::components::combat::Faction;
 use crate::ecs::components::inventory::{WeaponType, PassiveType};
 use crate::ecs::world::World;
-use crate::core::{MAP_WIDTH, MAP_HEIGHT};
+use crate::core::{MAP_WIDTH, MAP_HEIGHT, MAP_DIAGONAL};
 use crate::ai::neural_net::{BOSS_DASH_BASE_COOLDOWN_SECONDS, INPUT_SIZE};
 
 thread_local! {
@@ -42,7 +42,7 @@ fn boss_cell_of(dx: f32, dy: f32) -> Option<(usize, usize)> {
 }
 
 /// ============================================================================
-/// СЕНСОРЫ БОССА — 182 входа
+/// СЕНСОРЫ БОССА — 260 входов (с полной топологической сетью расстояний)
 /// ============================================================================
 /// [0..100]   4 канала × сетка 5×5 (ячейка 100 px, охват 500×500 px):
 ///            канал 0 — мобы, канал 1 — снаряды Директора,
@@ -54,11 +54,22 @@ fn boss_cell_of(dx: f32, dy: f32) -> Option<(usize, usize)> {
 /// [124..130] Экономика Директора: души, доход, число алтарей, 3 грейда.
 /// [130..135] Агрегаты угроз: TTI ближайшего снаряда, боковое смещение,
 ///            мобы в 160 px, стрелки в 400 px, элиты в 500 px.
-/// [135..150] Цели: ближайший алтарь (вектор, HP, ETA), магнит, кристалл душ,
-///            флаг атаки алтаря, время матча, недавний урон, дистанция до элиты.
-/// [150..154] Урон от окружения, длительность/сила яда, дистанция промаха снаряда.
-/// [154..166] Позиция (x,y) и активность каждого из четырёх обелисков.
-/// [166..182] Координаты и здоровье четырёх ближайших союзников.
+/// [135..150] Цели и тактическая память: магнит, кристалл душ, флаг атаки алтаря,
+///            время матча, недавний урон, дистанция до элиты, урон окружения,
+///            параметры яда, дистанция промаха снаряда.
+/// [150..174] 4 Алтаря Крови (4 × 6 = 24 входа): наличие, координаты (X, Y),
+///            расстояние до босса, доля HP, тир.
+/// [174..194] 4 Обелиска (4 × 5 = 20 входов): наличие, координаты (X, Y),
+///            расстояние до босса, статус активности/HP.
+/// [194..199] Активный Разлом Обелиска (5 входов): наличие, таймер прорыва,
+///            координаты (X, Y), расстояние до босса.
+/// [199..205] Сеть расстояний Алтарь ↔ Алтарь (6 входов): парные расстояния (A1-A2, A1-A3, A1-A4, A2-A3, A2-A4, A3-A4).
+/// [205..221] Полная двудольная матрица Алтари ↔ Обелиски (16 входов): расстояния от каждого из 4 алтарей до каждого из 4 обелисков.
+/// [221..227] Сеть расстояний Обелиск ↔ Обелиск (6 входов): парные расстояния между всеми обелисками арены.
+/// [227..231] Маршрутный коридор к Активному Разлому (4 входа): расстояние от каждого алтаря до точки прорыва.
+/// [231..239] Граф ближайших соседей (8 входов): расстояние от каждого алтаря до ближайшего другого алтаря и ближайшего обелиска.
+/// [239..255] 4 Союзника в коопе (4 × 4 = 16 входов): вектор dx, dy, HP, alive/revive статус.
+/// [255..260] Глобальная арена и ориентация (5 входов): доля живых алтарей, активные обелиски, boss_facing (X, Y), средняя дистанция алтарей.
 ///
 /// Ключевое отличие от старой версии: типы угроз больше не смешаны в один
 /// скаляр, у снарядов есть time-to-impact, а собственные ресурсы Босса
@@ -308,38 +319,6 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     obs[134] = (elites_500 as f32 / 5.0).clamp(0.0, 1.0);
 
     // --- 6. Цели и тактическая память [135..150] ---
-    let mut closest_altar: Option<Vec2> = None;
-    let mut closest_altar_dist_sq = f32::MAX;
-    let mut closest_altar_hp = 0.0f32;
-    let mut altars_under_attack = 0.0f32;
-    for st in &world.structures {
-        if !st.health.is_alive() || !crate::content::structures::is_altar_structure_type(st.structure_type) {
-            continue;
-        }
-        let d_sq = st.pos.distance_squared(boss_pos);
-        if st.health.current < st.health.max * 0.99 {
-            altars_under_attack = 1.0;
-        }
-        if d_sq < closest_altar_dist_sq {
-            closest_altar_dist_sq = d_sq;
-            closest_altar = Some(st.pos);
-            closest_altar_hp = (st.health.current / st.health.max.max(1.0)).clamp(0.0, 1.0);
-        }
-    }
-
-    if let Some(a_pos) = closest_altar {
-        let diff = a_pos - boss_pos;
-        obs[135] = (diff.x / MAP_WIDTH).clamp(-1.0, 1.0);
-        obs[136] = (diff.y / MAP_HEIGHT).clamp(-1.0, 1.0);
-        obs[137] = closest_altar_hp;
-        obs[138] = (diff.length() / max_speed / 20.0).clamp(0.0, 1.0);
-    } else {
-        obs[135] = 0.0;
-        obs[136] = 0.0;
-        obs[137] = 0.0;
-        obs[138] = 1.0; // Максимальная задержка / недостижимо (как и для магнита)
-    }
-
     let mut closest_gem: Option<Vec2> = None;
     let mut closest_gem_dist_sq = 450.0f32 * 450.0;
     let mut closest_magnet: Option<Vec2> = None;
@@ -356,64 +335,238 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
         }
     }
 
-    obs[139] = if closest_magnet.is_some() { 1.0 } else { 0.0 };
+    obs[135] = if closest_magnet.is_some() { 1.0 } else { 0.0 };
     if let Some(m_pos) = closest_magnet {
         let diff = m_pos - boss_pos;
-        obs[140] = (diff.x / MAP_WIDTH).clamp(-1.0, 1.0);
-        obs[141] = (diff.y / MAP_HEIGHT).clamp(-1.0, 1.0);
-        obs[142] = (diff.length() / max_speed / 20.0).clamp(0.0, 1.0);
+        obs[136] = (diff.x / MAP_WIDTH).clamp(-1.0, 1.0);
+        obs[137] = (diff.y / MAP_HEIGHT).clamp(-1.0, 1.0);
+        obs[138] = (diff.length() / max_speed / 20.0).clamp(0.0, 1.0);
     } else {
-        obs[142] = 1.0;
+        obs[138] = 1.0;
     }
     if let Some(g_pos) = closest_gem {
         let diff = g_pos - boss_pos;
-        obs[143] = (diff.x / 450.0).clamp(-1.0, 1.0);
-        obs[144] = (diff.y / 450.0).clamp(-1.0, 1.0);
+        obs[139] = (diff.x / 450.0).clamp(-1.0, 1.0);
+        obs[140] = (diff.y / 450.0).clamp(-1.0, 1.0);
     }
 
-    obs[145] = altars_under_attack;
+    let mut altars_under_attack = 0.0f32;
+    for st in &world.structures {
+        if st.health.is_alive()
+            && crate::content::structures::is_altar_structure_type(st.structure_type)
+            && st.health.current < st.health.max * 0.99
+        {
+            altars_under_attack = 1.0;
+            break;
+        }
+    }
+    obs[141] = altars_under_attack;
+
     let match_cap = world.match_duration_secs.max(60.0);
-    obs[146] = (world.game_time / match_cap).clamp(0.0, 1.0);
-    obs[147] = (world.boss_inventory.damage_stats.melee_recent / 200.0).clamp(0.0, 1.0);
-    obs[148] = (world.boss_inventory.damage_stats.ranged_recent / 200.0).clamp(0.0, 1.0);
-    obs[149] = if nearest_elite_dist.is_finite() {
+    obs[142] = (world.game_time / match_cap).clamp(0.0, 1.0);
+    obs[143] = (world.boss_inventory.damage_stats.melee_recent / 200.0).clamp(0.0, 1.0);
+    obs[144] = (world.boss_inventory.damage_stats.ranged_recent / 200.0).clamp(0.0, 1.0);
+    obs[145] = if nearest_elite_dist.is_finite() {
         (nearest_elite_dist / 600.0).clamp(0.0, 1.0)
     } else {
         1.0
     };
-    obs[150] = (world.boss_inventory.damage_stats.hazard_recent / 200.0).clamp(0.0, 1.0);
-    obs[151] = (world.boss_poison_timer / 5.0).clamp(0.0, 1.0);
-    obs[152] = (world.boss_poison_dps / 200.0).clamp(0.0, 1.0);
-    obs[153] = if best_miss_distance.is_finite() {
+    obs[146] = (world.boss_inventory.damage_stats.hazard_recent / 200.0).clamp(0.0, 1.0);
+    obs[147] = (world.boss_poison_timer / 5.0).clamp(0.0, 1.0);
+    obs[148] = (world.boss_poison_dps / 200.0).clamp(0.0, 1.0);
+    obs[149] = if best_miss_distance.is_finite() {
         (best_miss_distance / 160.0).clamp(0.0, 1.0)
     } else {
         1.0
     };
 
-    // --- 7. Обелиски: 4 ближайших по расстоянию с фракцией HP ---
-    let mut obelisk_slots = [(0.0f32, 0.0f32, 0.0f32, f32::MAX); 4];
-    let mut obelisk_count = 0usize;
-    for structure in &world.structures {
-        if structure.structure_type == crate::content::structures::STRUCTURE_OBELISK && obelisk_count < 4 {
-            let active = if structure.is_active && structure.health.is_alive() { 1.0 } else { 0.0 };
-            let hp_frac = (structure.health.current / structure.health.max.max(1.0)).clamp(0.0, 1.0);
-            let dist_sq = structure.pos.distance_squared(boss_pos);
-            obelisk_slots[obelisk_count] = (structure.pos.x, structure.pos.y, if active > 0.0 { hp_frac } else { 0.0 }, dist_sq);
-            obelisk_count += 1;
+    // --- 7. Структуры: 4 ближайших Алтаря Крови [150..174] (4 × 6 = 24 входа) ---
+    // [exists, abs_x, abs_y, dist_to_boss, hp_frac, tier_norm]
+    struct AltarSensorData {
+        pos: Vec2,
+        dist: f32,
+        hp_frac: f32,
+        tier: u8,
+    }
+    let mut alive_altars = Vec::with_capacity(16);
+    for st in &world.structures {
+        if st.health.is_alive() {
+            if let Some(tier) = crate::content::structures::altar_tier_from_structure_type(st.structure_type) {
+                let dist = st.pos.distance(boss_pos);
+                let hp_frac = (st.health.current / st.health.max.max(1.0)).clamp(0.0, 1.0);
+                alive_altars.push(AltarSensorData {
+                    pos: st.pos,
+                    dist,
+                    hp_frac,
+                    tier,
+                });
+            }
         }
     }
-    obelisk_slots[..obelisk_count].sort_unstable_by(|a, b| {
-        a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal)
-    });
-    for (index, (ox, oy, active_hp, _)) in obelisk_slots.iter().enumerate() {
-        let base = 154 + index * 3;
-        obs[base] = (*ox / MAP_WIDTH).clamp(0.0, 1.0);
-        obs[base + 1] = (*oy / MAP_HEIGHT).clamp(0.0, 1.0);
-        obs[base + 2] = *active_hp;
+    alive_altars.sort_unstable_by(|a, b| a.dist.partial_cmp(&b.dist).unwrap_or(std::cmp::Ordering::Equal));
+
+    for i in 0..4 {
+        let base = 150 + i * 6;
+        if let Some(altar) = alive_altars.get(i) {
+            obs[base] = 1.0;
+            obs[base + 1] = (altar.pos.x / MAP_WIDTH).clamp(0.0, 1.0);
+            obs[base + 2] = (altar.pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
+            obs[base + 3] = (altar.dist / MAP_DIAGONAL).clamp(0.0, 1.0);
+            obs[base + 4] = altar.hp_frac;
+            obs[base + 5] = (altar.tier as f32 / 16.0).clamp(0.0, 1.0);
+        } else {
+            obs[base] = 0.0;
+            obs[base + 1] = 0.0;
+            obs[base + 2] = 0.0;
+            obs[base + 3] = 1.0;
+            obs[base + 4] = 0.0;
+            obs[base + 5] = 0.0;
+        }
     }
 
-    // --- 8. Союзники: строго другие боссы команды (без дублирования себя!) ---
-    // [dx, dy, hp, alive/revive_status, dist_sq]
+    // --- 8. Обелиски: 4 обелиска арены [174..194] (4 × 5 = 20 входов) ---
+    // [exists, abs_x, abs_y, dist_to_boss, active_hp]
+    struct ObeliskSensorData {
+        pos: Vec2,
+        dist: f32,
+        active_hp: f32,
+        is_active: bool,
+    }
+    let mut obelisk_list = Vec::with_capacity(4);
+    for st in &world.structures {
+        if st.structure_type == crate::content::structures::STRUCTURE_OBELISK {
+            let active_hp = if st.is_active && st.health.is_alive() {
+                (st.health.current / st.health.max.max(1.0)).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let dist = st.pos.distance(boss_pos);
+            obelisk_list.push(ObeliskSensorData {
+                pos: st.pos,
+                dist,
+                active_hp,
+                is_active: st.is_active && st.health.is_alive(),
+            });
+        }
+    }
+    obelisk_list.sort_unstable_by(|a, b| a.dist.partial_cmp(&b.dist).unwrap_or(std::cmp::Ordering::Equal));
+
+    for j in 0..4 {
+        let base = 174 + j * 5;
+        if let Some(ob) = obelisk_list.get(j) {
+            obs[base] = 1.0;
+            obs[base + 1] = (ob.pos.x / MAP_WIDTH).clamp(0.0, 1.0);
+            obs[base + 2] = (ob.pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
+            obs[base + 3] = (ob.dist / MAP_DIAGONAL).clamp(0.0, 1.0);
+            obs[base + 4] = ob.active_hp;
+        } else {
+            obs[base] = 0.0;
+            obs[base + 1] = 0.0;
+            obs[base + 2] = 0.0;
+            obs[base + 3] = 1.0;
+            obs[base + 4] = 0.0;
+        }
+    }
+
+    // --- 9. Активный Разлом Обелиска [194..199] (5 входов) ---
+    let mut active_rift = None;
+    for st in &world.structures {
+        if st.structure_type == crate::content::structures::STRUCTURE_OBELISK
+            && st.is_active
+            && st.health.is_alive()
+        {
+            active_rift = Some((st.pos, st.state_timer));
+            break;
+        }
+    }
+
+    if let Some((rift_pos, state_timer)) = active_rift {
+        obs[194] = 1.0;
+        obs[195] = (state_timer / 20.0).clamp(0.0, 1.0);
+        obs[196] = (rift_pos.x / MAP_WIDTH).clamp(0.0, 1.0);
+        obs[197] = (rift_pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
+        obs[198] = (rift_pos.distance(boss_pos) / MAP_DIAGONAL).clamp(0.0, 1.0);
+    } else {
+        obs[194] = 0.0;
+        obs[195] = 0.0;
+        obs[196] = 0.0;
+        obs[197] = 0.0;
+        obs[198] = 1.0;
+    }
+
+    // --- 10. ТОПОЛОГИЧЕСКАЯ СЕТЬ РАССТОЯНИЙ (GRAPH DISTANCE NETWORK) [199..239] (40 входов) ---
+    let get_altar_pos = |idx: usize| alive_altars.get(idx).map(|a| a.pos);
+    let get_obelisk_pos = |idx: usize| obelisk_list.get(idx).map(|o| o.pos);
+
+    // 10.1 Парные расстояния Алтарь ↔ Алтарь [199..205] (6 входов):
+    let altar_pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+    for (idx, &(i, j)) in altar_pairs.iter().enumerate() {
+        obs[199 + idx] = match (get_altar_pos(i), get_altar_pos(j)) {
+            (Some(p1), Some(p2)) => (p1.distance(p2) / MAP_DIAGONAL).clamp(0.0, 1.0),
+            _ => 1.0,
+        };
+    }
+
+    // 10.2 Полная двудольная матрица расстояний Алтари ↔ Обелиски [205..221] (16 входов):
+    for i in 0..4 {
+        for j in 0..4 {
+            let slot = 205 + i * 4 + j;
+            obs[slot] = match (get_altar_pos(i), get_obelisk_pos(j)) {
+                (Some(ap), Some(op)) => (ap.distance(op) / MAP_DIAGONAL).clamp(0.0, 1.0),
+                _ => 1.0,
+            };
+        }
+    }
+
+    // 10.3 Парные расстояния Обелиск ↔ Обелиск [221..227] (6 входов):
+    let obelisk_pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
+    for (idx, &(i, j)) in obelisk_pairs.iter().enumerate() {
+        obs[221 + idx] = match (get_obelisk_pos(i), get_obelisk_pos(j)) {
+            (Some(p1), Some(p2)) => (p1.distance(p2) / MAP_DIAGONAL).clamp(0.0, 1.0),
+            _ => 1.0,
+        };
+    }
+
+    // 10.4 Маршрутный коридор к Активному Разлому [227..231] (4 входа):
+    for i in 0..4 {
+        obs[227 + i] = match (get_altar_pos(i), active_rift) {
+            (Some(ap), Some((rp, _))) => (ap.distance(rp) / MAP_DIAGONAL).clamp(0.0, 1.0),
+            _ => 1.0,
+        };
+    }
+
+    // 10.5 Граф ближайших соседей и локальная кластеризация [231..239] (8 входов):
+    for i in 0..4 {
+        let base = 231 + i * 2;
+        if let Some(ap) = get_altar_pos(i) {
+            let mut min_altar_d = f32::MAX;
+            for j in 0..alive_altars.len() {
+                if i != j {
+                    min_altar_d = min_altar_d.min(ap.distance(alive_altars[j].pos));
+                }
+            }
+            obs[base] = if min_altar_d < f32::MAX {
+                (min_altar_d / MAP_DIAGONAL).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+
+            let mut min_obelisk_d = f32::MAX;
+            for ob in &obelisk_list {
+                min_obelisk_d = min_obelisk_d.min(ap.distance(ob.pos));
+            }
+            obs[base + 1] = if min_obelisk_d < f32::MAX {
+                (min_obelisk_d / MAP_DIAGONAL).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+        } else {
+            obs[base] = 1.0;
+            obs[base + 1] = 1.0;
+        }
+    }
+
+    // --- 11. Союзники: 4 других босса команды [239..255] (16 входов) ---
     let mut ally_slots = [(0.0f32, 0.0f32, 0.0f32, -1.0f32, f32::MAX); 4];
     let mut ally_count = 0usize;
 
@@ -423,7 +576,6 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
             let alive_status = if player.boss_health.is_alive() {
                 1.0
             } else if player.revive_progress > 0.0 {
-                // Если союзник пал, но в процессе воскрешения: шкала [-1.0 .. -0.1]
                 -1.0 + (player.revive_progress / crate::ecs::systems::coop::REVIVE_SECONDS).clamp(0.0, 1.0) * 0.9
             } else {
                 -1.0
@@ -443,12 +595,32 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
     ally_slots[..ally_count].sort_unstable_by(|a, b| a.4.partial_cmp(&b.4).unwrap_or(std::cmp::Ordering::Equal));
 
     for (index, (dx, dy, hp, alive, _)) in ally_slots.iter().enumerate() {
-        let base = 166 + index * 4;
+        let base = 239 + index * 4;
         obs[base] = *dx;
         obs[base + 1] = *dy;
         obs[base + 2] = *hp;
         obs[base + 3] = *alive;
     }
+
+    // --- 12. Глобальная арена и вектор движения [255..260] (5 входов) ---
+    obs[255] = (alive_altars.len() as f32 / 12.0).clamp(0.0, 1.0);
+    obs[256] = (obelisk_list.iter().filter(|o| o.is_active).count() as f32 / 4.0).clamp(0.0, 1.0);
+    obs[257] = world.boss_facing.x.clamp(-1.0, 1.0);
+    obs[258] = world.boss_facing.y.clamp(-1.0, 1.0);
+
+    let mut total_pair_dist = 0.0f32;
+    let mut pair_count = 0usize;
+    for i in 0..alive_altars.len() {
+        for j in (i + 1)..alive_altars.len() {
+            total_pair_dist += alive_altars[i].pos.distance(alive_altars[j].pos);
+            pair_count += 1;
+        }
+    }
+    obs[259] = if pair_count > 0 {
+        ((total_pair_dist / pair_count as f32) / MAP_DIAGONAL).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
 
     obs
 }
@@ -1093,4 +1265,141 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
     }
 
     obs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ecs::components::combat::Health;
+    use crate::ecs::world::StructureEntity;
+
+    #[test]
+    fn test_boss_altar_and_obelisk_sensors_and_inter_distances() {
+        let mut world = World::new();
+        world.boss_pos = Vec2::new(1000.0, 1000.0);
+        world.structures.clear();
+
+        // Ставим Алтарь Крови на (1300, 1400)
+        let altar_pos = Vec2::new(1300.0, 1400.0);
+        world.structures.push(StructureEntity {
+            id: 101,
+            pos: altar_pos,
+            health: Health::new(500.0),
+            resistances: Default::default(),
+            faction: Faction::Director,
+            radius: 40.0,
+            structure_type: crate::content::structures::STRUCTURE_ALTAR,
+            pulse_timer: 0.0,
+            spawn_timer: 0.0,
+            lifetime: 0.0,
+            max_lifetime: 0.0,
+            is_active: true,
+            state_timer: 0.0,
+        });
+
+        // Ставим Обелиск на (1600, 1800)
+        let obelisk_pos = Vec2::new(1600.0, 1800.0);
+        world.structures.push(StructureEntity {
+            id: 102,
+            pos: obelisk_pos,
+            health: Health::new(2000.0),
+            resistances: Default::default(),
+            faction: Faction::Director,
+            radius: 75.0,
+            structure_type: crate::content::structures::STRUCTURE_OBELISK,
+            pulse_timer: 0.0,
+            spawn_timer: 0.0,
+            lifetime: 0.0,
+            max_lifetime: 0.0,
+            is_active: true,
+            state_timer: 15.0, // Активный разлом, 15с до прорыва
+        });
+
+        let obs = extract_boss_observations(&world);
+
+        // 1. Ближайший алтарь [150..156]:
+        assert_eq!(obs[150], 1.0, "Алтарь должен быть обнаружен");
+        let expected_altar_x = (altar_pos.x / MAP_WIDTH).clamp(0.0, 1.0);
+        let expected_altar_y = (altar_pos.y / MAP_HEIGHT).clamp(0.0, 1.0);
+        assert!((obs[151] - expected_altar_x).abs() < 1e-5, "Точный X алтаря");
+        assert!((obs[152] - expected_altar_y).abs() < 1e-5, "Точный Y алтаря");
+
+        let boss_to_altar_dist = altar_pos.distance(world.boss_pos); // sqrt(300^2 + 400^2) = 500
+        let expected_dist_norm = (boss_to_altar_dist / MAP_DIAGONAL).clamp(0.0, 1.0);
+        assert!((obs[153] - expected_dist_norm).abs() < 1e-4, "Расстояние от босса до алтаря");
+
+        // 2. Обелиск [174..179]:
+        assert_eq!(obs[174], 1.0, "Обелиск должен присутствовать");
+        assert!((obs[175] - obelisk_pos.x / MAP_WIDTH).abs() < 1e-5, "Точный X обелиска");
+        assert!((obs[176] - obelisk_pos.y / MAP_HEIGHT).abs() < 1e-5, "Точный Y обелиска");
+        let expected_obelisk_dist = obelisk_pos.distance(world.boss_pos); // sqrt(600^2 + 800^2) = 1000
+        assert!((obs[177] - expected_obelisk_dist / MAP_DIAGONAL).abs() < 1e-4, "Расстояние босс-обелиск");
+
+        // 3. Активный разлом [194..199]:
+        assert_eq!(obs[194], 1.0, "Активный разлом должен быть обнаружен");
+        assert!((obs[195] - 15.0 / 20.0).abs() < 1e-5, "Таймер прорыва разлома");
+        assert!((obs[198] - expected_obelisk_dist / MAP_DIAGONAL).abs() < 1e-4, "Расстояние босс-разлом");
+
+        // 4. Топологическая сеть расстояний:
+        // Двудольная матрица: Алтарь 0 ↔ Обелиск 0 [индекс 205]:
+        let altar_to_obelisk_dist = obelisk_pos.distance(altar_pos); // sqrt(300^2 + 400^2) = 500
+        assert!((obs[205] - altar_to_obelisk_dist / MAP_DIAGONAL).abs() < 1e-4, "Расстояние алтарь-обелиск в матрице");
+
+        // Маршрутный коридор к Активному Разлому: Altar 0 ↔ Rift [индекс 227]:
+        assert!((obs[227] - altar_to_obelisk_dist / MAP_DIAGONAL).abs() < 1e-4, "Расстояние алтарь-разлом в коридоре");
+    }
+
+    #[test]
+    fn test_altar_adjacent_placement_and_wall_barricade() {
+        let mut world = World::new();
+        world.structures.clear();
+
+        // 1. Ставим Алтарь в точку (550, 550) - сетка 100x100
+        let altar1 = crate::content::structures::snap_altar_to_grid(Vec2::new(550.0, 550.0));
+        assert!(crate::content::structures::can_place_blood_altar(&world, altar1));
+        crate::content::structures::spawn_blood_altar(&mut world, altar1);
+
+        // 2. Ставим второй Алтарь в СОСЕДНЮЮ клетку 100x100 (650, 550) - соприкасаются гранями, расстояние ровно 100px!
+        let altar2 = crate::content::structures::snap_altar_to_grid(Vec2::new(650.0, 550.0));
+        assert!(crate::content::structures::can_place_blood_altar(&world, altar2), "Алтарь 100x100 должен ставиться вплотную к другому алтарю");
+
+        // 3. Попытка наложить алтарь со сдвигом 50px (перекрытие) должна блокироваться:
+        let overlapping_altar = crate::content::structures::snap_altar_to_grid(Vec2::new(550.0, 550.0));
+        assert!(!crate::content::structures::can_place_blood_altar(&world, overlapping_altar), "Нельзя накладывать алтари друг на друга");
+
+        // 4. Ставим Стену в соседнюю клетку 50x50 (475, 525) - расстояние до центра алтаря ровно 75px (50 + 25):
+        // Баррикада алтаря вплотную!
+        let wall = crate::content::structures::snap_to_build_grid(Vec2::new(475.0, 525.0));
+        assert!(crate::content::structures::can_place_wall(&world, wall), "Стена 50x50 должна ставиться вплотную к алтарю 100x100");
+
+        // 5. Но стена поверх алтаря (525, 525) - расстояние 25px < 70px - должна блокироваться:
+        let overlapping_wall = crate::content::structures::snap_to_build_grid(Vec2::new(525.0, 525.0));
+        assert!(!crate::content::structures::can_place_wall(&world, overlapping_wall), "Нельзя ставить стену поверх алтаря");
+    }
+
+    #[test]
+    fn test_altar_economy_and_spawn_scaling() {
+        // Скелеты (тир 1, count 8): интервал призыва ровно 1.0с
+        let spawn_t1 = crate::content::structures::altar_spawn_interval(1);
+        assert!((spawn_t1 - 1.0).abs() < 1e-5, "Скелеты спавнятся раз в 1.0с при count=8");
+
+        // Жнец (тир 8, count 1): интервал 8.0с
+        let spawn_t8 = crate::content::structures::altar_spawn_interval(8);
+        assert!((spawn_t8 - 8.0).abs() < 1e-5, "Жнец смерти спавнится раз в 8.0с при count=1");
+
+        // Стоимость алтаря растет с ценой моба:
+        let cost_t1 = crate::content::structures::altar_cost(1);
+        let cost_t2 = crate::content::structures::altar_cost(2);
+        let cost_t8 = crate::content::structures::altar_cost(8);
+        assert!(cost_t2 > cost_t1);
+        assert!(cost_t8 > cost_t2);
+
+        // Кулдаун алтарей: Т1 = 14с, Т2 = 21с (+7с), Т8 = 14 + 7*7 = 63с
+        let cd_t1 = crate::content::structures::altar_cooldown(1);
+        let cd_t2 = crate::content::structures::altar_cooldown(2);
+        let cd_t8 = crate::content::structures::altar_cooldown(8);
+        assert_eq!(cd_t1, 14.0, "Тир 1 (скелеты) имеет КД ровно 14.0 секунд");
+        assert_eq!(cd_t2, 21.0, "Тир 2 (гончие) имеет КД ровно 21.0 секунду (+7с)");
+        assert_eq!(cd_t8, 63.0, "Тир 8 (жнец) имеет КД ровно 63.0 секунды (14 + 7*7)");
+    }
 }

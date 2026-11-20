@@ -43,9 +43,14 @@ pub fn load_trained_boss_model() -> Option<BossModel> {
                 if let Some(net) = &model.neural_net {
                     model.total_synapses = net.total_synapses();
                 }
-                // Фитнес старого формата несравним с новым — инвалидируем.
+                // Фитнес старого формата несравним с новым — инвалидируем и стираем чемпиона.
                 if model.fitness_version != crate::ai::models::MODEL_FORMAT_VERSION {
                     model.fitness = f32::NEG_INFINITY;
+                    model.generation = 0;
+                    model.neural_net = Some(crate::ai::neural_net::NeuralNet::new());
+                }
+                if let Some(net) = &model.neural_net {
+                    model.total_synapses = net.total_synapses();
                 }
                 return Some(model);
             }
@@ -73,11 +78,13 @@ pub fn load_trained_director_model() -> Option<DirectorModel> {
                     model.neural_net = Some(crate::ai::neural_net::DirectorBrainNet::new());
                     model.fitness = f32::NEG_INFINITY;
                 }
-                if let Some(net) = &model.neural_net {
-                    model.total_synapses = net.total_synapses();
-                }
                 if model.fitness_version != crate::ai::models::MODEL_FORMAT_VERSION {
                     model.fitness = f32::NEG_INFINITY;
+                    model.generation = 0;
+                    model.neural_net = Some(crate::ai::neural_net::DirectorBrainNet::new());
+                }
+                if let Some(net) = &model.neural_net {
+                    model.total_synapses = net.total_synapses();
                 }
                 return Some(model);
             }

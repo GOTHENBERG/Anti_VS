@@ -16,7 +16,7 @@ use crate::audio::AudioManager;
 use crate::content::mobs::{get_squad_config, spawn_squad_perimeter};
 use crate::content::structures::{
     can_place_blood_altar, can_place_wall, spawn_blood_altar, spawn_corner_obelisks,
-    snap_to_build_grid, try_spawn_tier_altar, try_spawn_wall,
+    snap_to_build_grid, snap_altar_to_grid, try_spawn_tier_altar, try_spawn_wall,
     altar_cost, altar_cooldown, altar_tier_from_structure_type, structure_type_for_altar_tier,
     WALL_COST,
     STRUCTURE_WALL,
@@ -727,23 +727,23 @@ async fn main() {
             draw_build_grid_overlay(cam_pos, cam_zoom, screen_w, screen_h);
             let (mx, my) = mouse_position();
             let world_cursor = world_cam.screen_to_world(Vec2::new(mx, my));
-            let clamped = snap_to_build_grid(world_cursor);
 
             match placement_mode {
                 PlacementMode::Altar => {
+                    let clamped = snap_altar_to_grid(world_cursor);
                     let can_place = can_place_blood_altar(&world, clamped);
                     let border_color = if can_place { Color::new(0.2, 1.0, 0.4, 0.9) } else { Color::new(1.0, 0.2, 0.2, 0.9) };
                     let fill_color = if can_place { Color::new(0.2, 0.9, 0.4, 0.25) } else { Color::new(0.9, 0.2, 0.2, 0.25) };
 
-                    draw_circle_lines(clamped.x, clamped.y, 120.0, 1.5, Color::new(border_color.r, border_color.g, border_color.b, 0.35));
-                    draw_circle(clamped.x, clamped.y, 30.0, fill_color);
-                    draw_circle_lines(clamped.x, clamped.y, 30.0, 2.5, border_color);
+                    // Честный хитбокс фундамента 100x100
+                    draw_rectangle(clamped.x - 50.0, clamped.y - 50.0, 100.0, 100.0, fill_color);
+                    draw_rectangle_lines(clamped.x - 50.0, clamped.y - 50.0, 100.0, 100.0, 2.5, border_color);
 
                     if let Some(tex) = textures.altar.as_ref() {
-                        let w = 48.0;
-                        let h = 70.0;
-                        let tint = if can_place { Color::new(0.8, 1.0, 0.8, 0.75) } else { Color::new(1.0, 0.5, 0.5, 0.75) };
-                        draw_texture_ex(tex, clamped.x - w * 0.5, clamped.y - h * 0.5, tint, DrawTextureParams {
+                        let w = 84.0;
+                        let h = 108.0;
+                        let tint = if can_place { Color::new(0.8, 1.0, 0.8, 0.85) } else { Color::new(1.0, 0.5, 0.5, 0.85) };
+                        draw_texture_ex(tex, clamped.x - w * 0.5, clamped.y - 64.0, tint, DrawTextureParams {
                             dest_size: Some(Vec2::new(w, h)),
                             ..Default::default()
                         });
@@ -752,13 +752,14 @@ async fn main() {
                     let cooldown = world.directors.first().map_or(0.0, |d| d.altar_cooldown_for_tier(selected_altar_tier));
                     fonts.draw_text(
                         &format!("T{}  {} souls  CD {:.1}s", selected_altar_tier, cost as u32, cooldown),
-                        clamped.x + 34.0,
+                        clamped.x + 55.0,
                         clamped.y - 18.0,
                         15.0,
                         GOLD,
                     );
                 }
                 PlacementMode::Wall => {
+                    let clamped = snap_to_build_grid(world_cursor);
                     let can_place = can_place_wall(&world, clamped);
                     let border_color = if can_place { Color::new(0.4, 0.8, 1.0, 0.9) } else { Color::new(1.0, 0.2, 0.2, 0.9) };
                     let fill_color = if can_place { Color::new(0.2, 0.6, 0.9, 0.30) } else { Color::new(0.9, 0.2, 0.2, 0.30) };
@@ -980,10 +981,10 @@ async fn main() {
             } else if is_mouse_button_pressed(MouseButton::Left) && !ui_interaction.is_mouse_over_ui {
                 let (mx, my) = mouse_position();
                 let world_click = world_cam.screen_to_world(Vec2::new(mx, my));
-                let clamped_click = snap_to_build_grid(world_click);
 
                 match placement_mode {
                     PlacementMode::Altar => {
+                        let clamped_click = snap_altar_to_grid(world_click);
                         let cost = altar_cost(selected_altar_tier);
                         let altar_type = structure_type_for_altar_tier(selected_altar_tier);
                         if can_place_blood_altar(&world, clamped_click) {
@@ -1002,6 +1003,7 @@ async fn main() {
                         }
                     }
                     PlacementMode::Wall => {
+                        let clamped_click = snap_to_build_grid(world_click);
                         if can_place_wall(&world, clamped_click) {
                             if let Some(director) = world.directors.first() {
                                 if director.points >= WALL_COST && director.wall_cooldown <= 0.0 {
@@ -1097,7 +1099,7 @@ async fn main() {
                 }
             }
         } else if (is_paused || world.is_network_paused) && !is_game_over {
-            let action = crate::render::settings::draw_pause_settings(&fonts, &mut audio, &mut menu.settings);
+            let action = crate::render::settings::draw_pause_settings(&fonts, &textures, &mut audio, &mut menu.settings);
             match action {
                 crate::render::settings::SettingsAction::Resume => {
                     is_paused = false;
@@ -1209,7 +1211,7 @@ async fn main() {
             } else {
                 get_screen_data().export_png("screenshot.png");
             }
-            break;
+            std::process::exit(0);
         }
 
         next_frame().await;
@@ -1222,7 +1224,7 @@ fn handle_camera_input(
     follow_boss: &mut bool,
     boss_pos: Vec2,
     dt: f32,
-    is_director: bool,
+    _is_director: bool,
 ) {
     let mut move_dir = Vec2::ZERO;
 
@@ -1245,8 +1247,8 @@ fn handle_camera_input(
         *cam_pos += move_dir.normalize() * (speed * dt / *cam_zoom);
     }
 
-    // Центрирование камеры на боссе: для Директора — Пробел (Space) и клавиша C
-    if (is_director && is_key_pressed(KeyCode::Space)) || is_key_pressed(KeyCode::C) {
+    // Центрирование камеры на боссе: Пробел (Space)
+    if is_key_pressed(KeyCode::Space) {
         *follow_boss = true;
     }
 
@@ -1641,7 +1643,7 @@ fn execute_command(world: &mut World, cmd: Command) {
                     let tier = altar_tier_from_structure_type(altar_type).unwrap_or(1);
                     let cost = altar_cost(tier);
                     let cooldown = altar_cooldown(tier);
-                    let clamped_pos = snap_to_build_grid(pos.into());
+                    let clamped_pos = snap_altar_to_grid(pos.into());
                     let mut can_build = false;
                     if can_place_blood_altar(world, clamped_pos) {
                         if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {

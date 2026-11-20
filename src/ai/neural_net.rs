@@ -2,9 +2,9 @@ use crate::core::rand;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
-// БОСС: 182 сенсора -> 64 -> 48 -> 7 действий
+// БОСС: 260 сенсоров -> 64 -> 48 -> 7 действий
 // ============================================================================
-pub const INPUT_SIZE: usize = 182;
+pub const INPUT_SIZE: usize = 260;
 pub const HIDDEN1_SIZE: usize = 64;
 pub const HIDDEN2_SIZE: usize = 48;
 pub const OUTPUT_SIZE: usize = 7;
@@ -27,7 +27,7 @@ pub const OUT_DASH_Y: usize = 5;
 pub const OUT_REST: usize = 6;
 
 /// Полносвязная глубокая нейронная сеть (Deep MLP)
-/// Архитектура: 182 сенсорных входа -> 64 (Leaky ReLU) -> 48 (Leaky ReLU) -> 7 выходов.
+/// Архитектура: 260 сенсорных входов -> 64 (Leaky ReLU) -> 48 (Leaky ReLU) -> 7 выходов.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NeuralNet {
     pub input_size: usize,
@@ -500,7 +500,7 @@ impl DirectorBrainNet {
         let slot_h = (crate::core::MAP_HEIGHT - ALTAR_MARGIN * 2.0) / ALTAR_SLOTS;
         let sx = (slot % 5) as f32;
         let sy = (slot / 5) as f32;
-        crate::content::structures::snap_to_build_grid(macroquad::prelude::Vec2::new(
+        crate::content::structures::snap_altar_to_grid(macroquad::prelude::Vec2::new(
             ALTAR_MARGIN + (sx + 0.5) * slot_w,
             ALTAR_MARGIN + (sy + 0.5) * slot_h,
         ))

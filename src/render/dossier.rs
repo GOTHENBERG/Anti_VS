@@ -398,7 +398,7 @@ pub fn draw_mob_dossier(
     let full_lore = format!("{} {}", lore_l1, lore_l2);
     fonts.draw_text_wrapped(&full_lore, right_x + 16.0, cur_y, 11.5, 16.0, text_max_w, LIGHTGRAY);
 
-    let tip_text = "Совет: Нажмите клавишу [Esc] или кликните [X], чтобы вернуться в бой";
+    let tip_text = "Совет: Нажмите клавишу [Esc] или кнопку закрытия в углу, чтобы вернуться в бой";
     fonts.draw_text(tip_text, right_x + 16.0, lore_box_y + lore_box_h - 14.0, 11.0, GRAY);
 
     DossierResult {

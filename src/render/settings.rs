@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 use crate::audio::{AudioEvent, AudioManager};
 use crate::render::font::GameFonts;
+use crate::render::textures::GameTextures;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsAction {
@@ -11,7 +12,45 @@ pub enum SettingsAction {
     MainMenu,
 }
 
-pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings: &mut crate::render::main_menu::PlayerSettings) -> SettingsAction {
+/// Процедурная отрисовка пиксельной иконки динамика (Speaker)
+/// В зависимости от is_muted рисует звуковые волны либо диагональную линию выключения звука
+pub fn draw_pixel_speaker(x: f32, y: f32, is_muted: bool, color: Color) {
+    // Корпус динамика (прямоугольный блок слева)
+    draw_rectangle(x, y + 4.0, 5.0, 8.0, color);
+
+    // Раструб (трапеция, расширяющаяся вправо)
+    draw_triangle(
+        Vec2::new(x + 4.0, y + 4.0),
+        Vec2::new(x + 11.0, y + 1.0),
+        Vec2::new(x + 11.0, y + 15.0),
+        color,
+    );
+    draw_triangle(
+        Vec2::new(x + 4.0, y + 12.0),
+        Vec2::new(x + 4.0, y + 4.0),
+        Vec2::new(x + 11.0, y + 15.0),
+        color,
+    );
+
+    if !is_muted {
+        // Звуковые волны (две аккуратные дуги)
+        draw_line(x + 14.0, y + 4.0, x + 16.0, y + 8.0, 1.5, color);
+        draw_line(x + 16.0, y + 8.0, x + 14.0, y + 12.0, 1.5, color);
+
+        draw_line(x + 18.0, y + 2.0, x + 21.0, y + 8.0, 1.5, color);
+        draw_line(x + 21.0, y + 8.0, x + 18.0, y + 14.0, 1.5, color);
+    } else {
+        // Диагональная перечёркивающая линия отключения звука
+        draw_line(x + 1.0, y + 15.0, x + 19.0, y + 1.0, 2.2, Color::new(1.0, 0.25, 0.25, 1.0));
+    }
+}
+
+pub fn draw_pause_settings(
+    fonts: &GameFonts,
+    textures: &GameTextures,
+    audio: &mut AudioManager,
+    settings: &mut crate::render::main_menu::PlayerSettings,
+) -> SettingsAction {
     let screen_w = screen_width();
     let screen_h = screen_height();
     let (mx, my) = mouse_position();
@@ -216,9 +255,26 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let prev_hover = mx >= prev_x && mx <= prev_x + c_btn_w && my >= c_btn_y && my <= c_btn_y + c_btn_h;
     draw_rectangle(prev_x, c_btn_y, c_btn_w, c_btn_h, if prev_hover { Color::new(0.20, 0.22, 0.35, 1.0) } else { Color::new(0.10, 0.12, 0.20, 0.95) });
     draw_rectangle_lines(prev_x, c_btn_y, c_btn_w, c_btn_h, 1.2, if prev_hover { SKYBLUE } else { GRAY });
-    let prev_lbl = "< Пред [P]";
-    let pl_w = fonts.measure_heading(prev_lbl, 11.5).width;
-    fonts.draw_heading(prev_lbl, prev_x + (c_btn_w - pl_w) / 2.0, c_btn_y + 19.0, 11.5, if prev_hover { WHITE } else { LIGHTGRAY });
+    
+    // Процедурная пиксельная иконка перехода назад [ |◄◄ ]
+    let p_ico_col = if prev_hover { WHITE } else { LIGHTGRAY };
+    let p_mid_y = c_btn_y + c_btn_h / 2.0;
+    let p_left_x = prev_x + 16.0;
+    draw_rectangle(p_left_x, p_mid_y - 5.0, 2.0, 10.0, p_ico_col);
+    draw_triangle(
+        Vec2::new(p_left_x + 3.0, p_mid_y),
+        Vec2::new(p_left_x + 9.0, p_mid_y - 5.0),
+        Vec2::new(p_left_x + 9.0, p_mid_y + 5.0),
+        p_ico_col,
+    );
+    draw_triangle(
+        Vec2::new(p_left_x + 9.0, p_mid_y),
+        Vec2::new(p_left_x + 15.0, p_mid_y - 5.0),
+        Vec2::new(p_left_x + 15.0, p_mid_y + 5.0),
+        p_ico_col,
+    );
+    fonts.draw_heading("Пред [P]", prev_x + 38.0, c_btn_y + 19.0, 11.5, p_ico_col);
+
     if is_clicked && prev_hover {
         audio.prev_track();
         audio.handle_event(AudioEvent::UiClick);
@@ -229,9 +285,21 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let shuf_hover = mx >= shuf_x && mx <= shuf_x + c_btn_w && my >= c_btn_y && my <= c_btn_y + c_btn_h;
     draw_rectangle(shuf_x, c_btn_y, c_btn_w, c_btn_h, if shuf_hover { Color::new(0.30, 0.20, 0.35, 1.0) } else { Color::new(0.14, 0.10, 0.18, 0.95) });
     draw_rectangle_lines(shuf_x, c_btn_y, c_btn_w, c_btn_h, 1.2, if shuf_hover { GOLD } else { GRAY });
-    let shuf_lbl = "~ Случайный";
-    let sl_w = fonts.measure_heading(shuf_lbl, 11.5).width;
-    fonts.draw_heading(shuf_lbl, shuf_x + (c_btn_w - sl_w) / 2.0, c_btn_y + 19.0, 11.5, if shuf_hover { GOLD } else { LIGHTGRAY });
+    
+    // Процедурные перекрестные стрелки случайного выбора (Shuffle)
+    let s_ico_col = if shuf_hover { GOLD } else { LIGHTGRAY };
+    let s_mid_y = c_btn_y + c_btn_h / 2.0;
+    let s_left_x = shuf_x + 18.0;
+    draw_line(s_left_x, s_mid_y - 4.0, s_left_x + 10.0, s_mid_y + 4.0, 1.5, s_ico_col);
+    draw_line(s_left_x, s_mid_y + 4.0, s_left_x + 10.0, s_mid_y - 4.0, 1.5, s_ico_col);
+    draw_triangle(
+        Vec2::new(s_left_x + 14.0, s_mid_y + 4.0),
+        Vec2::new(s_left_x + 9.0, s_mid_y + 1.0),
+        Vec2::new(s_left_x + 9.0, s_mid_y + 7.0),
+        s_ico_col,
+    );
+    fonts.draw_heading("Случайный", shuf_x + 38.0, c_btn_y + 19.0, 11.5, s_ico_col);
+
     if is_clicked && shuf_hover {
         audio.shuffle_start();
         audio.handle_event(AudioEvent::UiClick);
@@ -242,16 +310,33 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     let next_hover = mx >= next_x && mx <= next_x + c_btn_w && my >= c_btn_y && my <= c_btn_y + c_btn_h;
     draw_rectangle(next_x, c_btn_y, c_btn_w, c_btn_h, if next_hover { Color::new(0.20, 0.22, 0.35, 1.0) } else { Color::new(0.10, 0.12, 0.20, 0.95) });
     draw_rectangle_lines(next_x, c_btn_y, c_btn_w, c_btn_h, 1.2, if next_hover { SKYBLUE } else { GRAY });
-    let next_lbl = "След > [N]";
-    let nl_w = fonts.measure_heading(next_lbl, 11.5).width;
-    fonts.draw_heading(next_lbl, next_x + (c_btn_w - nl_w) / 2.0, c_btn_y + 19.0, 11.5, if next_hover { WHITE } else { LIGHTGRAY });
+    
+    // Процедурная пиксельная иконка перехода вперед [ ►►| ]
+    let n_ico_col = if next_hover { WHITE } else { LIGHTGRAY };
+    let n_mid_y = c_btn_y + c_btn_h / 2.0;
+    fonts.draw_heading("След [N]", next_x + 18.0, c_btn_y + 19.0, 11.5, n_ico_col);
+    let n_right_x = next_x + c_btn_w - 24.0;
+    draw_triangle(
+        Vec2::new(n_right_x - 6.0, n_mid_y),
+        Vec2::new(n_right_x - 12.0, n_mid_y - 5.0),
+        Vec2::new(n_right_x - 12.0, n_mid_y + 5.0),
+        n_ico_col,
+    );
+    draw_triangle(
+        Vec2::new(n_right_x, n_mid_y),
+        Vec2::new(n_right_x - 6.0, n_mid_y - 5.0),
+        Vec2::new(n_right_x - 6.0, n_mid_y + 5.0),
+        n_ico_col,
+    );
+    draw_rectangle(n_right_x + 1.0, n_mid_y - 5.0, 2.0, 10.0, n_ico_col);
+
     if is_clicked && next_hover {
         audio.next_track();
         audio.handle_event(AudioEvent::UiClick);
     }
 
     // -------------------------------------------------------------
-    // СЕКЦИЯ 4: КНОПКА ЗАГЛУШЕНИЯ (MUTE)
+    // СЕКЦИЯ 4: КНОПКА ЗАГЛУШЕНИЯ (MUTE) — управляемая клавишей [M] и кликом
     // -------------------------------------------------------------
     let mute_y = pl_y + pl_box_h + 10.0;
     let mute_btn_w = panel_w - 36.0;
@@ -278,17 +363,20 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
         if audio.is_muted { RED } else { GREEN },
     );
 
+    // Графическая иконка динамика (Speaker)
+    let spk_col = if audio.is_muted { RED } else { Color::new(0.65, 1.0, 0.65, 1.0) };
+    draw_pixel_speaker(x + 28.0, mute_y + 8.0, audio.is_muted, spk_col);
+
     let mute_label = if audio.is_muted {
-        "[X] ВСЕ ЗВУКИ ЗАГЛУШЕНЫ (Кликните или [M], чтобы включить)"
+        "ЗВУК ВЫКЛЮЧЕН  •  Нажмите [M] или кликните, чтобы включить"
     } else {
-        "[V] ЗВУКИ И МУЗЫКА АКТИВНЫ (Кликните или [M], чтобы заглушить)"
+        "ЗВУК ВКЛЮЧЕН  •  Нажмите [M] или кликните, чтобы заглушить"
     };
-    let mlw = fonts.measure_heading(mute_label, 12.0).width;
     fonts.draw_heading(
         mute_label,
-        x + 18.0 + (mute_btn_w - mlw) / 2.0,
+        x + 58.0,
         mute_y + 21.0,
-        12.0,
+        11.5,
         if audio.is_muted { RED } else { Color::new(0.7, 1.0, 0.7, 1.0) },
     );
 
@@ -319,58 +407,106 @@ pub fn draw_pause_settings(fonts: &GameFonts, audio: &mut AudioManager, settings
     }
 
     // -------------------------------------------------------------
-    // СЕКЦИЯ 5: КНОПКИ ДЕЙСТВИЙ (ВНИЗУ)
+    // СЕКЦИЯ 5: КНОПКИ ДЕЙСТВИЙ (ВНИЗУ) — с ассетами и процедурными иконками
     // -------------------------------------------------------------
     let actions_y = ctrl_y + 42.0;
     let act_btn_w = (panel_w - 60.0) / 4.0;
     let act_btn_h = 36.0;
 
-    // 1. Продолжить бой
+    // 1. Продолжить бой (В БОЙ) — с ассетом меча либо процедурной кнопкой Play
     let resume_x = x + 18.0;
     let resume_hover = mx >= resume_x && mx <= resume_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(resume_x, actions_y, act_btn_w, act_btn_h, if resume_hover { Color::new(0.18, 0.45, 0.25, 1.0) } else { Color::new(0.12, 0.28, 0.18, 0.95) });
     draw_rectangle_lines(resume_x, actions_y, act_btn_w, act_btn_h, 1.5, if resume_hover { GREEN } else { DARKGRAY });
-    let rw = fonts.measure_heading("> В БОЙ", 11.0).width;
-    fonts.draw_heading("> В БОЙ", resume_x + (act_btn_w - rw) / 2.0, actions_y + 23.0, 11.0, WHITE);
+    if let Some(ref sword_tex) = textures.icon_sword {
+        draw_texture_ex(
+            sword_tex,
+            resume_x + 8.0,
+            actions_y + 8.0,
+            if resume_hover { GOLD } else { WHITE },
+            DrawTextureParams {
+                dest_size: Some(Vec2::splat(20.0)),
+                ..Default::default()
+            },
+        );
+        fonts.draw_heading("В БОЙ", resume_x + 32.0, actions_y + 23.0, 11.5, WHITE);
+    } else {
+        let tri_x = resume_x + 14.0;
+        let tri_y = actions_y + act_btn_h / 2.0;
+        draw_triangle(
+            Vec2::new(tri_x + 8.0, tri_y),
+            Vec2::new(tri_x, tri_y - 6.0),
+            Vec2::new(tri_x, tri_y + 6.0),
+            if resume_hover { GOLD } else { WHITE },
+        );
+        fonts.draw_heading("В БОЙ", resume_x + 28.0, actions_y + 23.0, 11.5, WHITE);
+    }
 
     if is_clicked && resume_hover {
         audio.handle_event(AudioEvent::UiClick);
         return SettingsAction::Resume;
     }
 
-    // 2. Кодекс
+    // 2. Кодекс — с ассетом книги
     let codex_x = resume_x + act_btn_w + 8.0;
     let codex_hover = mx >= codex_x && mx <= codex_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(codex_x, actions_y, act_btn_w, act_btn_h, if codex_hover { Color::new(0.30, 0.25, 0.40, 1.0) } else { Color::new(0.16, 0.14, 0.24, 0.95) });
     draw_rectangle_lines(codex_x, actions_y, act_btn_w, act_btn_h, 1.5, if codex_hover { GOLD } else { DARKGRAY });
-    let cw = fonts.measure_heading("КОДЕКС", 11.0).width;
-    fonts.draw_heading("КОДЕКС", codex_x + (act_btn_w - cw) / 2.0, actions_y + 23.0, 11.0, WHITE);
+    if let Some(ref book_tex) = textures.icon_book {
+        draw_texture_ex(
+            book_tex,
+            codex_x + 8.0,
+            actions_y + 8.0,
+            if codex_hover { GOLD } else { WHITE },
+            DrawTextureParams {
+                dest_size: Some(Vec2::splat(20.0)),
+                ..Default::default()
+            },
+        );
+        fonts.draw_heading("КОДЕКС", codex_x + 32.0, actions_y + 23.0, 11.0, WHITE);
+    } else {
+        let cw = fonts.measure_heading("КОДЕКС", 11.0).width;
+        fonts.draw_heading("КОДЕКС", codex_x + (act_btn_w - cw) / 2.0, actions_y + 23.0, 11.0, WHITE);
+    }
 
     if is_clicked && codex_hover {
         audio.handle_event(AudioEvent::BookOpen);
         return SettingsAction::OpenCodex;
     }
 
-    // 3. Перезапуск
+    // 3. Перезапуск — с круговой иконкой перезагрузки
     let restart_x = codex_x + act_btn_w + 8.0;
     let restart_hover = mx >= restart_x && mx <= restart_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(restart_x, actions_y, act_btn_w, act_btn_h, if restart_hover { Color::new(0.40, 0.20, 0.15, 1.0) } else { Color::new(0.22, 0.12, 0.10, 0.95) });
     draw_rectangle_lines(restart_x, actions_y, act_btn_w, act_btn_h, 1.5, if restart_hover { ORANGE } else { DARKGRAY });
-    let rtw = fonts.measure_heading("ЗАНОВО", 11.0).width;
-    fonts.draw_heading("ЗАНОВО", restart_x + (act_btn_w - rtw) / 2.0, actions_y + 23.0, 11.0, WHITE);
+    let r_cx = restart_x + 14.0;
+    let r_cy = actions_y + act_btn_h / 2.0;
+    let r_col = if restart_hover { GOLD } else { WHITE };
+    draw_circle_lines(r_cx, r_cy, 6.0, 1.5, r_col);
+    draw_triangle(
+        Vec2::new(r_cx + 4.0, r_cy - 7.0),
+        Vec2::new(r_cx + 9.0, r_cy - 3.0),
+        Vec2::new(r_cx + 4.0, r_cy - 1.0),
+        r_col,
+    );
+    fonts.draw_heading("ЗАНОВО", restart_x + 28.0, actions_y + 23.0, 11.0, WHITE);
 
     if is_clicked && restart_hover {
         audio.handle_event(AudioEvent::UiClick);
         return SettingsAction::Restart;
     }
 
-    // 4. Главное меню
+    // 4. Главное меню — с иконкой портала/двери
     let menu_x = restart_x + act_btn_w + 8.0;
     let menu_hover = mx >= menu_x && mx <= menu_x + act_btn_w && my >= actions_y && my <= actions_y + act_btn_h;
     draw_rectangle(menu_x, actions_y, act_btn_w, act_btn_h, if menu_hover { Color::new(0.35, 0.15, 0.18, 1.0) } else { Color::new(0.20, 0.10, 0.12, 0.95) });
     draw_rectangle_lines(menu_x, actions_y, act_btn_w, act_btn_h, 1.5, if menu_hover { RED } else { DARKGRAY });
-    let mw = fonts.measure_heading("В МЕНЮ", 11.0).width;
-    fonts.draw_heading("В МЕНЮ", menu_x + (act_btn_w - mw) / 2.0, actions_y + 23.0, 11.0, WHITE);
+    let m_dx = menu_x + 12.0;
+    let m_dy = actions_y + 9.0;
+    let m_col = if menu_hover { GOLD } else { WHITE };
+    draw_rectangle_lines(m_dx, m_dy, 12.0, 18.0, 1.5, m_col);
+    draw_circle(m_dx + 9.0, m_dy + 10.0, 1.2, m_col);
+    fonts.draw_heading("В МЕНЮ", menu_x + 30.0, actions_y + 23.0, 11.0, WHITE);
 
     if is_clicked && menu_hover {
         audio.handle_event(AudioEvent::UiClick);

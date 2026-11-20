@@ -1,9 +1,9 @@
 {
-  "total_generations": 295,
-  "total_matches_played": 32,
-  "best_boss_survival_time": 30.049831,
-  "best_boss_level": 8,
-  "best_director_kill_time": 30.049831,
-  "timestamp": "2026-11-19T08:53:03Z",
-  "fitness_formula": "zero-sum: Boss = -DirectorUtility; Director = +DirectorUtility (time 600 + kill 400 + damage 200 + altar uptime 150 + economy 50 - boss level 100)"
+  "total_generations": 5,
+  "total_matches_played": 512,
+  "best_boss_survival_time": 943.62885,
+  "best_boss_level": 50,
+  "best_director_kill_time": 441.7679,
+  "timestamp": "2026-11-19T12:52:02Z",
+  "fitness_formula": "zero-sum: Boss = -DirectorUtility; Director = +DirectorUtility (time 600 + kill 400 + damage 200 + altar uptime 150 + economy 50 - structure reward: 8/altar, 25/obelisk)"
 }

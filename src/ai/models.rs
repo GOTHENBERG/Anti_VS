@@ -3,7 +3,7 @@ use crate::ecs::components::inventory::{PassiveType, WeaponType};
 
 /// Версия формата фитнеса/архитектуры. Старые модели нельзя сравнивать с новыми:
 /// их fitness измерялся другой формулой, поэтому при загрузке он инвалидируется.
-pub const MODEL_FORMAT_VERSION: u32 = 8;
+pub const MODEL_FORMAT_VERSION: u32 = 11;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BossModel {
@@ -17,7 +17,7 @@ pub struct BossModel {
     pub avg_survival_time: f32,
     pub total_synapses: usize,
 
-    // Полносвязная глубокая нейросеть (182 сенсора -> 64 -> 48 -> 7 выходов)
+    // Полносвязная глубокая нейросеть (260 сенсоров -> 64 -> 48 -> 7 выходов)
     #[serde(default)]
     pub neural_net: Option<crate::ai::neural_net::NeuralNet>,
 

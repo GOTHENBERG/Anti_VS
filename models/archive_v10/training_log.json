@@ -1,0 +1,9 @@
+{
+  "total_generations": 8,
+  "total_matches_played": 192,
+  "best_boss_survival_time": 300.00027,
+  "best_boss_level": 46,
+  "best_director_kill_time": 700.61676,
+  "timestamp": "2026-11-19T12:04:48Z",
+  "fitness_formula": "zero-sum: Boss = -DirectorUtility; Director = +DirectorUtility (time 600 + kill 400 + damage 200 + altar uptime 150 + economy 50 - structure reward: 8/altar, 25/obelisk)"
+}
