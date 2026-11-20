@@ -314,6 +314,8 @@ pub fn draw_mob_sprite(mob: &MobEntity, time: f32, textures: &GameTextures, boss
             6 => 38.0, // Демон теней
             7 => 42.0, // Огненный элементаль
             8 => 62.0, // Жнец Смерти (Титан)
+            17 => if mob.is_hero { 140.0 } else { 32.0 }, // Владыка Пустоты (Герой / Копия)
+            18 => 155.0, // Архидемон Инферно (Герой)
             _ => 28.0,
         };
 
@@ -407,9 +409,65 @@ pub fn draw_mob_sprite(mob: &MobEntity, time: f32, textures: &GameTextures, boss
             2 => draw_hound(mob, time),
             3 => draw_cultist(mob, time),
             4 => draw_ice_golem(mob, time),
+            17 => draw_void_lord(mob, time),
+            18 => draw_inferno_archdemon(mob, time),
             _ => draw_kamikaze(mob, time),
         }
     }
+}
+
+fn draw_void_lord(mob: &MobEntity, time: f32) {
+    let p = mob.pos;
+    let r = mob.radius;
+    let pulse = (time * 5.0).sin() * 3.0;
+
+    // Тень под титаном
+    draw_ellipse(p.x, p.y + r * 0.8, r * 1.2, r * 0.45, 0.0, Color::new(0.0, 0.0, 0.0, 0.5));
+
+    // Темная аура Бездны
+    draw_circle(p.x, p.y, r + pulse, Color::new(0.12, 0.02, 0.22, 0.6));
+    draw_circle_lines(p.x, p.y, r + pulse, 2.5, Color::new(0.65, 0.20, 0.95, 0.85));
+
+    // Центральное монолитное тело Бездны
+    draw_circle(p.x, p.y, r * 0.7, Color::new(0.02, 0.02, 0.05, 1.0));
+    draw_circle_lines(p.x, p.y, r * 0.7, 2.0, Color::new(0.4, 0.1, 0.7, 0.9));
+
+    // Фиолетовые пульсирующие крылья / сегменты тьмы
+    for i in 0..6 {
+        let angle = time * 1.5 + (i as f32) * (std::f32::consts::PI / 3.0);
+        let wx = p.x + angle.cos() * (r * 0.9);
+        let wy = p.y + angle.sin() * (r * 0.9);
+        draw_circle(wx, wy, r * 0.22, Color::new(0.35, 0.08, 0.55, 0.85));
+    }
+
+    // Сияющее звездное око
+    draw_circle(p.x, p.y - 4.0, 8.0, Color::new(0.85, 0.40, 1.0, 1.0));
+    draw_circle(p.x, p.y - 4.0, 3.5, WHITE);
+}
+
+fn draw_inferno_archdemon(mob: &MobEntity, time: f32) {
+    let p = mob.pos;
+    let r = mob.radius;
+    let flame_p = (time * 8.0).sin() * 4.0;
+
+    // Тень под колоссом
+    draw_ellipse(p.x, p.y + r * 0.8, r * 1.2, r * 0.45, 0.0, Color::new(0.0, 0.0, 0.0, 0.5));
+
+    // Пылающее адское поле
+    draw_circle(p.x, p.y, r + flame_p, Color::new(0.85, 0.15, 0.02, 0.4));
+    draw_circle_lines(p.x, p.y, r + flame_p, 2.5, Color::new(1.0, 0.45, 0.10, 0.9));
+
+    // Обсидиановое тело
+    draw_circle(p.x, p.y, r * 0.75, Color::new(0.12, 0.04, 0.04, 1.0));
+    draw_circle_lines(p.x, p.y, r * 0.75, 2.2, Color::new(0.85, 0.25, 0.05, 0.95));
+
+    // Лавовые жилы
+    draw_circle(p.x, p.y, r * 0.35, Color::new(1.0, 0.55, 0.05, 0.85));
+    draw_circle(p.x, p.y, r * 0.18, Color::new(1.0, 0.90, 0.35, 1.0));
+
+    // Рога демона
+    draw_line(p.x - r * 0.4, p.y - r * 0.5, p.x - r * 0.7, p.y - r * 0.9, 4.0, Color::new(0.2, 0.05, 0.05, 1.0));
+    draw_line(p.x + r * 0.4, p.y - r * 0.5, p.x + r * 0.7, p.y - r * 0.9, 4.0, Color::new(0.2, 0.05, 0.05, 1.0));
 }
 
 /// Тир 1: Скелет-пехотинец (процедурный fallback)

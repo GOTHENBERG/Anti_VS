@@ -438,8 +438,9 @@ mod tests {
         world.structures[0].health.current = 0.0;
         crate::ecs::systems::combat::update_combat(&mut world, 0.016);
 
-        // Проверяем, что босс получил в награду Реликвию!
+        // Проверяем, что ОБА босса получили в награду Реликвию (независимо от того, кто наносил урон)!
         assert_eq!(world.boss_inventory.passives.len(), 1);
+        assert_eq!(world.coop_bosses[0].boss_inventory.passives.len(), 1);
         assert_eq!(world.boss_obelisks_deactivated_total, 1);
 
         // Проверяем, что обелиск деактивировался, а HP сбросилось до полного значения для 2 боссов
@@ -447,5 +448,44 @@ mod tests {
         assert!(!obelisk.is_active);
         assert_eq!(obelisk.state_timer, 0.0);
         assert_eq!(obelisk.health.current, 4800.0);
+    }
+
+    #[test]
+    fn test_obelisk_cannot_activate_while_hero_alive() {
+        let mut world = World::new();
+        world.is_headless = true;
+        spawn_corner_obelisks(&mut world);
+
+        // All obelisks are inactive initially
+        for st in &world.structures {
+            assert!(!st.is_active);
+        }
+
+        // Add a living hero mob to the world
+        let mob_id = world.alloc_id();
+        let mut hero = crate::ecs::world::MobEntity::new_test(mob_id, Vec2::new(500.0, 500.0), 17);
+        hero.is_hero = true;
+        world.mobs.push(hero);
+
+        world.obelisk_cycle_timer = 0.5;
+
+        // Run update_world_structures for dt = 1.0
+        crate::ecs::systems::skills::update_world_structures(&mut world, 1.0);
+
+        // Because hero is alive, obelisk timer does not tick down and no obelisk activates!
+        assert_eq!(world.obelisk_cycle_timer, 0.5);
+        for st in &world.structures {
+            assert!(!st.is_active, "Obelisk must NOT activate while a hero is alive");
+        }
+
+        // Kill the hero
+        world.mobs[0].health.current = 0.0;
+
+        // Now run update_world_structures
+        crate::ecs::systems::skills::update_world_structures(&mut world, 1.0);
+
+        // One obelisk should now become active!
+        let active_count = world.structures.iter().filter(|s| s.is_active).count();
+        assert_eq!(active_count, 1, "After hero dies, obelisk cycle can activate an obelisk");
     }
 }

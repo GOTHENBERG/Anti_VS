@@ -438,5 +438,7 @@ fn format_passive_bonus(p: PassiveType, lvl: u8) -> String {
         PassiveType::SilverTears => format!("+{:.1} HP/сек регенерации, +{}% сопротивления стихиям", lvl as f32 * 3.0, lvl * 15),
         PassiveType::GoldenSeal => format!("+{}% урона, +{}% крит, +{}px радиус сбора душ", lvl * 20, lvl * 10, lvl * 35),
         PassiveType::TitanBloodArmor => format!("+{:.0} к броне, +{}% урона за каждые 10% потерянного HP", lvl as f32 * 12.0, lvl * 8),
+        PassiveType::BerserkerBlood => format!("До +{}% темпа атаки и +{:.1} HP/с регенерации при потере HP", lvl * 20, lvl as f32 * 2.0),
+        PassiveType::MartyrVanguard => format!("До +{}% скорости бега от раненых союзников, +{:.1} HP за убийство моба", lvl * 15, lvl as f32 * 1.5),
     }
 }

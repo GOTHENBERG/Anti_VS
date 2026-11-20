@@ -181,7 +181,17 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
         PassiveType::TitanBloodArmor => PassiveDefinition {
             kind,
             name: "Доспех Кровавого Титана",
-            description: "Преобразует потерянное здоровье в несокрушимую плоскую броню (+до 25) и яростный урон (+до 50%).",
+            description: "Преобразует потерянное здоровье в несокрушимую плоскую броню (+до 25) и яростный базовый урон (+20%).",
+        },
+        PassiveType::BerserkerBlood => PassiveDefinition {
+            kind,
+            name: "Кровь Берсерка",
+            description: "Пассивка берсерка: повышает регенерацию (до +38 HP/с) и темп атаки оружия (до +60%) тем сильнее, чем ниже здоровье босса.",
+        },
+        PassiveType::MartyrVanguard => PassiveDefinition {
+            kind,
+            name: "Авангард Мучеников",
+            description: "Командный авангард: ускоряет бег (до +60%) тем сильнее, чем меньше HP у союзников. Убийство любого врага лечит на +1.5 HP.",
         },
     }
 }

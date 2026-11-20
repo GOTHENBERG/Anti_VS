@@ -24,12 +24,60 @@ pub struct MobEntity {
     pub knockback_immune: bool,
     pub knockback_vel: Vec2,
     pub attack_timer: f32,
+    pub is_hero: bool,
+    pub hero_enrage_timer: f32,
+    pub hero_skill_timers: [f32; 4],
+    pub attack_count: u32,
+    pub has_duplicated: bool,
+    pub owner_hero_id: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub struct BlackHoleEntity {
+    pub id: usize,
+    pub owner_id: usize,
+    pub center_pos: Vec2,
+    pub radius: f32,
+    pub orbit_angle: f32,
+    pub orbit_dist: f32,
+    pub orbit_speed: f32,
+    pub duration: f32,
+    pub is_active: bool,
+    pub spin_angle: f32,
 }
 
 impl MobEntity {
     #[inline]
     pub fn is_ranged(&self) -> bool {
         crate::content::mobs::is_ranged_tier(self.tier)
+    }
+
+    #[cfg(test)]
+    pub fn new_test(id: usize, pos: Vec2, tier: u8) -> Self {
+        Self {
+            id,
+            target_boss_id: None,
+            pos,
+            vel: Vec2::ZERO,
+            speed: 100.0,
+            health: Health::new(100.0),
+            resistances: Resistances::default(),
+            status: StatusEffects::default(),
+            damage: 10.0,
+            tier,
+            radius: 12.0,
+            is_undead: false,
+            is_elite: false,
+            knockback_immune: false,
+            knockback_vel: Vec2::ZERO,
+            attack_timer: 1.0,
+            is_hero: false,
+            hero_enrage_timer: 0.0,
+            hero_skill_timers: [0.0; 4],
+            attack_count: 0,
+            has_duplicated: false,
+            owner_hero_id: None,
+        }
     }
 }
 
@@ -130,10 +178,18 @@ pub struct DirectorState {
     /// Время с момента последнего призыва отряда. Даёт Директору сенсор темпа.
     pub time_since_last_spawn: f32,
     pub total_mobs_spawned: usize,
-    pub mob_page: u8,           // 0 = Тиры 1-8 (Базовая Орда), 1 = Тиры 9-16 (Высший Легион)
+    pub mob_page: u8,           // 0 = Тиры 1-8 (Базовая Орда), 1 = Тиры 9-16 (Высший Легион), 2 = Герои
     pub grade_fury: u32,        // [F] Ярость: +12% урон, +6% скорость (u32: никогда не переполняется при 255+)
     pub grade_carapace: u32,    // [G] Панцирь: +2.5 броня, +5% физ. рез
     pub grade_pestilence: u32,  // [H] Чумные споры: отравление босса атаками мобов (ближними и дальними) + ядовитая миазма вокруг Алтарей
+    #[serde(default)]
+    pub hero_cooldown: f32,
+    #[serde(default = "default_hero_max_cd")]
+    pub hero_max_cooldown: f32,
+}
+
+fn default_hero_max_cd() -> f32 {
+    60.0
 }
 
 impl DirectorState {
@@ -156,6 +212,8 @@ impl DirectorState {
             grade_fury: 0,
             grade_carapace: 0,
             grade_pestilence: 0,
+            hero_cooldown: 0.0,
+            hero_max_cooldown: 60.0,
         }
     }
 
@@ -222,6 +280,7 @@ pub struct BossPlayerState {
     pub revive_target_id: Option<u8>,
     pub pending_level_ups: usize,
     pub human_controlled: bool,
+    pub level_up_options: Option<Vec<crate::ecs::components::inventory::PerkChoice>>,
     pub input_move_dir: Vec2,
     pub input_aim_dir: Vec2,
     pub input_dash_pressed: bool,
@@ -267,6 +326,7 @@ impl BossPlayerState {
             revive_target_id: None,
             pending_level_ups: 0,
             human_controlled: false,
+            level_up_options: None,
             input_move_dir: Vec2::ZERO,
             input_aim_dir: Vec2::X,
             input_dash_pressed: false,
@@ -325,6 +385,7 @@ pub struct World {
     pub gems: Vec<SoulGemEntity>,
     pub structures: Vec<StructureEntity>,
     pub acid_pools: Vec<AcidPoolEntity>,
+    pub black_holes: Vec<BlackHoleEntity>,
     pub floating_texts: Vec<FloatingTextEntity>,
     pub particles: Vec<ParticleEntity>,
     pub lightning_arcs: Vec<(Vec2, Vec2, f32)>, // (start, end, timer)
@@ -384,6 +445,8 @@ impl World {
         swap_field!(boss_poison_dps);
         std::mem::swap(&mut self.boss_revive_progress, &mut player.revive_progress);
         std::mem::swap(&mut self.boss_pending_level_ups, &mut player.pending_level_ups);
+        std::mem::swap(&mut self.boss_level_up_options, &mut player.level_up_options);
+        std::mem::swap(&mut self.boss_human_controlled, &mut player.human_controlled);
         swap_field!(blade_storm_angle);
         swap_field!(divine_shield_angle);
         swap_field!(death_ray_active);
@@ -543,6 +606,7 @@ impl World {
             gems: Vec::with_capacity(3000),
             structures: Vec::new(),
             acid_pools: Vec::new(),
+            black_holes: Vec::new(),
             floating_texts: Vec::with_capacity(500),
             particles: Vec::with_capacity(2000),
             lightning_arcs: Vec::new(),

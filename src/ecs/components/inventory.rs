@@ -109,6 +109,8 @@ pub enum PassiveType {
     SilverTears,      // 33. Серебряная Слеза (+3.0 HP/сек реген, +15% резисты)
     GoldenSeal,       // 34. Имперская Печать (+20% урон, +10% крит, +30px сбор)
     TitanBloodArmor,  // 35. Доспех Кровавого Титана (Бонус урона и брони от потерянного HP)
+    BerserkerBlood,   // 36. Кровь Берсерка (Реген и темп атаки тем сильнее, чем ниже HP)
+    MartyrVanguard,   // 37. Авангард Мучеников (Скорость бега от раненых союзников + вампирик с мобов)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -550,24 +552,62 @@ impl BossInventory {
         (lvl as f32 * 2.5) + titan_armor
     }
 
-    /// Множитель урона от BloodStone, DivineRapier, ColossalEye, BlessedHeart, AbyssalCurseStone, GoldenSeal
-    pub fn get_damage_multiplier(&self) -> f32 {
+    /// Множитель БАЗОВОГО урона (начальная сила оружия и контактных ударов):
+    /// BloodStone (+15% за уровень), DivineRapier (+60%), TitanBloodArmor (+20%), BerserkerBlood (до +50%)
+    pub fn get_base_damage_multiplier(&self, health_pct: f32) -> f32 {
         let blood_stone = self.get_passive_level(PassiveType::BloodStone);
-        let mut mult = 1.0 + (blood_stone as f32 * 0.12);
+        let mut mult = 1.0 + (blood_stone as f32 * 0.15);
         if self.has_passive(PassiveType::DivineRapier) {
-            mult += 0.60; // +60% от Священной Рапиры
+            mult += 0.60; // +60% базового урона от Священной Рапиры
         }
-        if self.has_passive(PassiveType::ColossalEye) {
-            mult += 1.10; // +110% от Ока Колосса
+        if self.has_passive(PassiveType::TitanBloodArmor) {
+            mult += 0.20; // +20% базового урона от Доспеха Кровавого Титана
         }
+        let berserk_lvl = self.get_passive_level(PassiveType::BerserkerBlood);
+        if berserk_lvl > 0 {
+            let missing = (1.0 - health_pct).clamp(0.0, 1.0);
+            mult += (berserk_lvl as f32 * 0.10) * missing; // до +50% базового урона
+        }
+        mult
+    }
+
+    /// Множитель ОБЩЕГО урона (финальный мультипликатор всего исходящего урона):
+    /// BlessedHeart (+35%), AbyssalCurseStone (+25%), GoldenSeal (+20%), ColossalEye (+80%)
+    pub fn get_total_damage_multiplier(&self) -> f32 {
+        let mut mult = 1.0;
         if self.has_passive(PassiveType::BlessedHeart) {
-            mult += 0.35; // +35% от Благословенного Сердца
+            mult += 0.35; // +35% общего урона от Благословенного Сердца
         }
         if self.has_passive(PassiveType::AbyssalCurseStone) {
-            mult += 0.25; // +25% от Проклятого Камня
+            mult += 0.25; // +25% общего урона от Проклятого Камня
         }
         if self.has_passive(PassiveType::GoldenSeal) {
-            mult += 0.20; // +20% от Имперской Печати
+            mult += 0.20; // +20% общего урона от Имперской Печати
+        }
+        if self.has_passive(PassiveType::ColossalEye) {
+            mult += 0.80; // +80% общего урона от Ока Колосса
+        }
+        mult
+    }
+
+    /// Общий эффективный множитель урона (Базовый множитель * Общий множитель)
+    pub fn get_damage_multiplier(&self) -> f32 {
+        self.get_base_damage_multiplier(1.0) * self.get_total_damage_multiplier()
+    }
+
+    /// Совокупный эффективный урон (Базовый урон * Множитель базы * Множитель общего урона)
+    pub fn get_effective_damage(&self, base_val: f32, health_pct: f32) -> f32 {
+        base_val * self.get_base_damage_multiplier(health_pct) * self.get_total_damage_multiplier()
+    }
+
+    /// Множитель скорости атаки оружия (SpeedGloves + BerserkerBlood при низком HP)
+    pub fn get_attack_speed_multiplier(&self, health_pct: f32) -> f32 {
+        let gloves = self.get_passive_level(PassiveType::SpeedGloves);
+        let mut mult = 1.0 + (gloves as f32 * 0.10);
+        let berserk = self.get_passive_level(PassiveType::BerserkerBlood);
+        if berserk > 0 {
+            let missing = (1.0 - health_pct).clamp(0.0, 1.0);
+            mult += (berserk as f32 * 0.12) * missing; // до +60% темпа атаки при критическом HP!
         }
         mult
     }
@@ -578,12 +618,30 @@ impl BossInventory {
         1.0 + (eagle_scope as f32 * 0.20)
     }
 
-    /// Регенерация HP в секунду от BloodStone, GiantHeart и SilverTears
-    pub fn get_hp_regen(&self) -> f32 {
+    /// Регенерация HP в секунду от BloodStone, GiantHeart, SilverTears и BerserkerBlood (при низком HP)
+    pub fn get_hp_regen_with_health(&self, health_pct: f32) -> f32 {
         let blood_stone = self.get_passive_level(PassiveType::BloodStone);
         let giant_heart = self.get_passive_level(PassiveType::GiantHeart);
         let silver_tears = self.get_passive_level(PassiveType::SilverTears);
-        (blood_stone as f32 * 2.5) + (giant_heart as f32 * 3.0) + (silver_tears as f32 * 3.0)
+        let berserk = self.get_passive_level(PassiveType::BerserkerBlood);
+        let missing = (1.0 - health_pct).clamp(0.0, 1.0);
+        let berserk_regen = (berserk as f32 * 7.5) * missing; // до +37.5 HP/сек регена при низком HP!
+        (blood_stone as f32 * 2.5) + (giant_heart as f32 * 3.0) + (silver_tears as f32 * 3.0) + berserk_regen
+    }
+
+    pub fn get_hp_regen(&self) -> f32 {
+        self.get_hp_regen_with_health(1.0)
+    }
+
+    /// Множитель скорости передвижения (бонус + MartyrVanguard от раненых союзников)
+    pub fn get_move_speed_multiplier(&self, lowest_ally_health_pct: f32) -> f32 {
+        let mut mult = self.bonus_move_speed_multiplier;
+        let martyr = self.get_passive_level(PassiveType::MartyrVanguard);
+        if martyr > 0 {
+            let missing_ally = (1.0 - lowest_ally_health_pct).clamp(0.0, 1.0);
+            mult += (martyr as f32 * 0.12) * missing_ally; // до +60% скорости бега на выручку союзникам!
+        }
+        mult
     }
 
     /// Вампиризм от Оккультной Призмы (Octarine Core)
@@ -834,5 +892,53 @@ mod tests {
         assert!(inv.get_weapon(WeaponType::WindBlade).is_some());
         assert_eq!(inv.get_weapon(WeaponType::WindBlade).unwrap().level, 1);
         assert!(inv.get_weapon(WeaponType::HolyHammer).is_none());
+    }
+
+    #[test]
+    fn test_damage_split_base_and_total_multipliers() {
+        let mut inv = BossInventory::new();
+        // Baseline: base mult = 1.0, total mult = 1.0, effective = 100.0
+        assert_eq!(inv.get_base_damage_multiplier(1.0), 1.0);
+        assert_eq!(inv.get_total_damage_multiplier(), 1.0);
+        assert_eq!(inv.get_effective_damage(100.0, 1.0), 100.0);
+
+        // Add BloodStone level 2 (+30% base damage)
+        inv.passives.push(PassiveSlot { kind: PassiveType::BloodStone, level: 2 });
+        assert_eq!(inv.get_base_damage_multiplier(1.0), 1.30);
+        assert_eq!(inv.get_total_damage_multiplier(), 1.0);
+        assert_eq!(inv.get_effective_damage(100.0, 1.0), 130.0);
+
+        // Add DivineRapier (+60% base damage)
+        inv.passives.push(PassiveSlot { kind: PassiveType::DivineRapier, level: 1 });
+        assert_eq!(inv.get_base_damage_multiplier(1.0), 1.90);
+
+        // Add BerserkerBlood level 3 (up to +30% base damage when at 0% HP)
+        inv.passives.push(PassiveSlot { kind: PassiveType::BerserkerBlood, level: 3 });
+        // At 100% HP: 0% bonus from BerserkerBlood
+        assert_eq!(inv.get_base_damage_multiplier(1.0), 1.90);
+        // At 50% HP: +15% base damage from BerserkerBlood -> 1.90 + 0.15 = 2.05
+        assert!((inv.get_base_damage_multiplier(0.5) - 2.05).abs() < 0.001);
+        // At 0% HP: +30% base damage -> 1.90 + 0.30 = 2.20
+        assert!((inv.get_base_damage_multiplier(0.0) - 2.20).abs() < 0.001);
+
+        // Add BlessedHeart (+35% total damage multiplier)
+        inv.passives.push(PassiveSlot { kind: PassiveType::BlessedHeart, level: 1 });
+        assert_eq!(inv.get_total_damage_multiplier(), 1.35);
+
+        // At 100% HP: effective damage = 100 * 1.90 * 1.35 = 256.5
+        assert!((inv.get_effective_damage(100.0, 1.0) - 256.5).abs() < 0.01);
+
+        // Test attack speed multiplier with BerserkerBlood (lvl 3, missing HP)
+        // At full HP: 1.0
+        assert_eq!(inv.get_attack_speed_multiplier(1.0), 1.0);
+        // At 0% HP: 1.0 + (3 * 0.12) = 1.36
+        assert!((inv.get_attack_speed_multiplier(0.0) - 1.36).abs() < 0.001);
+
+        // Test MartyrVanguard move speed scaling
+        inv.passives.push(PassiveSlot { kind: PassiveType::MartyrVanguard, level: 2 });
+        // All allies healthy: 1.0
+        assert_eq!(inv.get_move_speed_multiplier(1.0), 1.0);
+        // Ally at 0% HP: + (2 * 0.12) = +24% speed
+        assert!((inv.get_move_speed_multiplier(0.0) - 1.24).abs() < 0.001);
     }
 }

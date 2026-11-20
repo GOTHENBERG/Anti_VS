@@ -42,6 +42,8 @@ pub struct BossSnapshot {
     pub dash_cooldown: f32,
     pub blade_storm_angle: f32,
     pub divine_shield_angle: f32,
+    #[serde(default)]
+    pub level_up_options: Option<Vec<crate::ecs::components::inventory::PerkChoice>>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -56,6 +58,10 @@ pub struct MobSnapshot {
     pub radius: f32,
     pub is_undead: bool,
     pub is_elite: bool,
+    #[serde(default)]
+    pub is_hero: bool,
+    #[serde(default)]
+    pub hero_enrage_timer: f32,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -107,6 +113,20 @@ pub struct AcidSnapshot {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+pub struct BlackHoleSnapshot {
+    pub id: usize,
+    pub owner_id: usize,
+    pub center_pos: NetVec2,
+    pub radius: f32,
+    pub orbit_angle: f32,
+    pub orbit_dist: f32,
+    pub orbit_speed: f32,
+    pub duration: f32,
+    pub is_active: bool,
+    pub spin_angle: f32,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct WorldSnapshot {
     pub sequence: u32,
     pub game_time: f32,
@@ -123,6 +143,8 @@ pub struct WorldSnapshot {
     pub gems: Vec<GemSnapshot>,
     pub structures: Vec<StructureSnapshot>,
     pub acid_pools: Vec<AcidSnapshot>,
+    #[serde(default)]
+    pub black_holes: Vec<BlackHoleSnapshot>,
 }
 
 fn default_match_duration_secs() -> f32 {
@@ -151,6 +173,7 @@ impl WorldSnapshot {
             dash_cooldown: world.boss_dash_cooldown,
             blade_storm_angle: world.blade_storm_angle,
             divine_shield_angle: world.divine_shield_angle,
+            level_up_options: world.boss_level_up_options.clone(),
         });
         bosses.extend(world.coop_bosses.iter().map(|player| BossSnapshot {
             id: player.id,
@@ -171,6 +194,7 @@ impl WorldSnapshot {
             dash_cooldown: player.boss_dash_cooldown,
             blade_storm_angle: player.blade_storm_angle,
             divine_shield_angle: player.divine_shield_angle,
+            level_up_options: player.level_up_options.clone(),
         }));
 
         let mut focus: Vec<Vec2> = bosses.iter()
@@ -193,6 +217,7 @@ impl WorldSnapshot {
                 id: mob.id, target_boss_id: mob.target_boss_id, pos: mob.pos.into(), vel: mob.vel.into(), health: mob.health.clone(),
                 status: mob.status.clone(), tier: mob.tier, radius: mob.radius,
                 is_undead: mob.is_undead, is_elite: mob.is_elite,
+                is_hero: mob.is_hero, hero_enrage_timer: mob.hero_enrage_timer,
             }).collect(),
             projectiles: projectile_indices.into_iter().map(|index| &world.projectiles[index]).map(|projectile| ProjectileSnapshot {
                 id: projectile.id, pos: projectile.pos.into(), vel: projectile.vel.into(),
@@ -214,6 +239,12 @@ impl WorldSnapshot {
             acid_pools: acid_indices.into_iter().map(|index| &world.acid_pools[index]).map(|pool| AcidSnapshot {
                 pos: pool.pos.into(), radius: pool.radius, lifetime: pool.lifetime,
                 dps: pool.dps, corrosive: pool.corrosive, is_director_source: pool.is_director_source,
+            }).collect(),
+            black_holes: world.black_holes.iter().map(|bh| BlackHoleSnapshot {
+                id: bh.id, owner_id: bh.owner_id, center_pos: bh.center_pos.into(),
+                radius: bh.radius, orbit_angle: bh.orbit_angle, orbit_dist: bh.orbit_dist,
+                orbit_speed: bh.orbit_speed, duration: bh.duration, is_active: bh.is_active,
+                spin_angle: bh.spin_angle,
             }).collect(),
             is_paused: world.is_network_paused,
             pause_initiator: world.pause_initiator.clone(),
@@ -254,6 +285,7 @@ pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_i
         world.boss_dash_cooldown = local.dash_cooldown;
         world.blade_storm_angle = local.blade_storm_angle;
         world.divine_shield_angle = local.divine_shield_angle;
+        world.boss_level_up_options = local.level_up_options.clone();
     }
 
     world.coop_bosses = snapshot.bosses.iter().enumerate()
@@ -274,6 +306,7 @@ pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_i
             player.boss_dash_cooldown = boss.dash_cooldown;
             player.blade_storm_angle = boss.blade_storm_angle;
             player.divine_shield_angle = boss.divine_shield_angle;
+            player.level_up_options = boss.level_up_options.clone();
             player
         }).collect();
 
@@ -283,6 +316,12 @@ pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_i
         damage: 0.0, tier: mob.tier, radius: mob.radius, is_undead: mob.is_undead,
         is_elite: mob.is_elite, knockback_immune: false, knockback_vel: Vec2::ZERO,
         attack_timer: 0.0,
+        is_hero: mob.is_hero,
+        hero_enrage_timer: mob.hero_enrage_timer,
+        hero_skill_timers: [0.0; 4],
+        attack_count: 0,
+        has_duplicated: false,
+        owner_hero_id: None,
     }).collect();
     world.projectiles = snapshot.projectiles.into_iter().map(|projectile| ProjectileEntity {
         id: projectile.id, pos: projectile.pos.into(), vel: projectile.vel.into(),
@@ -304,6 +343,18 @@ pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_i
     world.acid_pools = snapshot.acid_pools.into_iter().map(|pool| AcidPoolEntity {
         pos: pool.pos.into(), radius: pool.radius, lifetime: pool.lifetime, dps: pool.dps,
         corrosive: pool.corrosive, is_director_source: pool.is_director_source,
+    }).collect();
+    world.black_holes = snapshot.black_holes.into_iter().map(|bh| crate::ecs::world::BlackHoleEntity {
+        id: bh.id,
+        owner_id: bh.owner_id,
+        center_pos: bh.center_pos.into(),
+        radius: bh.radius,
+        orbit_angle: bh.orbit_angle,
+        orbit_dist: bh.orbit_dist,
+        orbit_speed: bh.orbit_speed,
+        duration: bh.duration,
+        is_active: bh.is_active,
+        spin_angle: bh.spin_angle,
     }).collect();
 }
 

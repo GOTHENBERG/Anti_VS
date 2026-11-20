@@ -742,6 +742,8 @@ pub fn passive_type_to_index(p: PassiveType) -> usize {
         PassiveType::SilverTears => 32,
         PassiveType::GoldenSeal => 33,
         PassiveType::TitanBloodArmor => 34,
+        PassiveType::BerserkerBlood => 35,
+        PassiveType::MartyrVanguard => 36,
     }
 }
 

@@ -518,6 +518,8 @@ impl GameTextures {
             PassiveType::SilverTears => self.icon_frost_ring.as_ref().or(self.icon_ring.as_ref()),
             PassiveType::GoldenSeal => self.icon_solar_relic.as_ref().or(self.icon_jewel.as_ref()),
             PassiveType::TitanBloodArmor => self.icon_aegis.as_ref().or(self.icon_armor.as_ref()),
+            PassiveType::BerserkerBlood => self.icon_blood_stone.as_ref().or(self.icon_sword.as_ref()),
+            PassiveType::MartyrVanguard => self.icon_speed_gloves.as_ref().or(self.icon_aegis.as_ref()),
         }
     }
 
@@ -545,6 +547,8 @@ impl GameTextures {
             14 => self.mob_tier14.as_ref(),
             15 => self.mob_tier15.as_ref(),
             16 => self.mob_tier16.as_ref(),
+            17 => self.shadow_demon.as_ref().or(self.bringer_death.as_ref()),
+            18 => self.fire_elemental.as_ref().or(self.bringer_death.as_ref()),
             _ => None,
         }
     }

@@ -59,6 +59,130 @@ pub fn apply_player_perk_choice(world: &mut World, choice: crate::ecs::component
     world.boss_level_up_options = None;
 }
 
+/// Применяет перк по индексу для конкретного игрока (0 = хост-босс, 1..N = кооп-клиенты).
+pub fn apply_player_perk_choice_by_index(world: &mut World, player_id: u8, choice_index: u8) {
+    if player_id == 0 {
+        if let Some(options) = world.boss_level_up_options.take() {
+            if let Some(choice) = options.get(choice_index as usize).cloned() {
+                apply_player_perk_choice(world, choice);
+            }
+        }
+    } else {
+        let coop_idx = (player_id - 1) as usize;
+        if world.swap_coop_boss_context(coop_idx) {
+            if let Some(options) = world.boss_level_up_options.take() {
+                if let Some(choice) = options.get(choice_index as usize).cloned() {
+                    apply_player_perk_choice(world, choice);
+                }
+            }
+            world.swap_coop_boss_context(coop_idx);
+        }
+    }
+}
+
+pub const MAX_SOUL_LINK_LENGTH: f32 = 1000.0;
+
+/// Проверяет расстояние от точки p до отрезка ab.
+pub fn dist_to_segment(p: Vec2, a: Vec2, b: Vec2) -> (f32, Vec2) {
+    let ab = b - a;
+    let len_sq = ab.length_squared();
+    if len_sq < 0.0001 {
+        return (p.distance(a), a);
+    }
+    let t = ((p - a).dot(ab) / len_sq).clamp(0.0, 1.0);
+    let proj = a + ab * t;
+    (p.distance(proj), proj)
+}
+
+/// Обновляет связующую Энергетическую цепь (Soul Link) между всеми живыми боссами.
+/// Кольцевая топология, ограничение длины 1000 px, рассекающий урон мобам.
+pub fn update_soul_link(world: &mut World, dt: f32) {
+    // Собираем позиции и индексы всех живых боссов
+    let mut alive_bosses: Vec<(usize, Vec2)> = Vec::new(); // 0 = primary, 1..N = coop
+    if world.boss_health.is_alive() {
+        alive_bosses.push((0, world.boss_pos));
+    }
+    for (i, coop) in world.coop_bosses.iter().enumerate() {
+        if coop.boss_health.is_alive() {
+            alive_bosses.push((i + 1, coop.boss_pos));
+        }
+    }
+
+    let n = alive_bosses.len();
+    if n < 2 {
+        return;
+    }
+
+    // Формируем кольцевую топологию звеньев
+    let mut links: Vec<(usize, usize, Vec2, Vec2)> = Vec::new();
+    if n == 2 {
+        links.push((alive_bosses[0].0, alive_bosses[1].0, alive_bosses[0].1, alive_bosses[1].1));
+    } else {
+        for i in 0..n {
+            let next = (i + 1) % n;
+            links.push((alive_bosses[i].0, alive_bosses[next].0, alive_bosses[i].1, alive_bosses[next].1));
+        }
+    }
+
+    // 1. Физика натяжения цепи (максимум 1000 px)
+    for &(id_a, id_b, pos_a, pos_b) in &links {
+        let diff = pos_b - pos_a;
+        let dist = diff.length();
+        if dist > MAX_SOUL_LINK_LENGTH {
+            let excess = dist - MAX_SOUL_LINK_LENGTH;
+            let dir = diff / dist.max(0.001);
+            let pull = dir * (excess * 4.5 * dt);
+
+            // Применяем притягивание к боссу A
+            if id_a == 0 {
+                world.boss_pos += pull;
+            } else {
+                world.coop_bosses[id_a - 1].boss_pos += pull;
+            }
+
+            // Применяем притягивание к боссу B в противоположную сторону
+            if id_b == 0 {
+                world.boss_pos -= pull;
+            } else {
+                world.coop_bosses[id_b - 1].boss_pos -= pull;
+            }
+        }
+    }
+
+    // 2. Рассекающий урон мобам, пересекающим цепь
+    let damage_slice = 260.0 * dt;
+    for &(_, _, pos_a, pos_b) in &links {
+        let min_x = pos_a.x.min(pos_b.x) - 40.0;
+        let max_x = pos_a.x.max(pos_b.x) + 40.0;
+        let min_y = pos_a.y.min(pos_b.y) - 40.0;
+        let max_y = pos_a.y.max(pos_b.y) + 40.0;
+
+        for mob in world.mobs.iter_mut() {
+            if !mob.health.is_alive() { continue; }
+            if mob.pos.x < min_x || mob.pos.x > max_x || mob.pos.y < min_y || mob.pos.y > max_y {
+                continue;
+            }
+
+            let (dist, hit_pt) = dist_to_segment(mob.pos, pos_a, pos_b);
+            if dist <= mob.radius + 14.0 {
+                mob.health.take_damage(damage_slice);
+
+                // Эффект рассечения / искры
+                if !world.is_headless && crate::core::rand::gen_range(0.0, 1.0) < 0.25 {
+                    world.particles.push(crate::ecs::world::ParticleEntity {
+                        pos: hit_pt,
+                        vel: (mob.pos - hit_pt).normalize_or_zero() * 45.0,
+                        color: macroquad::prelude::Color::new(0.4, 0.9, 1.0, 0.9),
+                        radius: 3.5,
+                        lifetime: 0.35,
+                        max_lifetime: 0.35,
+                    });
+                }
+            }
+        }
+    }
+}
+
 /// Ticks cooldowns and per-player damage telemetry for every non-primary actor.
 pub fn tick_coop_boss_timers(world: &mut World, dt: f32) {
     for player in &mut world.coop_bosses {
@@ -93,6 +217,9 @@ pub fn update_all_boss_effects(world: &mut World, dt: f32) {
         world.swap_coop_boss_context(index);
     }
     crate::ecs::systems::skills::update_enemy_mob_attacks(world, dt);
+    update_soul_link(world, dt);
+    crate::ecs::systems::skills::update_black_holes(world, dt);
+    crate::ecs::systems::skills::update_heroes_and_clones(world, dt);
 }
 
 /// Runs collision, damage, XP pickup and death processing once for each Boss actor.
@@ -214,5 +341,127 @@ pub fn update_revives(world: &mut World, dt: f32) {
             let pos = player.boss_pos;
             world.add_floating_text(pos, "СОЮЗНИК ВОСКРЕШЁН".to_string(), macroquad::prelude::SKYBLUE, 1.5);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ecs::components::combat::Health;
+    use crate::ecs::components::inventory::PerkChoice;
+    use crate::ecs::world::{MobEntity, World};
+
+    #[test]
+    fn test_dist_to_segment() {
+        let a = Vec2::new(0.0, 0.0);
+        let b = Vec2::new(100.0, 0.0);
+
+        // Point directly in the middle
+        let (dist, proj) = dist_to_segment(Vec2::new(50.0, 10.0), a, b);
+        assert!((dist - 10.0).abs() < 0.001);
+        assert_eq!(proj, Vec2::new(50.0, 0.0));
+
+        // Point before start a
+        let (dist_before, proj_before) = dist_to_segment(Vec2::new(-20.0, 0.0), a, b);
+        assert!((dist_before - 20.0).abs() < 0.001);
+        assert_eq!(proj_before, a);
+
+        // Point after end b
+        let (dist_after, proj_after) = dist_to_segment(Vec2::new(130.0, 0.0), a, b);
+        assert!((dist_after - 30.0).abs() < 0.001);
+        assert_eq!(proj_after, b);
+    }
+
+    #[test]
+    fn test_soul_link_physics_and_slicing_damage() {
+        let mut world = World::new();
+        world.is_headless = true;
+        // Boss 1 at (0, 0)
+        world.boss_pos = Vec2::new(0.0, 0.0);
+
+        // Boss 2 at (1200, 0) -> distance 1200 > MAX_SOUL_LINK_LENGTH (1000)
+        world.add_coop_boss(2, Vec2::new(1200.0, 0.0), "Boss2".to_string(), 0);
+
+        // Place a mob right on the soul link line at (500, 5) with HP 100
+        let mob_id = world.alloc_id();
+        let mut mob = MobEntity::new_test(mob_id, Vec2::new(500.0, 5.0), 1);
+        mob.health = Health::new(100.0);
+        mob.radius = 12.0;
+        world.mobs.push(mob);
+
+        // Update soul link for dt = 0.1
+        update_soul_link(&mut world, 0.1);
+
+        // 1. Bosses should be pulled closer together
+        assert!(world.boss_pos.x > 0.0, "Boss 1 should be pulled towards Boss 2");
+        assert!(world.coop_bosses[0].boss_pos.x < 1200.0, "Boss 2 should be pulled towards Boss 1");
+        let new_dist = (world.coop_bosses[0].boss_pos - world.boss_pos).length();
+        assert!(new_dist < 1200.0, "Distance between bosses should decrease due to tether");
+
+        // 2. Mob on the link line should take slicing damage (260 * 0.1 = 26 damage)
+        assert!(world.mobs[0].health.current < 100.0, "Mob on soul link must take slicing damage");
+        let dmg = 100.0 - world.mobs[0].health.current;
+        assert!((dmg - 26.0).abs() < 0.01, "Expected ~26 damage, got {}", dmg);
+    }
+
+    #[test]
+    fn test_soul_link_ring_topology_closes_on_boss_death() {
+        let mut world = World::new();
+        world.is_headless = true;
+        world.boss_pos = Vec2::new(0.0, 0.0);
+        world.add_coop_boss(2, Vec2::new(500.0, 0.0), "Boss2".to_string(), 0);
+        world.add_coop_boss(3, Vec2::new(250.0, 400.0), "Boss3".to_string(), 0);
+
+        // All 3 alive: living count = 3
+        assert_eq!(world.living_boss_count(), 3);
+
+        // Kill Boss 2
+        world.coop_bosses[0].boss_health.current = 0.0;
+        assert_eq!(world.living_boss_count(), 2);
+
+        // Place mob on segment between Boss 1 (0,0) and Boss 3 (250, 400)
+        let mid = (world.boss_pos + world.coop_bosses[1].boss_pos) * 0.5;
+        let mob_id = world.alloc_id();
+        let mut mob = MobEntity::new_test(mob_id, mid, 1);
+        mob.health = Health::new(100.0);
+        mob.radius = 12.0;
+        world.mobs.push(mob);
+
+        update_soul_link(&mut world, 0.1);
+
+        // Direct link between Boss 1 and Boss 3 is active and slices the mob!
+        assert!(world.mobs[0].health.current < 100.0, "Soul link must connect remaining living bosses in a ring");
+    }
+
+    #[test]
+    fn test_player_perk_selection_by_index() {
+        use crate::ecs::components::inventory::{PassiveType, WeaponType};
+
+        let mut world = World::new();
+        world.boss_pending_level_ups = 1;
+        world.boss_level_up_options = Some(vec![
+            PerkChoice::UpgradeWeapon(WeaponType::ChainLightning),
+            PerkChoice::UpgradePassive(PassiveType::BerserkerBlood),
+            PerkChoice::UpgradePassive(PassiveType::MartyrVanguard),
+        ]);
+
+        // Host player (0) chooses index 1 (BerserkerBlood)
+        apply_player_perk_choice_by_index(&mut world, 0, 1);
+
+        assert_eq!(world.boss_pending_level_ups, 0);
+        assert!(world.boss_level_up_options.is_none());
+        assert!(world.boss_inventory.has_passive(PassiveType::BerserkerBlood));
+
+        // Test for co-op player (player_id 1)
+        world.add_coop_boss(2, Vec2::new(100.0, 100.0), "CoopPlayer".to_string(), 0);
+        world.coop_bosses[0].pending_level_ups = 1;
+        world.coop_bosses[0].level_up_options = Some(vec![
+            PerkChoice::UpgradePassive(PassiveType::MartyrVanguard),
+        ]);
+
+        apply_player_perk_choice_by_index(&mut world, 1, 0);
+        assert_eq!(world.coop_bosses[0].pending_level_ups, 0);
+        assert!(world.coop_bosses[0].level_up_options.is_none());
+        assert!(world.coop_bosses[0].boss_inventory.has_passive(PassiveType::MartyrVanguard));
     }
 }

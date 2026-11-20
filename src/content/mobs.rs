@@ -162,6 +162,33 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
             unlock_spent_threshold: 85000.0,
             description: "Падшие серафимы (2600 HP, 100% огонь). Испепеляют поле боя солнечным гневом.",
         },
+        16 => SquadConfig {
+            tier: 16,
+            name: "Аватар Забвения (Колосс)",
+            cost: 18000.0,
+            count: 1,
+            cooldown: 25.0,
+            unlock_spent_threshold: 110000.0,
+            description: "Верховный владыка Бездны! 8500 HP, 45 брони, сокрушительные рассекающие удары.",
+        },
+        17 => SquadConfig {
+            tier: 17,
+            name: "Владыка Пустоты (Герой)",
+            cost: 4500.0,
+            count: 1,
+            cooldown: 60.0,
+            unlock_spent_threshold: 0.0,
+            description: "Герой Пустоты: Чёрные Дыры со станом, мини-копии, грави-щит. Вдвое медленнее, через 60с входит в Ярость.",
+        },
+        18 => SquadConfig {
+            tier: 18,
+            name: "Архидемон Инферно (Герой)",
+            cost: 6000.0,
+            count: 1,
+            cooldown: 60.0,
+            unlock_spent_threshold: 0.0,
+            description: "Герой Инферно: Лавовые разломы, костяной загон, шипастый панцирь и Судный Метеор. Медленный титан Ярости.",
+        },
         _ => SquadConfig {
             tier: 16,
             name: "Аватар Забвения (Колосс)",
@@ -180,8 +207,23 @@ pub fn spawn_squad_perimeter(world: &mut World, tier: u8) {
 }
 
 pub fn spawn_squad_at_dist(world: &mut World, tier: u8, ring_radius: f32) {
-    // Случайный сдвиг угла, чтобы отряды распределялись органично по кольцу
     let base_angle = rand::gen_range(0.0, std::f32::consts::TAU);
+    if tier >= 17 {
+        // Спавним строго одного героя вне зависимости от числа боссов
+        let target_pos = if world.boss_health.is_alive() {
+            world.boss_pos
+        } else if let Some(p) = world.coop_bosses.iter().find(|p| p.boss_health.is_alive()) {
+            p.boss_pos
+        } else {
+            world.boss_pos
+        };
+        spawn_squad_arc_at(world, tier, 1, target_pos, ring_radius, base_angle, std::f32::consts::TAU);
+        if let Some(director) = world.directors.first_mut() {
+            director.total_mobs_spawned += 1;
+        }
+        return;
+    }
+
     let target_positions = boss_target_positions(world);
     let target_count = target_positions.len();
     for (target_id, target_pos) in target_positions {
@@ -198,6 +240,21 @@ pub fn spawn_squad_in_sector(world: &mut World, tier: u8, sector: usize) {
     let sector_idx = sector % 8;
     let center_angle = (sector_idx as f32) * std::f32::consts::TAU / 8.0
         + rand::gen_range(-0.12, 0.12);
+    if tier >= 17 {
+        let target_pos = if world.boss_health.is_alive() {
+            world.boss_pos
+        } else if let Some(p) = world.coop_bosses.iter().find(|p| p.boss_health.is_alive()) {
+            p.boss_pos
+        } else {
+            world.boss_pos
+        };
+        spawn_squad_arc_at(world, tier, 1, target_pos, 820.0, center_angle, std::f32::consts::TAU / 8.0);
+        if let Some(director) = world.directors.first_mut() {
+            director.total_mobs_spawned += 1;
+        }
+        return;
+    }
+
     let target_positions = boss_target_positions(world);
     let target_count = target_positions.len();
     for (target_id, target_pos) in target_positions {
@@ -340,8 +397,19 @@ fn spawn_squad_arc_at(
             13 => (650.0, 205.0, 0.0, 18.0, 8.0, 0.20, 0.10, 0.10, true, false), // Проклятые Мучители
             14 => (1800.0, 155.0, 110.0, 22.0, 16.0, 0.40, 0.30, 0.30, false, false), // Призрачные Ловчие
             15 => (2600.0, 110.0, 140.0, 24.0, 22.0, 0.35, -0.20, 1.00, false, false), // Солнечные Архонты
-            _ => (8500.0, 75.0, 280.0, 34.0, 45.0, 0.65, 0.50, 0.50, true, true), // Аватар Забвения (Колосс)
+            16 => (8500.0, 75.0, 280.0, 34.0, 45.0, 0.65, 0.50, 0.50, true, true), // Аватар Забвения (Колосс)
+            17 => (16000.0, 48.0, 180.0, 68.0, 35.0, 0.50, 0.40, 0.40, true, true), // Владыка Пустоты (Герой)
+            18 => (22000.0, 45.0, 240.0, 78.0, 48.0, 0.60, 0.20, 1.00, false, true), // Архидемон Инферно (Герой)
+            _ => (16000.0, 48.0, 180.0, 68.0, 35.0, 0.50, 0.40, 0.40, true, true),
         };
+
+        let is_hero = tier >= 17;
+        let living_bosses = world.living_boss_count();
+        let coop_hp_mult = 1.0 + (living_bosses.saturating_sub(1) as f32) * 0.33;
+        let total_bosses = world.boss_player_count();
+        let hero_mult = if is_hero { 1.0 + (total_bosses as f32) * 1.0 } else { 1.0 };
+        let mut hp = base_hp * coop_hp_mult * hero_mult;
+        let mut radius = base_rad;
 
         // Применяем улучшения Директора (Mob Grades)
         let (fury_lvl, carapace_lvl) = if let Some(d) = world.directors.first() {
@@ -356,9 +424,7 @@ fn spawn_squad_arc_at(
         phys_res = (phys_res + (carapace_lvl as f32 * 0.05)).min(0.70);
 
         // 12% шанс мутации в Элитного Чемпиона (Золотая аура, усиленные статы)
-        let is_elite = rand::gen_range(0.0, 1.0) < 0.12;
-        let mut hp = base_hp;
-        let mut radius = base_rad;
+        let is_elite = !is_hero && rand::gen_range(0.0, 1.0) < 0.12;
         if is_elite {
             hp *= 1.8;
             damage *= 1.35;
@@ -378,7 +444,7 @@ fn spawn_squad_arc_at(
                 physical_res: phys_res,
                 fire_res,
                 ice_res,
-                poison_res: if tier == 4 || tier == 7 { 0.5 } else { 0.0 },
+                poison_res: if tier == 4 || tier == 7 || is_hero { 0.5 } else { 0.0 },
                 holy_res: if is_undead { -0.25 } else { 0.0 },
             },
             status: StatusEffects::default(),
@@ -387,9 +453,15 @@ fn spawn_squad_arc_at(
             radius,
             is_undead,
             is_elite,
-            knockback_immune,
+            knockback_immune: knockback_immune || is_hero,
             knockback_vel: Vec2::ZERO,
             attack_timer: rand::gen_range(0.5, 1.5),
+            is_hero,
+            hero_enrage_timer: if is_hero { 60.0 } else { 0.0 },
+            hero_skill_timers: if is_hero { [5.0, 10.0, 15.0, 20.0] } else { [0.0; 4] },
+            attack_count: 0,
+            has_duplicated: false,
+            owner_hero_id: None,
         });
     }
 
@@ -435,7 +507,10 @@ pub fn spawn_single_mob_at_pos_with_elite(world: &mut World, tier: u8, pos: Vec2
         13 => (650.0, 205.0, 0.0, 18.0, 8.0, 0.20, 0.10, 0.10, true, false), // Проклятые Мучители
         14 => (1800.0, 155.0, 110.0, 22.0, 16.0, 0.40, 0.30, 0.30, false, false), // Призрачные Ловчие
         15 => (2600.0, 110.0, 140.0, 24.0, 22.0, 0.35, -0.20, 1.00, false, false), // Солнечные Архонты
-        _ => (8500.0, 75.0, 280.0, 34.0, 45.0, 0.65, 0.50, 0.50, true, true), // Аватар Забвения (Колосс)
+        16 => (8500.0, 75.0, 280.0, 34.0, 45.0, 0.65, 0.50, 0.50, true, true), // Аватар Забвения (Колосс)
+        17 => (14000.0, 48.0, 160.0, 68.0, 50.0, 0.50, 0.50, 0.50, false, true), // Владыка Пустоты (Герой)
+        18 => (18000.0, 45.0, 190.0, 75.0, 65.0, 0.60, 0.70, 0.90, false, true), // Архидемон Инферно (Герой)
+        _ => (8500.0, 75.0, 280.0, 34.0, 45.0, 0.65, 0.50, 0.50, true, true),
     };
 
     let (fury_lvl, carapace_lvl) = if let Some(d) = world.directors.first() {
@@ -449,8 +524,13 @@ pub fn spawn_single_mob_at_pos_with_elite(world: &mut World, tier: u8, pos: Vec2
     flat_armor += carapace_lvl as f32 * 2.5;
     phys_res = (phys_res + (carapace_lvl as f32 * 0.05)).min(0.70);
 
-    let is_elite = force_elite || rand::gen_range(0.0, 1.0) < 0.12;
-    let mut hp = base_hp;
+    let is_hero = tier >= 17;
+    let is_elite = (force_elite || rand::gen_range(0.0, 1.0) < 0.12) && !is_hero;
+    let living_bosses = world.living_boss_count();
+    let coop_hp_mult = 1.0 + (living_bosses.saturating_sub(1) as f32) * 0.33;
+    let total_bosses = world.boss_player_count();
+    let hero_mult = if is_hero { 1.0 + (total_bosses as f32) * 1.0 } else { 1.0 };
+    let mut hp = base_hp * coop_hp_mult * hero_mult;
     let mut radius = base_rad;
     if is_elite {
         hp *= 1.8;
@@ -471,7 +551,7 @@ pub fn spawn_single_mob_at_pos_with_elite(world: &mut World, tier: u8, pos: Vec2
             physical_res: phys_res,
             fire_res,
             ice_res,
-            poison_res: if tier == 4 || tier == 7 { 0.5 } else { 0.0 },
+            poison_res: if tier == 4 || tier == 7 || is_hero { 0.5 } else { 0.0 },
             holy_res: if is_undead { -0.25 } else { 0.0 },
         },
         status: StatusEffects::default(),
@@ -479,10 +559,16 @@ pub fn spawn_single_mob_at_pos_with_elite(world: &mut World, tier: u8, pos: Vec2
         tier,
         radius,
         is_undead,
-        is_elite,
-        knockback_immune,
+        is_elite: is_elite && !is_hero,
+        knockback_immune: knockback_immune || is_hero,
         knockback_vel: Vec2::ZERO,
         attack_timer: rand::gen_range(0.5, 1.5),
+        is_hero,
+        hero_enrage_timer: if is_hero { 60.0 } else { 0.0 },
+        hero_skill_timers: if is_hero { [5.0, 10.0, 15.0, 20.0] } else { [0.0; 4] },
+        attack_count: 0,
+        has_duplicated: false,
+        owner_hero_id: None,
     });
 
     if let Some(director) = world.directors.first_mut() {

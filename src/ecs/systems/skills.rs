@@ -1793,8 +1793,9 @@ pub fn update_world_structures(world: &mut World, dt: f32) {
     let any_obelisk_active = world.structures.iter().any(|s| {
         s.structure_type == crate::content::structures::STRUCTURE_OBELISK && s.is_active
     });
+    let hero_alive = world.mobs.iter().any(|m| m.is_hero && m.health.is_alive());
 
-    if !any_obelisk_active {
+    if !any_obelisk_active && !hero_alive {
         world.obelisk_cycle_timer -= dt;
         if world.obelisk_cycle_timer <= 0.0 {
             world.obelisk_cycle_timer = 60.0;
@@ -1921,6 +1922,421 @@ pub fn update_world_structures(world: &mut World, dt: f32) {
             }
         }
         world.spawn_particles(altar_pos, 20, PURPLE, 120.0);
+    }
+}
+
+/// Обновление чёрных дыр: 1 сек красное предупреждение, затем 10 сек вращение вокруг хозяина (2 полных оборота),
+/// притягивание, стан и периодический нефизический урон боссам.
+pub fn update_black_holes(world: &mut World, dt: f32) {
+    if world.black_holes.is_empty() {
+        return;
+    }
+
+    let mut hole_damage_events = Vec::new();
+
+    for bh in world.black_holes.iter_mut() {
+        bh.duration -= dt;
+        bh.spin_angle += 6.0 * dt;
+
+        // Первую секунду (duration > 10.0) — предупреждение (is_active = false)
+        if bh.duration > 10.0 {
+            bh.is_active = false;
+            continue;
+        }
+        bh.is_active = true;
+
+        // Вращение по орбите вокруг хозяина
+        let mut owner_pos = bh.center_pos;
+        if let Some(owner) = world.mobs.iter().find(|m| m.id == bh.owner_id && m.health.is_alive()) {
+            owner_pos = owner.pos;
+        }
+
+        bh.orbit_angle += bh.orbit_speed * dt;
+        bh.center_pos = owner_pos + Vec2::new(bh.orbit_angle.cos(), bh.orbit_angle.sin()) * bh.orbit_dist;
+
+        let pull_rad = bh.radius * 2.5;
+        hole_damage_events.push((bh.center_pos, bh.radius, pull_rad));
+    }
+
+    world.black_holes.retain(|bh| bh.duration > 0.0);
+
+    for (center, radius, pull_rad) in hole_damage_events {
+        let pull_r2 = pull_rad * pull_rad;
+        let rad_r2 = radius * radius;
+
+        // Основной босс
+        if world.boss_health.is_alive() {
+            let d2 = world.boss_pos.distance_squared(center);
+            if d2 < pull_r2 {
+                let dist = d2.sqrt().max(0.1);
+                let dir = (center - world.boss_pos) / dist;
+                world.boss_pos += dir * (140.0 * dt);
+                if d2 < rad_r2 {
+                    let tangent = Vec2::new(-dir.y, dir.x);
+                    world.boss_pos += tangent * (90.0 * dt);
+                    world.boss_health.take_damage(85.0 * dt);
+                    world.boss_damage_taken_timer = 3.0;
+                    world.boss_still_time = 0.0;
+                }
+            }
+        }
+
+        // Кооп боссы
+        for coop in world.coop_bosses.iter_mut() {
+            if coop.boss_health.is_alive() {
+                let d2 = coop.boss_pos.distance_squared(center);
+                if d2 < pull_r2 {
+                    let dist = d2.sqrt().max(0.1);
+                    let dir = (center - coop.boss_pos) / dist;
+                    coop.boss_pos += dir * (140.0 * dt);
+                    if d2 < rad_r2 {
+                        let tangent = Vec2::new(-dir.y, dir.x);
+                        coop.boss_pos += tangent * (90.0 * dt);
+                        coop.boss_health.take_damage(85.0 * dt);
+                        coop.boss_damage_taken_timer = 3.0;
+                        coop.boss_still_time = 0.0;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Обновление Героев Директора (Tier 17 Пустота, Tier 18 Инферно) и их копий:
+/// Таймер ярости (через 60с: +1% скорости и +1% размера в секунду), уникальные способности и спавн клонов.
+pub fn update_heroes_and_clones(world: &mut World, dt: f32) {
+    // 1. Кулдаун призыва героев у Директоров
+    for dir in world.directors.iter_mut() {
+        if dir.hero_cooldown > 0.0 {
+            dir.hero_cooldown = (dir.hero_cooldown - dt).max(0.0);
+        }
+    }
+
+    // Собираем позиции живых боссов без удержания заимствования world
+    let mut live_bosses = Vec::new();
+    if world.boss_health.is_alive() {
+        live_bosses.push(world.boss_pos);
+    }
+    for coop in &world.coop_bosses {
+        if coop.boss_health.is_alive() {
+            live_bosses.push(coop.boss_pos);
+        }
+    }
+
+    let find_nearest_boss = |from: Vec2| -> Vec2 {
+        let mut best = from;
+        let mut min_d2 = f32::MAX;
+        for &bp in &live_bosses {
+            let d2 = from.distance_squared(bp);
+            if d2 < min_d2 {
+                min_d2 = d2;
+                best = bp;
+            }
+        }
+        best
+    };
+
+    struct BlackHoleSpawn {
+        owner_id: usize,
+        target_pos: Vec2,
+        orbit_dist: f32,
+        init_angle: f32,
+    }
+
+    struct ProjSpawn {
+        pos: Vec2,
+        vel: Vec2,
+        damage: f32,
+        damage_type: DamageType,
+        armor_pen: f32,
+        pierce: u8,
+        radius: f32,
+        lifetime: f32,
+    }
+
+    let mut hole_requests = Vec::new();
+    let mut clone_requests = Vec::new();
+    let mut proj_requests = Vec::new();
+    let mut cage_requests = Vec::new();
+    let mut absorb_gem_requests = Vec::new();
+    let mut hero_heals = Vec::new();
+
+    for (i, mob) in world.mobs.iter_mut().enumerate() {
+        if !mob.health.is_alive() {
+            continue;
+        }
+
+        // 2. Логика Героев (is_hero)
+        if mob.is_hero {
+            // Обратный отсчёт до ярости (60с)
+            mob.hero_enrage_timer -= dt;
+            if mob.hero_enrage_timer <= 0.0 {
+                // Режим ярости: +1% к скорости и +1% к размеру модельки и хитбокса каждую секунду
+                mob.speed *= 1.0 + 0.01 * dt;
+                mob.radius = (mob.radius * (1.0 + 0.01 * dt)).min(160.0);
+            }
+
+            // Откат 4 способностей
+            for timer in mob.hero_skill_timers.iter_mut() {
+                if *timer > 0.0 {
+                    *timer = (*timer - dt).max(0.0);
+                }
+            }
+
+            let hero_pos = mob.pos;
+            let hero_id = mob.id;
+            let hero_tier = mob.tier;
+
+            let target_pos = find_nearest_boss(hero_pos);
+            let dist_to_target = hero_pos.distance(target_pos);
+
+            if hero_tier == 17 {
+                // --- ГЕРОЙ 1: ПУСТОТА ---
+                // Скилл 0: Чёрная Дыра (КД 35с). Подходит к боссу на расстояние [дальность каста 280] - [диаметр 140] = 140 px
+                if mob.hero_skill_timers[0] <= 0.0 && dist_to_target <= 320.0 {
+                    mob.hero_skill_timers[0] = 35.0;
+                    let orbit_dist = dist_to_target.clamp(120.0, 280.0);
+                    let init_angle = (target_pos.y - hero_pos.y).atan2(target_pos.x - hero_pos.x);
+                    hole_requests.push(BlackHoleSpawn {
+                        owner_id: hero_id,
+                        target_pos,
+                        orbit_dist,
+                        init_angle,
+                    });
+                }
+
+                // Скилл 1: Копии Пустоты (КД 24с). Призывает 2 мелких стреляющих копии
+                if mob.hero_skill_timers[1] <= 0.0 {
+                    mob.hero_skill_timers[1] = 24.0;
+                    for k in 0..2 {
+                        let offset = Vec2::new(
+                            if k == 0 { -30.0 } else { 30.0 },
+                            rand::gen_range(-20.0, 20.0),
+                        );
+                        clone_requests.push((hero_pos + offset, hero_id));
+                    }
+                }
+
+                // Скилл 2: Гравитационный Коллапс (КД 20с). Поглощает кристаллы душ в 500px, получая щит/исцеление
+                if mob.hero_skill_timers[2] <= 0.0 {
+                    mob.hero_skill_timers[2] = 20.0;
+                    absorb_gem_requests.push((i, hero_pos));
+                }
+
+                // Скилл 3: Астральная Сингулярность (КД 16с). 8 спиральных сфер Бездны, замедляющих боссов
+                if mob.hero_skill_timers[3] <= 0.0 {
+                    mob.hero_skill_timers[3] = 16.0;
+                    for k in 0..8 {
+                        let angle = (k as f32) * (std::f32::consts::PI / 4.0);
+                        let dir = Vec2::new(angle.cos(), angle.sin());
+                        proj_requests.push(ProjSpawn {
+                            pos: hero_pos,
+                            vel: dir * 160.0,
+                            damage: 28.0,
+                            damage_type: DamageType::True,
+                            armor_pen: 0.3,
+                            pierce: 3,
+                            radius: 12.0,
+                            lifetime: 3.5,
+                        });
+                    }
+                }
+            } else if hero_tier == 18 {
+                // --- ГЕРОЙ 2: АРХИДЕМОН ИНФЕРНО ---
+                // Скилл 0: Извержение Магмы (КД 22с)
+                if mob.hero_skill_timers[0] <= 0.0 {
+                    mob.hero_skill_timers[0] = 22.0;
+                    for _ in 0..3 {
+                        let offset = Vec2::new(rand::gen_range(-120.0, 120.0), rand::gen_range(-120.0, 120.0));
+                        proj_requests.push(ProjSpawn {
+                            pos: target_pos + offset,
+                            vel: Vec2::ZERO,
+                            damage: 65.0,
+                            damage_type: DamageType::Fire,
+                            armor_pen: 0.2,
+                            pierce: 99,
+                            radius: 36.0,
+                            lifetime: 1.5,
+                        });
+                    }
+                }
+
+                // Скилл 1: Инфернальная Клетка (КД 30с). Запирает босса в кольцо костяных стен
+                if mob.hero_skill_timers[1] <= 0.0 && dist_to_target <= 450.0 {
+                    mob.hero_skill_timers[1] = 30.0;
+                    cage_requests.push(target_pos);
+                }
+
+                // Скилл 2: Пылающий Панцирь (КД 18с). Пульсирует огнем в радиусе 160px
+                if mob.hero_skill_timers[2] <= 0.0 {
+                    mob.hero_skill_timers[2] = 18.0;
+                    mob.status.burn_timer = 6.0;
+                }
+
+                // Скилл 3: Метеор Апокалипсиса (КД 40с)
+                if mob.hero_skill_timers[3] <= 0.0 {
+                    mob.hero_skill_timers[3] = 40.0;
+                    proj_requests.push(ProjSpawn {
+                        pos: target_pos,
+                        vel: Vec2::new(0.0, 60.0),
+                        damage: 160.0,
+                        damage_type: DamageType::Fire,
+                        armor_pen: 0.4,
+                        pierce: 99,
+                        radius: 55.0,
+                        lifetime: 2.2,
+                    });
+                }
+            }
+        }
+
+        // 3. Логика мелких копий Пустоты (Void Clones)
+        if !mob.is_hero && mob.tier == 17 && mob.owner_hero_id.is_some() {
+            mob.hero_skill_timers[0] -= dt;
+            if mob.hero_skill_timers[0] <= 0.0 {
+                mob.hero_skill_timers[0] = 2.4;
+                mob.attack_count += 1;
+
+                let target = find_nearest_boss(mob.pos);
+                let dir = (target - mob.pos).normalize_or_zero();
+                proj_requests.push(ProjSpawn {
+                    pos: mob.pos,
+                    vel: dir * 190.0,
+                    damage: 18.0,
+                    damage_type: DamageType::True,
+                    armor_pen: 0.2,
+                    pierce: 1,
+                    radius: 7.0,
+                    lifetime: 3.0,
+                });
+
+                // Каждая атака мелкой копии лечит хозяина-Пустоту!
+                if let Some(owner_id) = mob.owner_hero_id {
+                    hero_heals.push((owner_id, 18.0));
+                }
+
+                // Сделав 6 атак, они дублируются один раз и полностью исцеляются
+                if mob.attack_count >= 6 && !mob.has_duplicated {
+                    mob.has_duplicated = true;
+                    mob.health.current = mob.health.max;
+                    clone_requests.push((mob.pos + Vec2::new(rand::gen_range(-18.0, 18.0), rand::gen_range(-18.0, 18.0)), mob.owner_hero_id.unwrap_or(0)));
+                }
+            }
+        }
+    }
+
+    // Обработка поглощения душ
+    for (mob_idx, hero_pos) in absorb_gem_requests {
+        let mut absorbed = 0;
+        world.gems.retain(|gem| {
+            if gem.pos.distance_squared(hero_pos) < 500.0 * 500.0 && absorbed < 8 {
+                absorbed += 1;
+                false
+            } else {
+                true
+            }
+        });
+        if absorbed > 0 {
+            if let Some(mob) = world.mobs.get_mut(mob_idx) {
+                mob.health.heal(absorbed as f32 * 45.0);
+            }
+        }
+    }
+
+    // Создание Чёрных дыр
+    for bh in hole_requests {
+        let id = world.alloc_id();
+        world.black_holes.push(crate::ecs::world::BlackHoleEntity {
+            id,
+            owner_id: bh.owner_id,
+            center_pos: bh.target_pos,
+            radius: 70.0,
+            orbit_angle: bh.init_angle,
+            orbit_dist: bh.orbit_dist,
+            orbit_speed: 4.0 * std::f32::consts::PI / 10.0,
+            duration: 11.0,
+            is_active: false,
+            spin_angle: 0.0,
+        });
+    }
+
+    // Создание снарядов
+    for p in proj_requests {
+        let id = world.alloc_id();
+        world.projectiles.push(ProjectileEntity {
+            id,
+            pos: p.pos,
+            vel: p.vel,
+            damage: p.damage,
+            damage_type: p.damage_type,
+            armor_penetration: p.armor_pen,
+            pierce: p.pierce,
+            radius: p.radius,
+            lifetime: p.lifetime,
+            faction: Faction::Director,
+            source_weapon: None,
+            homing_strength: 0.0,
+        });
+    }
+
+    // Создание клонов
+    for (clone_pos, owner_id) in clone_requests {
+        let id = world.alloc_id();
+        world.mobs.push(crate::ecs::world::MobEntity {
+            id,
+            target_boss_id: None,
+            pos: clone_pos,
+            vel: Vec2::ZERO,
+            speed: 65.0,
+            health: crate::ecs::components::combat::Health::new(350.0),
+            resistances: crate::ecs::components::combat::Resistances::default(),
+            tier: 17,
+            radius: 15.0,
+            damage: 16.0,
+            status: crate::ecs::components::combat::StatusEffects::default(),
+            is_undead: false,
+            is_elite: false,
+            knockback_immune: false,
+            knockback_vel: Vec2::ZERO,
+            attack_timer: 0.0,
+            is_hero: false,
+            hero_enrage_timer: 999.0,
+            hero_skill_timers: [2.0, 0.0, 0.0, 0.0],
+            attack_count: 0,
+            has_duplicated: true, // новые дубликаты уже не дублируются снова
+            owner_hero_id: Some(owner_id),
+        });
+    }
+
+    // Создание стен клетки Инферно
+    for cage_pos in cage_requests {
+        for k in 0..6 {
+            let angle = (k as f32) * (std::f32::consts::PI / 3.0);
+            let wall_pos = cage_pos + Vec2::new(angle.cos(), angle.sin()) * 110.0;
+            let id = world.alloc_id();
+            world.structures.push(crate::ecs::world::StructureEntity {
+                id,
+                pos: wall_pos,
+                health: crate::ecs::components::combat::Health::new(800.0),
+                resistances: crate::ecs::components::combat::Resistances::default(),
+                faction: Faction::Director,
+                radius: 20.0,
+                structure_type: crate::content::structures::STRUCTURE_WALL,
+                pulse_timer: 0.0,
+                spawn_timer: 0.0,
+                lifetime: 6.0,
+                max_lifetime: 6.0,
+                is_active: true,
+                state_timer: 0.0,
+            });
+        }
+    }
+
+    // Применение исцеления героям
+    for (hero_id, amount) in hero_heals {
+        if let Some(hero) = world.mobs.iter_mut().find(|m| m.id == hero_id && m.health.is_alive()) {
+            hero.health.heal(amount);
+        }
     }
 }
 

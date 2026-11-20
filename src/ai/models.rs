@@ -96,6 +96,8 @@ pub fn passive_archetypes(kind: PassiveType) -> &'static [usize] {
         PassiveType::DivineRapier => &[4, 5],
         PassiveType::FrostRing => &[1, 2],
         PassiveType::MagnetSphere => &[3, 4],
+        PassiveType::BerserkerBlood => &[0, 2],
+        PassiveType::MartyrVanguard => &[2, 5],
     }
 }
 

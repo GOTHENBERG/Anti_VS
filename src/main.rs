@@ -405,11 +405,6 @@ async fn main() {
                     opened_item_from_codex = false;
                 } else {
                     show_codex = false;
-                    if net_driver.is_networked() {
-                        world.is_network_paused = false;
-                        world.pause_initiator = None;
-                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
-                    }
                 }
                 audio.handle_event(crate::audio::AudioEvent::BookClose);
             } else if active_dossier_tier.is_some() {
@@ -419,11 +414,6 @@ async fn main() {
                     opened_dossier_from_codex = false;
                 } else {
                     show_codex = false;
-                    if net_driver.is_networked() {
-                        world.is_network_paused = false;
-                        world.pause_initiator = None;
-                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
-                    }
                 }
                 audio.handle_event(crate::audio::AudioEvent::BookClose);
             } else {
@@ -434,19 +424,8 @@ async fn main() {
                     opened_item_from_codex = false;
                     opened_dossier_from_codex = false;
                     audio.handle_event(crate::audio::AudioEvent::BookOpen);
-                    if net_driver.is_networked() {
-                        let initiator = if my_player_id == 0 { "Директор (Кодекс)".to_string() } else { format!("Босс ({})", world.boss_name) };
-                        world.is_network_paused = true;
-                        world.pause_initiator = Some(initiator);
-                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: true });
-                    }
                 } else {
                     audio.handle_event(crate::audio::AudioEvent::BookClose);
-                    if net_driver.is_networked() {
-                        world.is_network_paused = false;
-                        world.pause_initiator = None;
-                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
-                    }
                 }
             }
         }
@@ -458,10 +437,6 @@ async fn main() {
                 if opened_item_from_codex {
                     show_codex = true;
                     opened_item_from_codex = false;
-                } else if net_driver.is_networked() {
-                    world.is_network_paused = false;
-                    world.pause_initiator = None;
-                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
                 }
             } else if active_dossier_tier.is_some() {
                 active_dossier_tier = None;
@@ -469,19 +444,10 @@ async fn main() {
                 if opened_dossier_from_codex {
                     show_codex = true;
                     opened_dossier_from_codex = false;
-                } else if net_driver.is_networked() {
-                    world.is_network_paused = false;
-                    world.pause_initiator = None;
-                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
                 }
             } else if show_codex {
                 show_codex = false;
                 audio.handle_event(crate::audio::AudioEvent::BookClose);
-                if net_driver.is_networked() {
-                    world.is_network_paused = false;
-                    world.pause_initiator = None;
-                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
-                }
             } else {
                 let target_pause = !(is_paused || world.is_network_paused);
                 is_paused = target_pause;
@@ -558,10 +524,11 @@ async fn main() {
         let is_running = !is_game_over
             && !is_paused
             && !world.is_network_paused
-            && !show_codex
-            && active_dossier_tier.is_none()
-            && active_item_inspection.is_none()
-            && world.boss_level_up_options.is_none();
+            && (net_driver.is_networked()
+                || (!show_codex
+                    && active_dossier_tier.is_none()
+                    && active_item_inspection.is_none()
+                    && world.boss_level_up_options.is_none()));
 
         // 2. Сбор ввода игрока-директора -> генерация Команд
         let mut player_move_dir = Vec2::ZERO;
@@ -836,17 +803,29 @@ async fn main() {
         }
 
         // 7. Применение выбора реликвии/перка Level-Up Босса (доступно при активном окне выбора)
-        if let Some(perk) = ui_interaction.chosen_perk {
-            crate::ecs::systems::coop::apply_player_perk_choice(&mut world, perk);
+        if let Some(_perk) = ui_interaction.chosen_perk {
+            let choice_idx = ui_interaction.chosen_perk_index.unwrap_or(0);
+            if net_driver.is_network_client() {
+                if let Some(player_id) = net_driver.assigned_player_id() {
+                    net_driver.send_command(Command::SelectPerk { player_id, choice_index: choice_idx });
+                }
+                world.boss_level_up_options = None;
+            } else {
+                crate::ecs::systems::coop::apply_player_perk_choice_by_index(&mut world, my_player_id, choice_idx);
+            }
             audio.handle_event(crate::audio::AudioEvent::UiClick);
         }
 
-        let modal_active = show_codex
-            || active_dossier_tier.is_some()
-            || active_item_inspection.is_some()
-            || is_paused
-            || world.is_network_paused
-            || world.boss_level_up_options.is_some();
+        let modal_active = if net_driver.is_networked() {
+            is_paused || world.is_network_paused
+        } else {
+            show_codex
+                || active_dossier_tier.is_some()
+                || active_item_inspection.is_some()
+                || is_paused
+                || world.is_network_paused
+                || world.boss_level_up_options.is_some()
+        };
 
         if !modal_active {
             if ui_interaction.toggle_control_scheme {
@@ -893,19 +872,8 @@ async fn main() {
                     active_dossier_tier = None;
                     active_item_inspection = None;
                     audio.handle_event(crate::audio::AudioEvent::BookOpen);
-                    if net_driver.is_networked() {
-                        let initiator = if my_player_id == 0 { "Директор (Кодекс)".to_string() } else { format!("Босс ({})", world.boss_name) };
-                        world.is_network_paused = true;
-                        world.pause_initiator = Some(initiator);
-                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: true });
-                    }
                 } else {
                     audio.handle_event(crate::audio::AudioEvent::BookClose);
-                    if net_driver.is_networked() {
-                        world.is_network_paused = false;
-                        world.pause_initiator = None;
-                        net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
-                    }
                 }
             }
             if let Some(target) = ui_interaction.map_click_world_pos {
@@ -916,23 +884,11 @@ async fn main() {
                 active_dossier_tier = Some(tier);
                 opened_dossier_from_codex = false;
                 audio.handle_event(crate::audio::AudioEvent::BookOpen);
-                if net_driver.is_networked() {
-                    let initiator = if my_player_id == 0 { "Директор (Досье)".to_string() } else { format!("Босс ({})", world.boss_name) };
-                    world.is_network_paused = true;
-                    world.pause_initiator = Some(initiator);
-                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: true });
-                }
             }
             if let Some(target) = ui_interaction.open_item_inspection {
                 active_item_inspection = Some(target);
                 opened_item_from_codex = false;
                 audio.handle_event(crate::audio::AudioEvent::BookOpen);
-                if net_driver.is_networked() {
-                    let initiator = if my_player_id == 0 { "Директор (Инфо)".to_string() } else { format!("Босс ({})", world.boss_name) };
-                    world.is_network_paused = true;
-                    world.pause_initiator = Some(initiator);
-                    net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: true });
-                }
             }
             if let Some(tier) = ui_interaction.direct_summon_tier {
                 if let Some(director) = world.directors.first() {
@@ -1402,9 +1358,9 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, _world_ca
         let is_shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         let is_ctrl = is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
 
-        // Переключение страницы мобов Директора: клавиши [1], [2] и [Tab]
+        // Переключение страницы мобов Директора: клавиши [1], [2], [3] и [Tab]
         if is_key_pressed(KeyCode::Tab) {
-            let next_page = if director.mob_page == 0 { 1 } else { 0 };
+            let next_page = (director.mob_page + 1) % 3;
             driver.send_command(Command::SetMobPage { director_id: director.id, page: next_page });
         }
         if is_key_pressed(KeyCode::Key1) {
@@ -1412,6 +1368,9 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, _world_ca
         }
         if is_key_pressed(KeyCode::Key2) {
             driver.send_command(Command::SetMobPage { director_id: director.id, page: 1 });
+        }
+        if is_key_pressed(KeyCode::Key3) {
+            driver.send_command(Command::SetMobPage { director_id: director.id, page: 2 });
         }
 
         if !is_ctrl {
@@ -1423,11 +1382,17 @@ fn handle_player_input(world: &World, driver: &mut impl NetworkDriver, _world_ca
             ];
             for (i, key) in keys.iter().enumerate() {
                 if is_key_pressed(*key) {
-                    let tier = (i + 1) as u8 + (director.mob_page * 8);
-                    if is_shift {
-                        driver.send_command(Command::SpawnSquadMax { director_id: director.id, tier });
+                    let tier = if director.mob_page == 2 {
+                        if i == 0 { 17 } else if i == 1 { 18 } else { 0 }
                     } else {
-                        try_summon_squad(director, tier, driver);
+                        (i + 1) as u8 + (director.mob_page * 8)
+                    };
+                    if tier > 0 {
+                        if is_shift {
+                            driver.send_command(Command::SpawnSquadMax { director_id: director.id, tier });
+                        } else {
+                            try_summon_squad(director, tier, driver);
+                        }
                     }
                 }
             }
@@ -1473,9 +1438,23 @@ fn try_summon_squad(director: &crate::ecs::world::DirectorState, tier: u8, drive
 
 fn execute_command(world: &mut World, cmd: Command) {
     match cmd {
+        Command::SelectPerk { player_id, choice_index } => {
+            crate::ecs::systems::coop::apply_player_perk_choice_by_index(world, player_id, choice_index);
+        }
         Command::SpawnSquad { director_id, tier } => {
             let config = get_squad_config(tier);
-            let can_spawn = if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
+            let is_hero = tier >= 17;
+            let can_hero_spawn = if is_hero {
+                let any_obelisk_active = world.structures.iter().any(|s| {
+                    s.structure_type == crate::content::structures::STRUCTURE_OBELISK && s.is_active
+                });
+                let hero_alive = world.mobs.iter().any(|m| m.is_hero && m.health.is_alive());
+                let cooldown_ready = world.directors.iter().find(|d| d.id == director_id).map_or(false, |d| d.hero_cooldown <= 0.0);
+                !any_obelisk_active && !hero_alive && cooldown_ready
+            } else {
+                true
+            };
+            let can_spawn = can_hero_spawn && if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
                 director.spend_points(config.cost)
             } else {
                 false
@@ -1484,11 +1463,18 @@ fn execute_command(world: &mut World, cmd: Command) {
                 spawn_squad_perimeter(world, tier);
                 if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {
                     director.time_since_last_spawn = 0.0;
+                    if is_hero {
+                        director.hero_cooldown = director.hero_max_cooldown;
+                    }
                 }
                 world.push_audio(crate::audio::AudioEvent::SummonMob);
             }
         }
         Command::SpawnSquadMax { director_id, tier } => {
+            if tier >= 17 {
+                execute_command(world, Command::SpawnSquad { director_id, tier });
+                return;
+            }
             let config = get_squad_config(tier);
             let mut count = 0;
             if let Some(director) = world.directors.iter_mut().find(|d| d.id == director_id) {

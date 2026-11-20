@@ -253,6 +253,30 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         } else if mob.status.poison_timer > 0.0 {
             draw_circle_lines(mob.pos.x, mob.pos.y, mob.radius + 1.0, 1.5, LIME);
         }
+
+        // Если это Герой (Тир 17/18) — рисуем полосу здоровья босса, обратный отсчёт до ярости или режим ярости
+        if mob.is_hero {
+            let hp_pct = (mob.health.current / mob.health.max).clamp(0.0, 1.0);
+            let bar_w = 110.0;
+            let bar_h = 7.0;
+            let bar_x = mob.pos.x - bar_w / 2.0;
+            let bar_y = mob.pos.y - mob.radius - 22.0;
+
+            draw_rectangle(bar_x - 1.0, bar_y - 1.0, bar_w + 2.0, bar_h + 2.0, Color::new(0.05, 0.05, 0.08, 0.95));
+            draw_rectangle(bar_x, bar_y, bar_w * hp_pct, bar_h, if mob.tier == 17 { Color::new(0.65, 0.25, 0.95, 1.0) } else { RED });
+            draw_rectangle_lines(bar_x, bar_y, bar_w, bar_h, 1.5, GOLD);
+
+            // Обратный отсчёт до ярости / Режим ярости
+            let (enrage_str, enrage_col) = if mob.hero_enrage_timer > 0.0 {
+                (format!("ярость через {:.0}", mob.hero_enrage_timer.ceil()), GOLD)
+            } else {
+                let p = (time * 10.0).sin() * 5.0;
+                draw_circle_lines(mob.pos.x, mob.pos.y, mob.radius + 6.0 + p, 2.5, Color::new(1.0, 0.15, 0.15, 0.95));
+                ("ЯРОСТЬ!".to_string(), RED)
+            };
+            let etw = fonts.measure_heading(&enrage_str, 11.0).width;
+            fonts.draw_heading(&enrage_str, mob.pos.x - etw / 2.0, bar_y - 5.0, 11.0, enrage_col);
+        }
     }
 
     // 6. Отрисовка снарядов (с обновленными эффектами для босса и мобов)
@@ -280,6 +304,12 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         draw_line(start.x, start.y, end.x, end.y, 2.0, Color::new(1.0, 1.0, 1.0, alpha));
     }
 
+    // 7.2 Чёрные дыры (Владыка Пустоты)
+    draw_black_holes(world, time, fonts);
+
+    // 7.3 Связующая Энергетическая цепь (Soul Link) между живыми боссами
+    draw_soul_link(world, time);
+
     // 8. Отрисовка Босса (Соло-героя)
     let bx = world.boss_pos.x;
     let by = world.boss_pos.y;
@@ -292,17 +322,19 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         draw_circle(bx, by, 35.0, Color::new(0.1, 0.9, 0.3, 0.12));
     }
 
-    // Аура Спорового Мицелия (Исцеляющие грибы под ногами босса при остановке)
-    if world.boss_mushroom_still_time >= 0.4 {
+    // Аура Спорового Мицелия (Исцеляющие грибы и командная аура под ногами босса при остановке)
+    let mush_lvl = world.boss_inventory.get_passive_level(crate::ecs::components::inventory::PassiveType::SporeMushroom);
+    if world.boss_mushroom_still_time >= 0.4 && mush_lvl > 0 {
+        let aura_radius = 160.0 + (mush_lvl as f32) * 50.0;
         let pulse = (time * 4.0).sin() * 5.0;
-        let ring_radius = 52.0 + pulse;
+        let ring_radius = aura_radius + pulse;
 
         // Биолюминесцентная грибная зона
         draw_circle(bx, by, ring_radius, Color::new(0.08, 0.85, 0.45, 0.16));
         draw_circle_lines(bx, by, ring_radius, 2.0, Color::new(0.2, 1.0, 0.6, 0.80));
 
-        // 6 светящихся грибочков по периметру мицелия
-        let shroom_count = 6;
+        // 12 светящихся биолюминесцентных спор и грибочков по периметру мицелия
+        let shroom_count = 12;
         for i in 0..shroom_count {
             let angle = (i as f32) * std::f32::consts::PI * 2.0 / (shroom_count as f32) + 0.35;
             let sx = bx + angle.cos() * (ring_radius - 10.0);
@@ -708,6 +740,153 @@ fn draw_move_click_effects(world: &World) {
         let dot_r = (1.0 - progress) * 3.5;
         if dot_r > 0.5 {
             draw_circle(eff.pos.x, eff.pos.y, dot_r, Color::new(1.0, 0.50, 0.15, alpha));
+        }
+    }
+}
+
+/// Отрисовка связующей Энергетической цепи (Soul Link) между живыми боссами.
+/// Кольцевая топология, электрические струны, бегущие плазменные импульсы и нити воссоединения.
+fn draw_soul_link(world: &World, time: f32) {
+    let mut alive_bosses = Vec::new();
+    if world.boss_health.is_alive() {
+        alive_bosses.push(world.boss_pos);
+    }
+    for coop in &world.coop_bosses {
+        if coop.boss_health.is_alive() {
+            alive_bosses.push(coop.boss_pos);
+        }
+    }
+
+    let n = alive_bosses.len();
+    if n >= 2 {
+        let mut links = Vec::new();
+        if n == 2 {
+            links.push((alive_bosses[0], alive_bosses[1]));
+        } else {
+            for i in 0..n {
+                let next = (i + 1) % n;
+                links.push((alive_bosses[i], alive_bosses[next]));
+            }
+        }
+
+        for (a, b) in links {
+            let diff = b - a;
+            let dist = diff.length();
+            if dist <= 0.01 { continue; }
+            let dir = diff / dist;
+            let normal = Vec2::new(-dir.y, dir.x);
+
+            // 1. Мягкое широкое свечение (Аура Души)
+            draw_line(a.x, a.y, b.x, b.y, 8.0, Color::new(0.15, 0.70, 0.95, 0.28));
+
+            // 2. Энергетический луч
+            draw_line(a.x, a.y, b.x, b.y, 3.5, Color::new(0.35, 0.90, 1.0, 0.75));
+
+            // 3. Белый плазменный сердечник
+            draw_line(a.x, a.y, b.x, b.y, 1.5, Color::new(0.95, 1.0, 1.0, 0.95));
+
+            // 4. Волновые электрические колебания вдоль цепи
+            let segments = (dist / 28.0).ceil() as usize;
+            for s in 0..segments {
+                let t1 = (s as f32) / (segments as f32);
+                let t2 = ((s + 1) as f32) / (segments as f32);
+                let p1 = a + diff * t1;
+                let p2 = a + diff * t2;
+                let wave1 = (time * 16.0 + t1 * 18.0).sin() * 4.5;
+                let wave2 = (time * 16.0 + t2 * 18.0).sin() * 4.5;
+                let wp1 = p1 + normal * wave1;
+                let wp2 = p2 + normal * wave2;
+                draw_line(wp1.x, wp1.y, wp2.x, wp2.y, 1.5, Color::new(0.6, 1.0, 0.85, 0.8));
+            }
+
+            // 5. Бегущие плазменные импульсы / руны по цепи
+            let pulse_count = 3;
+            for k in 0..pulse_count {
+                let t = (time * 0.45 + (k as f32) / (pulse_count as f32)) % 1.0;
+                let pulse_pos = a + diff * t;
+                let p_glow = (time * 8.0 + k as f32).sin() * 1.5;
+                draw_circle(pulse_pos.x, pulse_pos.y, 4.0 + p_glow, Color::new(0.9, 1.0, 1.0, 0.9));
+                draw_circle_lines(pulse_pos.x, pulse_pos.y, 7.0 + p_glow, 1.2, Color::new(0.2, 0.9, 1.0, 0.8));
+            }
+        }
+    }
+
+    // Анимация восстановления связи при возрождении павшего босса
+    let check_revive = |pos: Vec2, rev_prog: f32| {
+        if rev_prog > 0.0 {
+            let prog = (rev_prog / crate::ecs::systems::coop::REVIVE_SECONDS).clamp(0.0, 1.0);
+            for &bp in &alive_bosses {
+                let diff = pos - bp;
+                let d = diff.length();
+                if d <= 1200.0 {
+                    let cur_end = bp + diff * prog;
+                    draw_line(bp.x, bp.y, cur_end.x, cur_end.y, 2.5, Color::new(0.3, 1.0, 0.6, 0.65));
+                    let spark_p = (time * 12.0).sin() * 3.0;
+                    draw_circle(cur_end.x, cur_end.y, 5.0 + spark_p, Color::new(0.5, 1.0, 0.7, 0.9));
+                }
+            }
+        }
+    };
+
+    if !world.boss_health.is_alive() {
+        check_revive(world.boss_pos, world.boss_revive_progress);
+    }
+    for coop in &world.coop_bosses {
+        if !coop.boss_health.is_alive() {
+            check_revive(coop.boss_pos, coop.revive_progress);
+        }
+    }
+}
+
+/// Отрисовка чёрных дыр: предупреждение (1с красный круг и руна) и активный вращающийся космический вихрь
+fn draw_black_holes(world: &World, time: f32, fonts: &GameFonts) {
+    for bh in &world.black_holes {
+        let cp = bh.center_pos;
+        if !bh.is_active {
+            // 1с красное предупреждение
+            let warn_pulse = (time * 14.0).sin() * 4.0;
+            draw_circle(cp.x, cp.y, bh.radius, Color::new(1.0, 0.08, 0.08, 0.22));
+            draw_circle_lines(cp.x, cp.y, bh.radius + warn_pulse, 2.5, Color::new(1.0, 0.2, 0.2, 0.9));
+            draw_circle_lines(cp.x, cp.y, bh.radius * 0.5, 1.5, RED);
+
+            let warn_txt = "! СИНГУЛЯРНОСТЬ !";
+            let wtw = fonts.measure_heading(warn_txt, 11.0).width;
+            fonts.draw_heading(warn_txt, cp.x - wtw / 2.0, cp.y + 4.0, 11.0, Color::new(1.0, 0.3, 0.3, 1.0));
+        } else {
+            // Активный гравитационный вихрь
+            let pull_r = bh.radius * 2.5;
+
+            // Зона притяжения (мягкая гравитационная линза)
+            draw_circle(cp.x, cp.y, pull_r, Color::new(0.12, 0.04, 0.22, 0.14));
+            draw_circle_lines(cp.x, cp.y, pull_r, 1.2, Color::new(0.45, 0.15, 0.75, 0.45));
+
+            // Вращающийся аккреционный диск (спиральные кольца)
+            let spin = bh.spin_angle;
+            let n_rings = 4;
+            for r in 0..n_rings {
+                let frac = (r as f32 + 1.0) / (n_rings as f32);
+                let ring_r = bh.radius * frac;
+                let rot = spin * (1.5 - frac * 0.5);
+                let col = if r % 2 == 0 {
+                    Color::new(0.55, 0.15, 0.90, 0.65)
+                } else {
+                    Color::new(0.20, 0.45, 1.00, 0.65)
+                };
+                draw_circle_lines(cp.x, cp.y, ring_r, 2.0, col);
+
+                // Искрящиеся звезды/частицы горизонта событий
+                for k in 0..3 {
+                    let angle = rot + (k as f32) * (std::f32::consts::PI * 2.0 / 3.0);
+                    let px = cp.x + angle.cos() * ring_r;
+                    let py = cp.y + angle.sin() * ring_r;
+                    draw_circle(px, py, 3.2, Color::new(0.9, 0.8, 1.0, 0.9));
+                }
+            }
+
+            // Черное ядро сингулярности (абсолютная тьма)
+            draw_circle(cp.x, cp.y, bh.radius * 0.65, Color::new(0.01, 0.01, 0.03, 1.0));
+            draw_circle_lines(cp.x, cp.y, bh.radius * 0.65, 2.5, Color::new(0.85, 0.35, 1.0, 0.95));
+            draw_circle_lines(cp.x, cp.y, bh.radius * 0.68, 1.2, WHITE);
         }
     }
 }

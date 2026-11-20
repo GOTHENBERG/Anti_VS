@@ -81,6 +81,11 @@ pub enum Command {
         player_id: u8,
         paused: bool,
     },
+    /// Выбор перка/улучшения при Level-Up Босса (не блокирует игру для других)
+    SelectPerk {
+        player_id: u8,
+        choice_index: u8,
+    },
     /// Перезапуск игры
     RestartGame,
 }
@@ -100,6 +105,20 @@ mod tests {
                 assert!(paused);
             }
             _ => panic!("Expected TogglePause command"),
+        }
+    }
+
+    #[test]
+    fn test_select_perk_command_serde() {
+        let cmd = Command::SelectPerk { player_id: 3, choice_index: 1 };
+        let serialized = serde_json::to_string(&cmd).expect("Serialize Command::SelectPerk");
+        let deserialized: Command = serde_json::from_str(&serialized).expect("Deserialize Command::SelectPerk");
+        match deserialized {
+            Command::SelectPerk { player_id, choice_index } => {
+                assert_eq!(player_id, 3);
+                assert_eq!(choice_index, 1);
+            }
+            _ => panic!("Expected SelectPerk command"),
         }
     }
 }

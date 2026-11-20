@@ -373,6 +373,8 @@ fn get_passive_index(kind: PassiveType) -> usize {
         PassiveType::SilverTears => 32,
         PassiveType::GoldenSeal => 33,
         PassiveType::TitanBloodArmor => 34,
+        PassiveType::BerserkerBlood => 35,
+        PassiveType::MartyrVanguard => 36,
     }
 }
 
@@ -632,6 +634,8 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             PassiveType::SilverTears,
             PassiveType::GoldenSeal,
             PassiveType::TitanBloodArmor,
+            PassiveType::BerserkerBlood,
+            PassiveType::MartyrVanguard,
         ];
         for ap in all_passives {
             if !inventory.has_passive(ap) {
@@ -671,6 +675,8 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
                     PassiveType::SilverTears => inventory.has_weapon(WeaponType::ChronoStasis),
                     PassiveType::GoldenSeal => true,
                     PassiveType::TitanBloodArmor => inventory.has_weapon(WeaponType::VampiricAura) || inventory.has_passive(PassiveType::BloodStone),
+                    PassiveType::BerserkerBlood => inventory.has_weapon(WeaponType::ExecutionerAxe) || inventory.has_weapon(WeaponType::VampiricAura),
+                    PassiveType::MartyrVanguard => inventory.has_passive(PassiveType::SpeedGloves) || inventory.has_weapon(WeaponType::WindBlade),
                 };
                 let weight = if has_pair { 180.0 } else { 40.0 };
                 available.push((PerkChoice::UpgradePassive(ap), weight));

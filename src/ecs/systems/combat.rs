@@ -794,6 +794,17 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 xp_value *= 1.25;
             }
 
+            let martyr_lvl = world.boss_inventory.get_passive_level(PassiveType::MartyrVanguard);
+            if martyr_lvl > 0 && world.boss_health.is_alive() {
+                world.boss_health.heal(1.5 * martyr_lvl as f32);
+            }
+            for coop in world.coop_bosses.iter_mut() {
+                let coop_martyr = coop.boss_inventory.get_passive_level(PassiveType::MartyrVanguard);
+                if coop_martyr > 0 && coop.boss_health.is_alive() {
+                    coop.boss_health.heal(1.5 * coop_martyr as f32);
+                }
+            }
+
             // Высокоуровневые титаны (Тир 8 Жнецы) дропают триплет гигантских сияющих кристаллов!
             if mob.tier == 8 || mob.tier == 16 {
                 let chunk = xp_value / 3.0;
@@ -881,29 +892,14 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 world.add_floating_text(st_pos, format!("АЛТАРЬ ТИРА {} УНИЧТОЖЕН!", altar_tier), GOLD, 1.6);
 
                 let total_altar_xp = 150.0 + altar_tier.saturating_sub(1) as f32 * 40.0;
-                let contributors = world.structure_contributors.remove(&st_id);
-                if let Some(contributors) = contributors {
-                    let k = contributors.len().max(1) as f32;
-                    let share = (total_altar_xp / k).round();
-                    for &contributor_id in &contributors {
-                        world.grant_boss_player_xp(contributor_id, share);
-                        let pos = if world.active_boss_id == contributor_id {
-                            world.boss_pos
-                        } else if let Some(p) = world.coop_bosses.iter().find(|p| p.id == contributor_id) {
-                            p.boss_pos
-                        } else {
-                            st_pos
-                        };
-                        world.add_floating_text(
-                            pos,
-                            format!("+{} XP (Алтарь, 1/{} доля)", share as u32, k as u32),
-                            GOLD,
-                            1.8,
-                        );
-                    }
-                } else {
-                    world.grant_shared_boss_xp(total_altar_xp);
-                }
+                world.structure_contributors.remove(&st_id);
+                world.grant_shared_boss_xp(total_altar_xp);
+                world.add_floating_text(
+                    st_pos,
+                    format!("АЛТАРЬ ТИРА {} УНИЧТОЖЕН! +{:.0} XP ВСЕМ!", altar_tier, total_altar_xp),
+                    GOLD,
+                    1.8,
+                );
 
                 // Дропаем утилитный магнит без дублирования опыта
                 dropped_gems.push(SoulGemEntity {
@@ -928,45 +924,44 @@ pub fn update_combat(world: &mut World, dt: f32) {
             crate::content::structures::STRUCTURE_OBELISK => {
                 world.boss_obelisks_deactivated_total += 1;
 
-                let contributors = world
-                    .structure_contributors
-                    .remove(&st_id)
-                    .or_else(|| world.obelisk_contributors.remove(&st_id));
+                world.structure_contributors.remove(&st_id);
+                world.obelisk_contributors.remove(&st_id);
 
-                if let Some(contributors) = contributors {
-                    for contributor_id in &contributors {
-                        // Каждому нанесшему урон боссу немедленно даруется Реликвия!
-                        let granted_relic = grant_boss_relic_reward(world, *contributor_id);
+                let all_boss_ids: Vec<u8> = std::iter::once(world.active_boss_id)
+                    .chain(world.coop_bosses.iter().map(|p| p.id))
+                    .collect();
 
-                        let relic_name = granted_relic
-                            .map(|r| crate::content::passives::get_passive_def(r).name)
-                            .unwrap_or("Усиление Характеристик");
+                for boss_id in all_boss_ids {
+                    // Каждому боссу даруется Реликвия за закрытие Разлома!
+                    let granted_relic = grant_boss_relic_reward(world, boss_id);
 
-                        // Восстановление 15% HP и персональный текст награды каждому участнику
-                        if world.active_boss_id == *contributor_id {
-                            if world.boss_health.is_alive() {
-                                let heal_bonus = world.boss_health.max * 0.15;
-                                world.boss_health.heal(heal_bonus);
-                            }
-                            world.add_floating_text(
-                                world.boss_pos,
-                                format!("⚡ ДАР РАЗЛОМА: [{}]!", relic_name),
-                                GOLD,
-                                3.0,
-                            );
-                        } else if let Some(player) = world.coop_bosses.iter_mut().find(|p| p.id == *contributor_id) {
-                            if player.boss_health.is_alive() {
-                                let heal_bonus = player.boss_health.max * 0.15;
-                                player.boss_health.heal(heal_bonus);
-                            }
-                            let player_pos = player.boss_pos;
-                            world.add_floating_text(
-                                player_pos,
-                                format!("⚡ ДАР РАЗЛОМА: [{}]!", relic_name),
-                                GOLD,
-                                3.0,
-                            );
+                    let relic_name = granted_relic
+                        .map(|r| crate::content::passives::get_passive_def(r).name)
+                        .unwrap_or("Усиление Характеристик");
+
+                    if world.active_boss_id == boss_id {
+                        if world.boss_health.is_alive() {
+                            let heal_bonus = world.boss_health.max * 0.15;
+                            world.boss_health.heal(heal_bonus);
                         }
+                        world.add_floating_text(
+                            world.boss_pos,
+                            format!("⚡ ДАР РАЗЛОМА: [{}]!", relic_name),
+                            GOLD,
+                            3.0,
+                        );
+                    } else if let Some(player) = world.coop_bosses.iter_mut().find(|p| p.id == boss_id) {
+                        if player.boss_health.is_alive() {
+                            let heal_bonus = player.boss_health.max * 0.15;
+                            player.boss_health.heal(heal_bonus);
+                        }
+                        let player_pos = player.boss_pos;
+                        world.add_floating_text(
+                            player_pos,
+                            format!("⚡ ДАР РАЗЛОМА: [{}]!", relic_name),
+                            GOLD,
+                            3.0,
+                        );
                     }
                 }
                 world.screen_shake = 25.0;
@@ -1220,7 +1215,7 @@ fn grant_boss_relic_internal(world: &mut World) -> Option<PassiveType> {
     let mut unowned_others = Vec::new();
 
     if has_free_slots {
-        const ALL_PASSIVES: [PassiveType; 35] = [
+        const ALL_PASSIVES: [PassiveType; 37] = [
             PassiveType::SpeedGloves,
             PassiveType::GiantHeart,
             PassiveType::CooldownTome,
@@ -1256,6 +1251,8 @@ fn grant_boss_relic_internal(world: &mut World) -> Option<PassiveType> {
             PassiveType::SilverTears,
             PassiveType::GoldenSeal,
             PassiveType::TitanBloodArmor,
+            PassiveType::BerserkerBlood,
+            PassiveType::MartyrVanguard,
         ];
 
         for &p in &ALL_PASSIVES {

@@ -1109,6 +1109,22 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             textures.icon_light_armor.as_ref().or(textures.icon_armor.as_ref()),
             RED,
         ),
+        (
+            PassiveType::BerserkerBlood,
+            "36. Кровь Берсерка",
+            "Регенерация HP и скорость атаки оружия растут тем сильнее, чем ниже здоровье босса.",
+            "СВЯЗКА ДЛЯ ВЫЖИВАНИЯ: Превращает предсмертное состояние в сокрушительную ярость.",
+            textures.icon_blood_stone.as_ref().or(textures.icon_sword.as_ref()),
+            RED,
+        ),
+        (
+            PassiveType::MartyrVanguard,
+            "37. Авангард Мучеников",
+            "Скорость бега растёт пропорционально ранам союзников. Убийство любого моба лечит +1.5 HP.",
+            "КОМАНДНЫЙ СТРАЖ: Стремительное спасение раненых соратников и вампиризм.",
+            textures.icon_speed_gloves.as_ref().or(textures.icon_aegis.as_ref()),
+            GOLD,
+        ),
     ];
 
     let active_passives = match current_page {
