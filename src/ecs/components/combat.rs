@@ -74,7 +74,7 @@ pub struct DamagePacket {
 }
 
 impl Resistances {
-    /// Возвращает процент снижения входящего физ. урона от брони по формуле Blizzard/Dota:
+    /// Возвращает процент снижения входящего физ. урона от брони по канонической гиперболической формуле (EHP scaling):
     /// Резист = (0.06 * Б) / (1 + 0.06 * |Б|)
     pub fn physical_reduction_from_armor(&self) -> f32 {
         (0.06 * self.flat_armor) / (1.0 + 0.06 * self.flat_armor.abs())

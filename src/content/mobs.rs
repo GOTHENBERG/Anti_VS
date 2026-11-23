@@ -97,7 +97,7 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
             count: 1,
             cooldown: 20.0,
             unlock_spent_threshold: 10000.0,
-            description: "Мини-босс орды! 2800 HP, гигантская коса смерти, не отбрасывается.",
+            description: "Мини-босс орды! 3920 HP, гигантская коса смерти, не отбрасывается.",
         },
         9 => SquadConfig {
             tier: 9,
@@ -133,7 +133,7 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
             count: 2,
             cooldown: 8.0,
             unlock_spent_threshold: 40000.0,
-            description: "1450 HP, 30 брони. Живые крепости, блокирующие все снаряды босса.",
+            description: "2030 HP, 30 брони. Живые крепости, блокирующие все снаряды босса.",
         },
         13 => SquadConfig {
             tier: 13,
@@ -151,7 +151,7 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
             count: 2,
             cooldown: 12.0,
             unlock_spent_threshold: 68000.0,
-            description: "Высшие демоны тьмы (1800 HP). Фазовый сдвиг сквозь преграды прямо к боссу.",
+            description: "Высшие демоны тьмы (2520 HP). Фазовый сдвиг сквозь преграды прямо к боссу.",
         },
         15 => SquadConfig {
             tier: 15,
@@ -160,7 +160,7 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
             count: 2,
             cooldown: 15.0,
             unlock_spent_threshold: 85000.0,
-            description: "Падшие серафимы (2600 HP, 100% огонь). Испепеляют поле боя солнечным гневом.",
+            description: "Падшие серафимы (3640 HP, 100% огонь). Испепеляют поле боя солнечным гневом.",
         },
         16 => SquadConfig {
             tier: 16,
@@ -169,7 +169,7 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
             count: 1,
             cooldown: 25.0,
             unlock_spent_threshold: 110000.0,
-            description: "Верховный владыка Бездны! 8500 HP, 45 брони, сокрушительные рассекающие удары.",
+            description: "Верховный владыка Бездны! 11900 HP, 45 брони, сокрушительные рассекающие удары.",
         },
         17 => SquadConfig {
             tier: 17,
@@ -196,8 +196,48 @@ pub fn get_squad_config(tier: u8) -> SquadConfig {
             count: 1,
             cooldown: 25.0,
             unlock_spent_threshold: 110000.0,
-            description: "Верховный владыка Бездны! 8500 HP, 45 брони, сокрушительные рассекающие удары.",
+            description: "Верховный владыка Бездны! 11900 HP, 45 брони, сокрушительные рассекающие удары.",
         },
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct MobBaseStats {
+    pub base_hp: f32,
+    pub base_spd: f32,
+    pub base_dmg: f32,
+    pub base_rad: f32,
+    pub flat_armor: f32,
+    pub phys_res: f32,
+    pub ice_res: f32,
+    pub fire_res: f32,
+    pub is_undead: bool,
+    pub knockback_immune: bool,
+}
+
+/// Базовые характеристики мобов и героев.
+/// HP всех мобов (тиры 1-16) увеличено на 40%, героев (тиры 17-18) — на 100%.
+pub fn get_mob_base_stats(tier: u8) -> MobBaseStats {
+    match tier {
+        1 => MobBaseStats { base_hp: 44.8, base_spd: 105.0, base_dmg: 7.0, base_rad: 10.0, flat_armor: 0.0, phys_res: 0.05, ice_res: 0.0, fire_res: 0.0, is_undead: true, knockback_immune: false },
+        2 => MobBaseStats { base_hp: 70.0, base_spd: 160.0, base_dmg: 12.0, base_rad: 11.0, flat_armor: 1.0, phys_res: 0.10, ice_res: 0.0, fire_res: 0.0, is_undead: false, knockback_immune: false },
+        3 => MobBaseStats { base_hp: 105.0, base_spd: 80.0, base_dmg: 16.0, base_rad: 13.0, flat_armor: 2.0, phys_res: 0.15, ice_res: 0.0, fire_res: 0.0, is_undead: true, knockback_immune: false },
+        4 => MobBaseStats { base_hp: 532.0, base_spd: 52.0, base_dmg: 32.0, base_rad: 22.0, flat_armor: 14.0, phys_res: 0.35, ice_res: 1.0, fire_res: -0.50, is_undead: false, knockback_immune: true },
+        5 => MobBaseStats { base_hp: 182.0, base_spd: 185.0, base_dmg: 0.0, base_rad: 15.0, flat_armor: 2.0, phys_res: 0.10, ice_res: 0.0, fire_res: 0.0, is_undead: true, knockback_immune: false },
+        6 => MobBaseStats { base_hp: 770.0, base_spd: 140.0, base_dmg: 42.0, base_rad: 18.0, flat_armor: 8.0, phys_res: 0.25, ice_res: 0.20, fire_res: 0.20, is_undead: false, knockback_immune: false },
+        7 => MobBaseStats { base_hp: 1190.0, base_spd: 95.0, base_dmg: 55.0, base_rad: 20.0, flat_armor: 10.0, phys_res: 0.20, ice_res: -0.40, fire_res: 1.00, is_undead: false, knockback_immune: false },
+        8 => MobBaseStats { base_hp: 3920.0, base_spd: 68.0, base_dmg: 95.0, base_rad: 28.0, flat_armor: 24.0, phys_res: 0.45, ice_res: 0.30, fire_res: 0.30, is_undead: true, knockback_immune: true },
+        9 => MobBaseStats { base_hp: 168.0, base_spd: 115.0, base_dmg: 24.0, base_rad: 12.0, flat_armor: 6.0, phys_res: 0.25, ice_res: 0.10, fire_res: 0.10, is_undead: true, knockback_immune: true },
+        10 => MobBaseStats { base_hp: 266.0, base_spd: 180.0, base_dmg: 38.0, base_rad: 14.0, flat_armor: 4.0, phys_res: 0.20, ice_res: 0.0, fire_res: 0.50, is_undead: false, knockback_immune: false },
+        11 => MobBaseStats { base_hp: 448.0, base_spd: 90.0, base_dmg: 48.0, base_rad: 15.0, flat_armor: 6.0, phys_res: 0.25, ice_res: 0.10, fire_res: 0.10, is_undead: true, knockback_immune: false },
+        12 => MobBaseStats { base_hp: 2030.0, base_spd: 58.0, base_dmg: 85.0, base_rad: 26.0, flat_armor: 30.0, phys_res: 0.55, ice_res: 0.80, fire_res: -0.30, is_undead: false, knockback_immune: true },
+        13 => MobBaseStats { base_hp: 910.0, base_spd: 205.0, base_dmg: 0.0, base_rad: 18.0, flat_armor: 8.0, phys_res: 0.20, ice_res: 0.10, fire_res: 0.10, is_undead: true, knockback_immune: false },
+        14 => MobBaseStats { base_hp: 2520.0, base_spd: 155.0, base_dmg: 110.0, base_rad: 22.0, flat_armor: 16.0, phys_res: 0.40, ice_res: 0.30, fire_res: 0.30, is_undead: false, knockback_immune: false },
+        15 => MobBaseStats { base_hp: 3640.0, base_spd: 110.0, base_dmg: 140.0, base_rad: 24.0, flat_armor: 22.0, phys_res: 0.35, ice_res: -0.20, fire_res: 1.00, is_undead: false, knockback_immune: false },
+        16 => MobBaseStats { base_hp: 11900.0, base_spd: 75.0, base_dmg: 280.0, base_rad: 34.0, flat_armor: 45.0, phys_res: 0.65, ice_res: 0.50, fire_res: 0.50, is_undead: true, knockback_immune: true },
+        17 => MobBaseStats { base_hp: 32000.0, base_spd: 48.0, base_dmg: 180.0, base_rad: 68.0, flat_armor: 35.0, phys_res: 0.50, ice_res: 0.40, fire_res: 0.40, is_undead: true, knockback_immune: true },
+        18 => MobBaseStats { base_hp: 44000.0, base_spd: 45.0, base_dmg: 240.0, base_rad: 78.0, flat_armor: 48.0, phys_res: 0.60, ice_res: 0.20, fire_res: 1.00, is_undead: false, knockback_immune: true },
+        _ => MobBaseStats { base_hp: 32000.0, base_spd: 48.0, base_dmg: 180.0, base_rad: 68.0, flat_armor: 35.0, phys_res: 0.50, ice_res: 0.40, fire_res: 0.40, is_undead: true, knockback_immune: true },
     }
 }
 
@@ -381,27 +421,17 @@ fn spawn_squad_arc_at(
         // Гарантируем, что моб не появится в опасной близости от ЛЮБОГО живого босса
         let spawn_pos = find_safe_mob_spawn_pos(world, raw_spawn_pos, boss_pos, MIN_BOSS_MOB_SPAWN_DIST);
 
-        let (base_hp, base_spd, base_dmg, base_rad, mut flat_armor, mut phys_res, ice_res, fire_res, is_undead, knockback_immune) = match tier {
-            1 => (32.0, 105.0, 7.0, 10.0, 0.0, 0.05, 0.0, 0.0, true, false), // Скелет
-            2 => (50.0, 160.0, 12.0, 11.0, 1.0, 0.10, 0.0, 0.0, false, false), // Чёрная гончая
-            3 => (75.0, 80.0, 16.0, 13.0, 2.0, 0.15, 0.0, 0.0, true, false), // Культист
-            4 => (380.0, 52.0, 32.0, 22.0, 14.0, 0.35, 1.0, -0.50, false, true), // Голем
-            5 => (130.0, 185.0, 0.0, 15.0, 2.0, 0.10, 0.0, 0.0, true, false), // Камикадзе
-            6 => (550.0, 140.0, 42.0, 18.0, 8.0, 0.25, 0.20, 0.20, false, false), // Демон теней
-            7 => (850.0, 95.0, 55.0, 20.0, 10.0, 0.20, -0.40, 1.00, false, false), // Огненный элементаль
-            8 => (2800.0, 68.0, 95.0, 28.0, 24.0, 0.45, 0.30, 0.30, true, true), // Жнец Смерти (Титан)
-            9 => (120.0, 115.0, 24.0, 12.0, 6.0, 0.25, 0.10, 0.10, true, true), // Дред-Фаланга
-            10 => (190.0, 180.0, 38.0, 14.0, 4.0, 0.20, 0.0, 0.50, false, false), // Адские Гончие
-            11 => (320.0, 90.0, 48.0, 15.0, 6.0, 0.25, 0.10, 0.10, true, false), // Архикультисты Бездны
-            12 => (1450.0, 58.0, 85.0, 26.0, 30.0, 0.55, 0.80, -0.30, false, true), // Обсидиановые Колоссы
-            13 => (650.0, 205.0, 0.0, 18.0, 8.0, 0.20, 0.10, 0.10, true, false), // Проклятые Мучители
-            14 => (1800.0, 155.0, 110.0, 22.0, 16.0, 0.40, 0.30, 0.30, false, false), // Призрачные Ловчие
-            15 => (2600.0, 110.0, 140.0, 24.0, 22.0, 0.35, -0.20, 1.00, false, false), // Солнечные Архонты
-            16 => (8500.0, 75.0, 280.0, 34.0, 45.0, 0.65, 0.50, 0.50, true, true), // Аватар Забвения (Колосс)
-            17 => (16000.0, 48.0, 180.0, 68.0, 35.0, 0.50, 0.40, 0.40, true, true), // Владыка Пустоты (Герой)
-            18 => (22000.0, 45.0, 240.0, 78.0, 48.0, 0.60, 0.20, 1.00, false, true), // Архидемон Инферно (Герой)
-            _ => (16000.0, 48.0, 180.0, 68.0, 35.0, 0.50, 0.40, 0.40, true, true),
-        };
+        let stats = get_mob_base_stats(tier);
+        let base_hp = stats.base_hp;
+        let base_spd = stats.base_spd;
+        let base_dmg = stats.base_dmg;
+        let base_rad = stats.base_rad;
+        let mut flat_armor = stats.flat_armor;
+        let mut phys_res = stats.phys_res;
+        let ice_res = stats.ice_res;
+        let fire_res = stats.fire_res;
+        let is_undead = stats.is_undead;
+        let knockback_immune = stats.knockback_immune;
 
         let is_hero = tier >= 17;
         let living_bosses = world.living_boss_count();
@@ -455,10 +485,10 @@ fn spawn_squad_arc_at(
             is_elite,
             knockback_immune: knockback_immune || is_hero,
             knockback_vel: Vec2::ZERO,
-            attack_timer: rand::gen_range(0.5, 1.5),
+            attack_timer: 0.0,
             is_hero,
             hero_enrage_timer: if is_hero { 60.0 } else { 0.0 },
-            hero_skill_timers: if is_hero { [5.0, 10.0, 15.0, 20.0] } else { [0.0; 4] },
+            hero_skill_timers: [0.0; 4],
             attack_count: 0,
             has_duplicated: false,
             owner_hero_id: None,
@@ -491,27 +521,17 @@ pub fn spawn_single_mob_at_pos_with_elite(world: &mut World, tier: u8, pos: Vec2
         pos.y.clamp(20.0, map_h - 20.0),
     );
     let id = world.alloc_id();
-    let (base_hp, base_spd, base_dmg, base_rad, mut flat_armor, mut phys_res, ice_res, fire_res, is_undead, knockback_immune) = match tier {
-        1 => (32.0, 105.0, 7.0, 10.0, 0.0, 0.05, 0.0, 0.0, true, false), // Скелет
-        2 => (50.0, 160.0, 12.0, 11.0, 1.0, 0.10, 0.0, 0.0, false, false), // Чёрная гончая
-        3 => (75.0, 80.0, 16.0, 13.0, 2.0, 0.15, 0.0, 0.0, true, false), // Культист
-        4 => (380.0, 52.0, 32.0, 22.0, 14.0, 0.35, 1.0, -0.50, false, true), // Голем
-        5 => (130.0, 185.0, 0.0, 15.0, 2.0, 0.10, 0.0, 0.0, true, false), // Камикадзе
-        6 => (550.0, 140.0, 42.0, 18.0, 8.0, 0.25, 0.20, 0.20, false, false), // Демон теней
-        7 => (850.0, 95.0, 55.0, 20.0, 10.0, 0.20, -0.40, 1.00, false, false), // Огненный элементаль
-        8 => (2800.0, 68.0, 95.0, 28.0, 24.0, 0.45, 0.30, 0.30, true, true), // Жнец Смерти (Титан)
-        9 => (120.0, 115.0, 24.0, 12.0, 6.0, 0.25, 0.10, 0.10, true, true), // Дред-Фаланга
-        10 => (190.0, 180.0, 38.0, 14.0, 4.0, 0.20, 0.0, 0.50, false, false), // Адские Гончие
-        11 => (320.0, 90.0, 48.0, 15.0, 6.0, 0.25, 0.10, 0.10, true, false), // Архикультисты Бездны
-        12 => (1450.0, 58.0, 85.0, 26.0, 30.0, 0.55, 0.80, -0.30, false, true), // Обсидиановые Колоссы
-        13 => (650.0, 205.0, 0.0, 18.0, 8.0, 0.20, 0.10, 0.10, true, false), // Проклятые Мучители
-        14 => (1800.0, 155.0, 110.0, 22.0, 16.0, 0.40, 0.30, 0.30, false, false), // Призрачные Ловчие
-        15 => (2600.0, 110.0, 140.0, 24.0, 22.0, 0.35, -0.20, 1.00, false, false), // Солнечные Архонты
-        16 => (8500.0, 75.0, 280.0, 34.0, 45.0, 0.65, 0.50, 0.50, true, true), // Аватар Забвения (Колосс)
-        17 => (14000.0, 48.0, 160.0, 68.0, 50.0, 0.50, 0.50, 0.50, false, true), // Владыка Пустоты (Герой)
-        18 => (18000.0, 45.0, 190.0, 75.0, 65.0, 0.60, 0.70, 0.90, false, true), // Архидемон Инферно (Герой)
-        _ => (8500.0, 75.0, 280.0, 34.0, 45.0, 0.65, 0.50, 0.50, true, true),
-    };
+    let stats = get_mob_base_stats(tier);
+    let base_hp = stats.base_hp;
+    let base_spd = stats.base_spd;
+    let base_dmg = stats.base_dmg;
+    let base_rad = stats.base_rad;
+    let mut flat_armor = stats.flat_armor;
+    let mut phys_res = stats.phys_res;
+    let ice_res = stats.ice_res;
+    let fire_res = stats.fire_res;
+    let is_undead = stats.is_undead;
+    let knockback_immune = stats.knockback_immune;
 
     let (fury_lvl, carapace_lvl) = if let Some(d) = world.directors.first() {
         (d.grade_fury, d.grade_carapace)
@@ -562,10 +582,10 @@ pub fn spawn_single_mob_at_pos_with_elite(world: &mut World, tier: u8, pos: Vec2
         is_elite: is_elite && !is_hero,
         knockback_immune: knockback_immune || is_hero,
         knockback_vel: Vec2::ZERO,
-        attack_timer: rand::gen_range(0.5, 1.5),
+        attack_timer: 0.0,
         is_hero,
         hero_enrage_timer: if is_hero { 60.0 } else { 0.0 },
-        hero_skill_timers: if is_hero { [5.0, 10.0, 15.0, 20.0] } else { [0.0; 4] },
+        hero_skill_timers: [0.0; 4],
         attack_count: 0,
         has_duplicated: false,
         owner_hero_id: None,

@@ -4,137 +4,57 @@ use crate::ecs::components::combat::{DamagePacket, DamageType, Faction};
 use crate::ecs::components::inventory::WeaponType;
 use crate::ecs::world::{AcidPoolEntity, ProjectileEntity, World};
 
-/// Умный тактический выбор цели для направленных атак босса.
-/// Оценивает разрушаемые Алтари Крови, скопления опасных культистов-стрелков,
-/// камикадзе и непосредственные угрозы вблизи.
-pub fn select_tactical_target(world: &World, boss_pos: Vec2, max_range: f32) -> Option<Vec2> {
-    let mut best_target = None;
-    let mut best_score = -1000.0f32;
+/// Выбор ближайшей цели для направленных атак босса.
+/// Находит ближайшего живого врага (моба) или разрушаемую структуру в радиусе max_range.
+pub fn select_nearest_target(world: &World, boss_pos: Vec2, max_range: f32) -> Option<Vec2> {
+    let mut nearest_target = None;
+    let mut min_dist_sq = max_range * max_range;
 
-    // 1. Оценка живых мобов через Spatial Grid (высший приоритет — непосредственная угроза жизни босса)
+    // 1. Поиск ближайшего живого противника через Spatial Grid O(1)
     let nearby_indices = world.spatial_grid.query_nearby(boss_pos, max_range);
-
     for &idx in &nearby_indices {
         if let Some(mob) = world.mobs.get(idx) {
-            if !mob.health.is_alive() {
-                continue;
-            }
-            let dist = mob.pos.distance(boss_pos);
-            if dist > max_range {
-                continue;
-            }
-
-            // Базовый вес угрозы по тиру
-            let base_threat = match mob.tier {
-                // Стрелки-культисты и снайперы
-                3 | 11 => 135.0,
-                // Камикадзе (смертельно опасны вблизи)
-                5 => if dist < 160.0 { 160.0 } else { 75.0 },
-                // Боссы и полубоссы (Жнецы, Аватары Бездны)
-                8 | 16 => 180.0,
-                // Элитная кавалерия / Церберы
-                10 => 120.0,
-                // Тяжелые фаланги и колоссы
-                9 | 12 => 90.0,
-                // Мучители и сталкеры
-                13 | 14 => 110.0,
-                // Гончие (быстрые)
-                2 => 80.0,
-                // Големы
-                4 => 60.0,
-                // Скелеты и прочая пехота
-                _ => 30.0,
-            };
-
-            let mut score = base_threat;
-
-            // Элитные мобы опаснее
-            if mob.is_elite {
-                score += 80.0;
-            }
-
-            // Непосредственная угроза боссу в упор (< 110 px) требует экстренной зачистки!
-            if dist < 70.0 {
-                score += 150.0;
-            } else if dist < 120.0 {
-                score += 80.0;
-            }
-
-            // Добивание раненых
-            if mob.health.current < mob.health.max * 0.35 {
-                score += 35.0;
-            }
-
-            // Штраф за дальность
-            score -= dist * 0.20;
-
-            if score > best_score {
-                best_score = score;
-                best_target = Some(mob.pos);
-            }
-        }
-    }
-
-    // 2. Структуры не получают отдельного приоритета; активный обелиск имеет тот же вес, что алтарь.
-    for st in &world.structures {
-        if st.health.is_alive() {
-            let dist = st.pos.distance(boss_pos);
-            if dist <= max_range {
-                let base_score = match st.structure_type {
-                    crate::content::structures::STRUCTURE_OBELISK if st.is_active => 110.0,
-                    _ if crate::content::structures::is_altar_structure_type(st.structure_type) => 110.0,
-                    crate::content::structures::STRUCTURE_WALL => 35.0,
-                    _ => -100.0,
-                };
-                let score = base_score - dist * 0.16;
-                if score > best_score {
-                    best_score = score;
-                    best_target = Some(st.pos);
+            if mob.health.is_alive() {
+                let d_sq = mob.pos.distance_squared(boss_pos);
+                if d_sq < min_dist_sq {
+                    min_dist_sq = d_sq;
+                    nearest_target = Some(mob.pos);
                 }
             }
         }
     }
 
-    best_target
+    // 2. Разрушаемые структуры (Алтари, Стены, Обелиски), если они ближе или рядом нет мобов
+    for st in &world.structures {
+        if st.health.is_alive() && crate::content::structures::boss_can_damage_structure(st) {
+            let d_sq = st.pos.distance_squared(boss_pos);
+            if d_sq < min_dist_sq {
+                min_dist_sq = d_sq;
+                nearest_target = Some(st.pos);
+            }
+        }
+    }
+
+    nearest_target
 }
 
-/// Находит точку наивысшей концентрации вражеской массы (центр кластера) в пределах радиуса стрельбы.
-/// Для AoE-оружий (Метеоры, Сингулярность, Разлом Бездны, Ядовитые споры) целится в центр тяжести
-/// наибольшего скопления мобов, максимизируя суммарный сплеш-урон.
+/// Алиас для обратной совместимости
+#[inline]
+pub fn select_tactical_target(world: &World, boss_pos: Vec2, max_range: f32) -> Option<Vec2> {
+    select_nearest_target(world, boss_pos, max_range)
+}
+
+/// Находит точку скопления вражеской массы (центр кластера) в пределах радиуса стрельбы.
+/// Для AoE-оружий (Метеоры, Сингулярность, Разлом Бездны, Ядовитые споры) целится в ближайшее
+/// наибольшее скопление противников без искусственных приоритетов.
 pub fn select_cluster_density_target(world: &World, boss_pos: Vec2, max_range: f32, aoe_radius: f32) -> Option<Vec2> {
     let nearby_indices = world.spatial_grid.query_nearby(boss_pos, max_range);
     let aoe_radius_sq = aoe_radius * aoe_radius;
     let mut best_score = 0.0f32;
     let mut best_cluster_center = None;
 
-    // 1. Алтарь Крови оценивается как кандидат кластера
-    for st in &world.structures {
-        if crate::content::structures::is_altar_structure_type(st.structure_type) && st.health.is_alive() {
-            let dist = st.pos.distance(boss_pos);
-            if dist <= max_range {
-                let cluster_around_altar = world.spatial_grid.query_nearby(st.pos, aoe_radius);
-                let mut altar_cluster_threat = 8.0f32;
-                let mut weighted_pos = st.pos * 8.0;
-
-                for &m_idx in &cluster_around_altar {
-                    if let Some(m) = world.mobs.get(m_idx) {
-                        if m.health.is_alive() && m.pos.distance_squared(st.pos) <= aoe_radius_sq {
-                            altar_cluster_threat += 1.5;
-                            weighted_pos += m.pos * 1.5;
-                        }
-                    }
-                }
-                let center = weighted_pos / altar_cluster_threat;
-                if altar_cluster_threat > best_score {
-                    best_score = altar_cluster_threat;
-                    best_cluster_center = Some(center);
-                }
-            }
-        }
-    }
-
-    // 2. Сэмплируем кандидатов среди живых мобов
-    let candidate_count = nearby_indices.len().min(28);
+    // Сэмплируем кандидатов среди живых мобов: ищем ближайшее скопление противников
+    let candidate_count = nearby_indices.len().min(32);
     for i in 0..candidate_count {
         let idx = nearby_indices[i];
         if let Some(candidate_mob) = world.mobs.get(idx) {
@@ -142,43 +62,34 @@ pub fn select_cluster_density_target(world: &World, boss_pos: Vec2, max_range: f
                 continue;
             }
             let center_candidate = candidate_mob.pos;
-            if center_candidate.distance_squared(boss_pos) > max_range * max_range {
+            let dist_to_boss = center_candidate.distance(boss_pos);
+            if dist_to_boss > max_range {
                 continue;
             }
 
             let cluster_mobs = world.spatial_grid.query_nearby(center_candidate, aoe_radius);
-            let mut total_threat = 0.0f32;
+            let mut mob_count = 0.0f32;
             let mut weighted_pos = Vec2::ZERO;
 
             for &m_idx in &cluster_mobs {
                 if let Some(m) = world.mobs.get(m_idx) {
                     if m.health.is_alive() && m.pos.distance_squared(center_candidate) <= aoe_radius_sq {
-                        let threat = match m.tier {
-                            3 | 11 => 3.5,
-                            5 => 4.0,
-                            8 | 16 => 6.0,
-                            4 | 12 => 3.0,
-                            _ => 1.0,
-                        } * if m.is_elite { 2.5 } else { 1.0 };
-
-                        let dist_to_boss = m.pos.distance(boss_pos);
-                        let proximity_mult = if dist_to_boss < 110.0 { 2.0 } else if dist_to_boss < 180.0 { 1.4 } else { 1.0 };
-
-                        let final_threat = threat * proximity_mult;
-                        total_threat += final_threat;
-                        weighted_pos += m.pos * final_threat;
+                        mob_count += 1.0;
+                        weighted_pos += m.pos;
                     }
                 }
             }
 
-            if total_threat > best_score && total_threat > 0.001 {
-                best_score = total_threat;
-                best_cluster_center = Some(weighted_pos / total_threat);
+            // Оценка: количество врагов в радиусе сплеша с приоритетом более близких к боссу скоплений
+            let score = mob_count * (1.0 + (max_range - dist_to_boss) / max_range);
+            if score > best_score && mob_count > 0.0 {
+                best_score = score;
+                best_cluster_center = Some(weighted_pos / mob_count);
             }
         }
     }
 
-    best_cluster_center.or_else(|| select_tactical_target(world, boss_pos, max_range))
+    best_cluster_center.or_else(|| select_nearest_target(world, boss_pos, max_range))
 }
 
 pub fn update_skills(world: &mut World, dt: f32) {
@@ -223,10 +134,10 @@ pub fn update_skills(world: &mut World, dt: f32) {
         }
     }
 
-    // Умный выбор тактической цели для направленных атак
-    let tactical_target_pos = select_tactical_target(world, boss_pos, 520.0);
+    // Выбор ближайшей цели для направленных атак босса (без тактических приоритетов)
+    let tactical_target_pos = select_nearest_target(world, boss_pos, 380.0);
     // Кластерное наведение по центру массы толпы для разрушительных AoE атак
-    let cluster_target_pos = select_cluster_density_target(world, boss_pos, 550.0, 150.0);
+    let cluster_target_pos = select_cluster_density_target(world, boss_pos, 420.0, 130.0);
 
     let mut new_projectiles = Vec::new();
     let mut new_acid_pools = Vec::new();
@@ -322,11 +233,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * (350.0 * spd_mult),
+                            vel: dir * (320.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
                             armor_penetration: armor_pen,
-                            lifetime: 1.4,
+                            lifetime: 0.75,
                             radius: 12.0,
                             pierce: 2,
                             faction: Faction::Boss,
@@ -416,11 +327,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * (480.0 * spd_mult),
+                            vel: dir * (420.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::True,
                             armor_penetration: 1.0,
-                            lifetime: 1.8,
+                            lifetime: 0.75,
                             radius: 8.0,
                             pierce: 1 + (weapon.level / 3) as u8,
                             faction: Faction::Boss,
@@ -464,11 +375,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * (380.0 * spd_mult),
+                            vel: dir * (350.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Ice,
                             armor_penetration: armor_pen,
-                            lifetime: 1.5,
+                            lifetime: 0.85,
                             radius: 9.0,
                             pierce: 2,
                             faction: Faction::Boss,
@@ -610,11 +521,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * (540.0 * spd_mult),
+                            vel: dir * (440.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Holy,
                             armor_penetration: armor_pen + 0.20,
-                            lifetime: 1.8,
+                            lifetime: 0.80,
                             radius: 10.0,
                             pierce: 3,
                             faction: Faction::Boss,
@@ -725,11 +636,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * (460.0 * spd_mult),
+                            vel: dir * (380.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
                             armor_penetration: armor_pen,
-                            lifetime: 1.2,
+                            lifetime: 0.75,
                             radius: 8.0,
                             pierce: 1,
                             faction: Faction::Boss,
@@ -748,11 +659,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * (520.0 * spd_mult),
+                            vel: dir * (420.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
                             armor_penetration: armor_pen + 0.25,
-                            lifetime: 1.5,
+                            lifetime: 0.80,
                             radius: 10.0,
                             pierce: 4,
                             faction: Faction::Boss,
@@ -777,7 +688,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         damage: effective_damage,
                         damage_type: DamageType::True,
                         armor_penetration: 0.8,
-                        lifetime: 2.2,
+                        lifetime: 1.1,
                         radius: 18.0,
                         pierce: 10,
                         faction: Faction::Boss,
@@ -795,11 +706,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * (180.0 * spd_mult),
+                            vel: dir * (220.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::True,
                             armor_penetration: 1.0,
-                            lifetime: 3.0,
+                            lifetime: 1.2,
                             radius: 28.0,
                             pierce: 20,
                             faction: Faction::Boss,
@@ -826,11 +737,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * (420.0 * spd_mult),
+                            vel: dir * (340.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Ice,
                             armor_penetration: armor_pen,
-                            lifetime: 2.0,
+                            lifetime: 1.0,
                             radius: 12.0,
                             pierce: 6,
                             faction: Faction::Boss,
@@ -849,11 +760,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
-                            vel: dir * (460.0 * spd_mult),
+                            vel: dir * (360.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Ice,
                             armor_penetration: armor_pen + 0.3,
-                            lifetime: 2.5,
+                            lifetime: 1.0,
                             radius: 16.0,
                             pierce: 12,
                             faction: Faction::Boss,
@@ -873,11 +784,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     new_projectiles.push(ProjectileEntity {
                         id: 0,
                         pos: boss_pos,
-                        vel: base_dir * (650.0 * spd_mult),
+                        vel: base_dir * (550.0 * spd_mult),
                         damage: effective_damage,
                         damage_type: DamageType::Fire,
                         armor_penetration: 0.5,
-                        lifetime: 1.5,
+                        lifetime: 0.65,
                         radius: 20.0,
                         pierce: 15,
                         faction: Faction::Boss,
@@ -1384,11 +1295,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos + dir * 25.0,
-                            vel: dir * (380.0 * spd_mult),
+                            vel: dir * (340.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Holy,
                             armor_penetration: armor_pen + 0.35,
-                            lifetime: 3.5,
+                            lifetime: 1.1,
                             radius: 14.0 * aoe_mult,
                             pierce: 6,
                             faction: Faction::Boss,
@@ -1408,11 +1319,11 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos + dir * 30.0,
-                            vel: dir * (460.0 * spd_mult),
+                            vel: dir * (380.0 * spd_mult),
                             damage: effective_damage * 1.35,
                             damage_type: DamageType::True,
                             armor_penetration: 1.0,
-                            lifetime: 4.2,
+                            lifetime: 1.1,
                             radius: 18.0 * aoe_mult,
                             pierce: 16,
                             faction: Faction::Boss,
@@ -1520,20 +1431,24 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
                 // 1.54 Бесконечная Дилатация (ЭВОЛЮЦИЯ): глобальный срез 35% HP всех мобов и тотальный стазис
                 WeaponType::InfiniteDilation => {
-                    for mob in &mut world.mobs {
-                        if mob.health.is_alive() {
-                            let cut_damage = (mob.health.current * 0.35).max(effective_damage);
-                            mob.status.apply_freeze(4.0);
-                            world.damage_queue.push(DamagePacket {
-                                source_id: Some(0),
-                                target_id: mob.id,
-                                amount: cut_damage,
-                                damage_type: DamageType::True,
-                                armor_penetration: 1.0,
-                            });
+                    let combat_radius = 420.0;
+                    let nearby_indices = world.spatial_grid.query_nearby(boss_pos, combat_radius);
+                    for idx in nearby_indices {
+                        if let Some(mob) = world.mobs.get_mut(idx) {
+                            if mob.health.is_alive() && mob.pos.distance_squared(boss_pos) < combat_radius * combat_radius {
+                                let cut_damage = (mob.health.current * 0.35).max(effective_damage);
+                                mob.status.apply_freeze(4.0);
+                                world.damage_queue.push(DamagePacket {
+                                    source_id: Some(0),
+                                    target_id: mob.id,
+                                    amount: cut_damage,
+                                    damage_type: DamageType::True,
+                                    armor_penetration: 1.0,
+                                });
+                            }
                         }
                     }
-                    world.spawn_particles(boss_pos, 70, SKYBLUE, 400.0);
+                    world.spawn_particles(boss_pos, 70, SKYBLUE, combat_radius);
                 }
 
                 // 1.55 Астральный Саван: генерация защитных барьеров
@@ -1572,14 +1487,15 @@ pub fn update_skills(world: &mut World, dt: f32) {
             Vec2::new(1.0, 0.0)
         };
 
-        let beam_end = boss_pos + target_dir * 1200.0;
-        world.death_ray_active = Some((boss_pos, beam_end, 0.35));
+        let beam_len = 450.0;
+        let beam_end = boss_pos + target_dir * beam_len;
+        world.death_ray_active = Some((boss_pos, beam_end, 0.28));
 
         let ray_norm = target_dir;
         for mob in &mut world.mobs {
             let to_mob = mob.pos - boss_pos;
             let projection = to_mob.dot(ray_norm);
-            if projection > 0.0 && projection < 1200.0 {
+            if projection > 0.0 && projection < beam_len {
                 let closest_pt = boss_pos + ray_norm * projection;
                 if mob.pos.distance_squared(closest_pt) < (mob.radius + 28.0).powi(2) {
                     world.damage_queue.push(DamagePacket {
@@ -1597,7 +1513,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
         for st in &world.structures {
             let to_st = st.pos - boss_pos;
             let projection = to_st.dot(ray_norm);
-            if projection > 0.0 && projection < 1200.0 {
+            if projection > 0.0 && projection < beam_len {
                 let closest_pt = boss_pos + ray_norm * projection;
                 if st.pos.distance_squared(closest_pt) < (st.radius + 30.0).powi(2) {
                     world.damage_queue.push(DamagePacket {
@@ -1678,7 +1594,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
 /// Updates ranged attacks once per world tick and aims each squad at its assigned Boss.
 /// Altar-spawned units have no assigned player and choose the nearest living Boss.
-pub fn update_enemy_mob_attacks(world: &mut World, dt: f32) {
+pub fn update_enemy_mob_attacks(world: &mut World, _dt: f32) {
     let primary_pos = world.boss_pos;
     let primary_alive = world.boss_health.is_alive();
     let coop_bosses = &world.coop_bosses;
@@ -1709,7 +1625,6 @@ pub fn update_enemy_mob_attacks(world: &mut World, dt: f32) {
         };
         let dist_sq = mob.pos.distance_squared(target_pos);
         let shot = if mob.tier == 3 || mob.tier == 11 {
-            mob.attack_timer -= dt;
             let range = if mob.tier == 11 { 380.0 } else { 310.0 };
             if dist_sq < range * range && mob.attack_timer <= 0.0 {
                 mob.attack_timer = if mob.tier == 11 { 1.6 } else { 2.0 };
@@ -1721,7 +1636,6 @@ pub fn update_enemy_mob_attacks(world: &mut World, dt: f32) {
                 Some((mob.pos, target_pos, damage, damage_type, speed, 9.0, None))
             } else { None }
         } else if mob.tier == 7 || mob.tier == 15 {
-            mob.attack_timer -= dt;
             let range = if mob.tier == 15 { 440.0 } else { 360.0 };
             if dist_sq < range * range && mob.attack_timer <= 0.0 {
                 mob.attack_timer = if mob.tier == 15 { 1.8 } else { 2.2 };
@@ -1729,7 +1643,6 @@ pub fn update_enemy_mob_attacks(world: &mut World, dt: f32) {
                 Some((mob.pos, target_pos, damage, DamageType::Fire, speed, 14.0, None))
             } else { None }
         } else if mob.tier == 8 || mob.tier == 16 {
-            mob.attack_timer -= dt;
             let range = if mob.tier == 16 { 500.0 } else { 420.0 };
             if dist_sq < range * range && mob.attack_timer <= 0.0 {
                 mob.attack_timer = if mob.tier == 16 { 2.4 } else { 2.8 };
@@ -1817,23 +1730,53 @@ pub fn update_world_structures(world: &mut World, dt: f32) {
                     obelisk.health.current = obelisk_hp;
                     let pos = obelisk.pos;
 
-                    let corner_name = if pos.x < 1000.0 && pos.y < 1000.0 {
+                    let half_w = crate::core::MAP_WIDTH * 0.5;
+                    let half_h = crate::core::MAP_HEIGHT * 0.5;
+                    let corner_name = if pos.x < half_w && pos.y < half_h {
                         "Северо-Запад"
-                    } else if pos.x > 1000.0 && pos.y < 1000.0 {
+                    } else if pos.x >= half_w && pos.y < half_h {
                         "Северо-Восток"
-                    } else if pos.x < 1000.0 && pos.y > 1000.0 {
+                    } else if pos.x < half_w && pos.y >= half_h {
                         "Юго-Запад"
                     } else {
                         "Юго-Восток"
                     };
 
-                    world.screen_shake = 16.0;
+                    world.screen_shake = 22.0;
+                    world.push_audio(crate::audio::AudioEvent::ObeliskActivate);
+
+                    // Плавающий текст на самом обелиске
                     world.add_floating_text(
                         pos,
                         format!("ИНФЕРНАЛЬНЫЙ РАЗЛОМ [{}]! 3 МИНУТЫ ДО ПРОРЫВА!", corner_name),
                         GOLD,
-                        3.5,
+                        4.0,
                     );
+
+                    // Уведомление непосредственно над Боссом (и союзными боссами),
+                    // чтобы игрок сразу узнал об активации даже вдали от обелиска!
+                    if world.boss_health.is_alive() {
+                        world.add_floating_text(
+                            world.boss_pos,
+                            format!("⚠️ ТРЕЩИТ ЗЕМЛЯ! АКТИВИРОВАН РАЗЛОМ: [{}]!", corner_name),
+                            GOLD,
+                            4.5,
+                        );
+                    }
+                    let coop_notify_positions: Vec<Vec2> = world
+                        .coop_bosses
+                        .iter()
+                        .filter(|p| p.boss_health.is_alive())
+                        .map(|p| p.boss_pos)
+                        .collect();
+                    for player_pos in coop_notify_positions {
+                        world.add_floating_text(
+                            player_pos,
+                            format!("⚠️ ТРЕЩИТ ЗЕМЛЯ! АКТИВИРОВАН РАЗЛОМ: [{}]!", corner_name),
+                            GOLD,
+                            4.5,
+                        );
+                    }
 
                     // Спавн элитных стражей Разлома вокруг активированного обелиска
                     let guard_tier = match world.boss_player_count() {
@@ -2282,14 +2225,17 @@ pub fn update_heroes_and_clones(world: &mut World, dt: f32) {
     // Создание клонов
     for (clone_pos, owner_id) in clone_requests {
         let id = world.alloc_id();
+        let carapace_level = world.directors.first().map_or(0, |d| d.grade_carapace);
+        let mut resistances = crate::ecs::components::combat::Resistances::default();
+        crate::content::structures::apply_carapace(&mut resistances, carapace_level);
         world.mobs.push(crate::ecs::world::MobEntity {
             id,
             target_boss_id: None,
             pos: clone_pos,
             vel: Vec2::ZERO,
             speed: 65.0,
-            health: crate::ecs::components::combat::Health::new(350.0),
-            resistances: crate::ecs::components::combat::Resistances::default(),
+            health: crate::ecs::components::combat::Health::new(490.0),
+            resistances,
             tier: 17,
             radius: 15.0,
             damage: 16.0,
@@ -2301,7 +2247,7 @@ pub fn update_heroes_and_clones(world: &mut World, dt: f32) {
             attack_timer: 0.0,
             is_hero: false,
             hero_enrage_timer: 999.0,
-            hero_skill_timers: [2.0, 0.0, 0.0, 0.0],
+            hero_skill_timers: [0.0; 4],
             attack_count: 0,
             has_duplicated: true, // новые дубликаты уже не дублируются снова
             owner_hero_id: Some(owner_id),
@@ -2314,11 +2260,14 @@ pub fn update_heroes_and_clones(world: &mut World, dt: f32) {
             let angle = (k as f32) * (std::f32::consts::PI / 3.0);
             let wall_pos = cage_pos + Vec2::new(angle.cos(), angle.sin()) * 110.0;
             let id = world.alloc_id();
+            let carapace_level = world.directors.first().map_or(0, |d| d.grade_carapace);
+            let mut resistances = crate::ecs::components::combat::Resistances::default();
+            crate::content::structures::apply_carapace(&mut resistances, carapace_level);
             world.structures.push(crate::ecs::world::StructureEntity {
                 id,
                 pos: wall_pos,
                 health: crate::ecs::components::combat::Health::new(800.0),
-                resistances: crate::ecs::components::combat::Resistances::default(),
+                resistances,
                 faction: Faction::Director,
                 radius: 20.0,
                 structure_type: crate::content::structures::STRUCTURE_WALL,

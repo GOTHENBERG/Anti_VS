@@ -29,8 +29,16 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
             && pos.y - radius <= view_max_y
     };
 
-    // 1. Отрисовка большой арены (плиты, разломы, колонны)
-    draw_environment(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT, textures);
+    // 1. Отрисовка большой арены (плиты, разломы, колонны с фрустум-куллингом)
+    draw_environment(
+        crate::core::MAP_WIDTH,
+        crate::core::MAP_HEIGHT,
+        textures,
+        view_min_x,
+        view_max_x,
+        view_min_y,
+        view_max_y,
+    );
 
     // 2. Кислотные лужи (Poison Pools) — мягкий полупрозрачный токсичный туман
     for pool in &world.acid_pools {
@@ -726,7 +734,7 @@ fn draw_move_click_effects(world: &World) {
         let inner_col = Color::new(0.95, 0.70, 0.20, alpha * 0.75);
         draw_circle_lines(eff.pos.x, eff.pos.y, inner_r, 1.6, inner_col);
 
-        // 4 рунических засечки, направленные к центру (стиль Dota/Warcraft, адаптированный под Anti_VS)
+        // 4 рунических засечки, направленные к центру (тактический dark-fantasy стиль)
         let rot = progress * 0.4;
         for i in 0..4 {
             let angle = (i as f32) * std::f32::consts::FRAC_PI_2 + rot;

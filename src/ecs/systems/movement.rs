@@ -30,6 +30,11 @@ fn update_single_mob(
         mob.status.freeze_timer = (mob.status.freeze_timer - dt).max(0.0);
     }
 
+    // Кулдаун атаки уменьшается непрерывно, в том числе во время движения к боссу
+    if mob.attack_timer > 0.0 {
+        mob.attack_timer = (mob.attack_timer - dt).max(0.0);
+    }
+
     // Мобы преследуют ближайшего живого Босса: при нескольких игроках каждый моб
     // сам выбирает цель по текущей дистанции, не закрепляясь навсегда за одним игроком.
     let assigned_target = mob.target_boss_id.and_then(|id| {
@@ -79,7 +84,6 @@ fn update_single_mob(
         6 => {
             let diff = boss_pos - mob.pos;
             let dist = diff.length();
-            mob.attack_timer -= dt;
             if dist > 320.0 && mob.attack_timer <= 0.0 {
                 mob.attack_timer = 4.5;
                 let behind_dir = -boss_vel.normalize_or_zero();
@@ -239,7 +243,9 @@ pub fn update_movement(world: &mut World, dt: f32) {
         // Механика бумеранга (FaithBoomerang и HeavenlyJudgment):
         // После первой фазы полета плавно возвращается к боссу
         if let Some(src) = proj.source_weapon {
-            if (src == WeaponType::FaithBoomerang || src == WeaponType::HeavenlyJudgment) && proj.lifetime < 1.9 {
+            if (src == WeaponType::FaithBoomerang && proj.lifetime < 0.65)
+                || (src == WeaponType::HeavenlyJudgment && proj.lifetime < 0.70)
+            {
                 let to_boss = (boss_pos - proj.pos).normalize_or_zero();
                 let current_spd = proj.vel.length().max(280.0);
                 proj.vel = proj.vel.lerp(to_boss * current_spd, (5.0 * dt).min(1.0));

@@ -19,6 +19,7 @@ pub enum AudioEvent {
     UiClick,
     BookOpen,
     BookClose,
+    ObeliskActivate,
 }
 
 pub struct MusicTrack {
@@ -53,6 +54,7 @@ pub struct AudioManager {
     pub ui_click: Option<Sound>,
     pub book_open: Option<Sound>,
     pub book_close: Option<Sound>,
+    pub obelisk_activate: Option<Sound>,
 }
 
 impl AudioManager {
@@ -109,6 +111,7 @@ impl AudioManager {
         let ui_click = load_sound("assets/audio/ui_click.wav").await.ok();
         let book_open = load_sound("assets/audio/book_open.ogg").await.ok();
         let book_close = load_sound("assets/audio/book_close.ogg").await.ok();
+        let obelisk_activate = load_sound("assets/audio/obelisk_activate.wav").await.ok();
 
         Self {
             playlist,
@@ -135,6 +138,7 @@ impl AudioManager {
             ui_click,
             book_open,
             book_close,
+            obelisk_activate,
         }
     }
 
@@ -305,6 +309,7 @@ impl AudioManager {
             AudioEvent::UiClick => self.play_sfx(self.ui_click.as_ref(), 0.50),
             AudioEvent::BookOpen => self.play_sfx(self.book_open.as_ref(), 0.70),
             AudioEvent::BookClose => self.play_sfx(self.book_close.as_ref(), 0.70),
+            AudioEvent::ObeliskActivate => self.play_sfx(self.obelisk_activate.as_ref(), 0.95),
         }
     }
 

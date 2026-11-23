@@ -12,22 +12,52 @@ pub fn apply_pending_level_ups(world: &mut World) {
     if world.boss_human_controlled {
         // Для игрока-человека не применяем перки автоматически:
         // генерируем 3 карты на выбор, если они ещё не открыты
-        if world.boss_pending_level_ups > 0 && world.boss_level_up_options.is_none() {
-            let options = crate::ecs::systems::boss_ai::generate_perk_choices(&world.boss_inventory);
-            if !options.is_empty() {
-                world.boss_level_up_options = Some(options);
-            } else {
-                world.boss_pending_level_ups -= 1;
-                let was_alive = world.boss_health.is_alive();
-                world.boss_health.max += 40.0;
-                if was_alive {
-                    world.boss_health.current = (world.boss_health.current + 30.0).min(world.boss_health.max);
+        if world.boss_level_up_options.is_none() {
+            // В первую очередь открываем выбор легендарных реликвий (Дар Разлома за Обелиск)
+            if world.boss_pending_relic_choices > 0 {
+                let options = crate::ecs::systems::boss_ai::generate_relic_choices(&world.boss_inventory);
+                if !options.is_empty() {
+                    world.boss_level_up_options = Some(options);
+                } else {
+                    world.boss_pending_relic_choices -= 1;
+                    world.boss_health.max += 250.0;
+                    world.boss_health.heal(250.0);
+                    world.boss_resistances.flat_armor += 3.0;
                 }
-                world.boss_resistances.flat_armor += 0.5;
-                if !was_alive { world.boss_health.current = 0.0; }
+                return;
+            }
+
+            // Стандартный выбор перка при level-up
+            if world.boss_pending_level_ups > 0 {
+                let options = crate::ecs::systems::boss_ai::generate_perk_choices(&world.boss_inventory);
+                if !options.is_empty() {
+                    world.boss_level_up_options = Some(options);
+                } else {
+                    world.boss_pending_level_ups -= 1;
+                    let was_alive = world.boss_health.is_alive();
+                    world.boss_health.max += 40.0;
+                    if was_alive {
+                        world.boss_health.current = (world.boss_health.current + 30.0).min(world.boss_health.max);
+                    }
+                    world.boss_resistances.flat_armor += 0.5;
+                    if !was_alive { world.boss_health.current = 0.0; }
+                }
             }
         }
         return;
+    }
+
+    // Для AI-босса:
+    while world.boss_pending_relic_choices > 0 {
+        world.boss_pending_relic_choices -= 1;
+        let options = crate::ecs::systems::boss_ai::generate_relic_choices(&world.boss_inventory);
+        if let Some(first) = options.first().cloned() {
+            crate::ecs::systems::boss_ai::apply_perk_choice(world, first);
+        } else {
+            world.boss_health.max += 250.0;
+            world.boss_health.heal(250.0);
+            world.boss_resistances.flat_armor += 3.0;
+        }
     }
 
     while world.boss_pending_level_ups > 0 {
@@ -45,7 +75,10 @@ pub fn apply_pending_level_ups(world: &mut World) {
 
 /// Применяет перк, выбранный игроком-Боссом из модального окна Level-Up.
 pub fn apply_player_perk_choice(world: &mut World, choice: crate::ecs::components::inventory::PerkChoice) {
-    if world.boss_pending_level_ups > 0 {
+    if world.boss_pending_relic_choices > 0 {
+        world.boss_pending_relic_choices -= 1;
+        crate::ecs::systems::boss_ai::apply_perk_choice(world, choice);
+    } else if world.boss_pending_level_ups > 0 {
         world.boss_pending_level_ups -= 1;
         let was_alive = world.boss_health.is_alive();
         world.boss_health.max += 40.0;
@@ -55,6 +88,8 @@ pub fn apply_player_perk_choice(world: &mut World, choice: crate::ecs::component
         world.boss_resistances.flat_armor += 0.5;
         crate::ecs::systems::boss_ai::apply_perk_choice(world, choice);
         if !was_alive { world.boss_health.current = 0.0; }
+    } else {
+        crate::ecs::systems::boss_ai::apply_perk_choice(world, choice);
     }
     world.boss_level_up_options = None;
 }
@@ -463,5 +498,64 @@ mod tests {
         assert_eq!(world.coop_bosses[0].pending_level_ups, 0);
         assert!(world.coop_bosses[0].level_up_options.is_none());
         assert!(world.coop_bosses[0].boss_inventory.has_passive(PassiveType::MartyrVanguard));
+    }
+
+    #[test]
+    fn test_boss_xp_scaling_and_relic_flow() {
+        use crate::ecs::components::inventory::{BossInventory, PassiveSlot, PassiveType, PerkChoice};
+        use crate::content::passives::is_legendary_relic;
+
+        // 1. Проверяем стартовый порог 65 XP и скейлинг 1.3
+        let mut inv = BossInventory::new();
+        assert_eq!(inv.xp_to_next_level, 65.0);
+        let l_up = inv.add_xp(65.0);
+        assert_eq!(l_up, 1);
+        assert_eq!(inv.level, 2);
+        assert_eq!(inv.xp_to_next_level, 85.0); // round(65.0 * 1.30) = 85.0
+
+        let l_up2 = inv.add_xp(85.0);
+        assert_eq!(l_up2, 1);
+        assert_eq!(inv.level, 3);
+        assert_eq!(inv.xp_to_next_level, 110.0); // round(85.0 * 1.30) = 110.0
+
+        // 2. Проверяем, что при обычном level-up НОВЫЕ реликвии не выпадают
+        let fresh_inv = BossInventory::new();
+        for _ in 0..10 {
+            let options = crate::ecs::systems::boss_ai::generate_perk_choices(&fresh_inv);
+            for opt in &options {
+                if let PerkChoice::UpgradePassive(kind) = opt {
+                    assert!(
+                        !is_legendary_relic(*kind),
+                        "Normal level-up must not offer new legendary relics! Found: {:?}",
+                        kind
+                    );
+                }
+            }
+        }
+
+        // 3. Проверяем, что уже имеющуюся реликвию (полученную из Обелиска) МОЖНО прокачивать на level-up
+        let mut inv_with_relic = BossInventory::new();
+        inv_with_relic.passives.push(PassiveSlot {
+            kind: PassiveType::ImmortalAegis,
+            level: 1,
+        });
+        let mut found_upgrade = false;
+        for _ in 0..150 {
+            let options = crate::ecs::systems::boss_ai::generate_perk_choices(&inv_with_relic);
+            if options.iter().any(|o| matches!(o, PerkChoice::UpgradePassive(PassiveType::ImmortalAegis))) {
+                found_upgrade = true;
+                break;
+            }
+        }
+        assert!(found_upgrade, "Owned relic must be upgradeable via normal level-up");
+
+        // 4. Проверяем генерацию выбора реликвий из Обелиска (generate_relic_choices)
+        let relic_options = crate::ecs::systems::boss_ai::generate_relic_choices(&fresh_inv);
+        assert_eq!(relic_options.len(), 3);
+        for opt in &relic_options {
+            if let PerkChoice::UpgradePassive(kind) = opt {
+                assert!(is_legendary_relic(*kind), "Obelisk relic choices must be legendary relics");
+            }
+        }
     }
 }

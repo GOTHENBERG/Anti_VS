@@ -773,14 +773,14 @@ pub fn update_combat(world: &mut World, dt: f32) {
             let is_magnet = rand::gen_range(0.0, 1.0) < magnet_chance;
 
             let mut xp_value = match mob.tier {
-                1 => 8.0,
-                2 => 20.0,
-                3 => 45.0,
-                4 => 130.0,
-                5 => 160.0,
-                6 => 240.0,
-                7 => 420.0,
-                _ => 1200.0,
+                1 => 3.6,
+                2 => 9.0,
+                3 => 20.0,
+                4 => 58.0,
+                5 => 72.0,
+                6 => 108.0,
+                7 => 190.0,
+                _ => 540.0,
             };
 
             if mob.is_elite {
@@ -932,36 +932,65 @@ pub fn update_combat(world: &mut World, dt: f32) {
                     .collect();
 
                 for boss_id in all_boss_ids {
-                    // Каждому боссу даруется Реликвия за закрытие Разлома!
-                    let granted_relic = grant_boss_relic_reward(world, boss_id);
-
-                    let relic_name = granted_relic
-                        .map(|r| crate::content::passives::get_passive_def(r).name)
-                        .unwrap_or("Усиление Характеристик");
-
                     if world.active_boss_id == boss_id {
                         if world.boss_health.is_alive() {
                             let heal_bonus = world.boss_health.max * 0.15;
                             world.boss_health.heal(heal_bonus);
                         }
-                        world.add_floating_text(
-                            world.boss_pos,
-                            format!("⚡ ДАР РАЗЛОМА: [{}]!", relic_name),
-                            GOLD,
-                            3.0,
-                        );
-                    } else if let Some(player) = world.coop_bosses.iter_mut().find(|p| p.id == boss_id) {
-                        if player.boss_health.is_alive() {
-                            let heal_bonus = player.boss_health.max * 0.15;
-                            player.boss_health.heal(heal_bonus);
+                        if world.boss_human_controlled {
+                            world.boss_pending_relic_choices += 1;
+                            world.add_floating_text(
+                                world.boss_pos,
+                                "⚡ РАЗЛОМ ЗАКРЫТ! ВЫБЕРИТЕ РЕЛИКВИЮ!".to_string(),
+                                GOLD,
+                                3.0,
+                            );
+                        } else {
+                            let granted_relic = grant_boss_relic_reward(world, boss_id);
+                            let relic_name = granted_relic
+                                .map(|r| crate::content::passives::get_passive_def(r).name)
+                                .unwrap_or("Усиление Характеристик");
+                            world.add_floating_text(
+                                world.boss_pos,
+                                format!("⚡ ДАР РАЗЛОМА: [{}]!", relic_name),
+                                GOLD,
+                                3.0,
+                            );
                         }
-                        let player_pos = player.boss_pos;
-                        world.add_floating_text(
-                            player_pos,
-                            format!("⚡ ДАР РАЗЛОМА: [{}]!", relic_name),
-                            GOLD,
-                            3.0,
-                        );
+                    } else {
+                        let (is_alive, is_human, player_pos) = if let Some(player) = world.coop_bosses.iter().find(|p| p.id == boss_id) {
+                            (player.boss_health.is_alive(), player.human_controlled, player.boss_pos)
+                        } else {
+                            continue;
+                        };
+                        if is_alive {
+                            if let Some(player) = world.coop_bosses.iter_mut().find(|p| p.id == boss_id) {
+                                let heal_bonus = player.boss_health.max * 0.15;
+                                player.boss_health.heal(heal_bonus);
+                            }
+                        }
+                        if is_human {
+                            if let Some(player) = world.coop_bosses.iter_mut().find(|p| p.id == boss_id) {
+                                player.pending_relic_choices += 1;
+                            }
+                            world.add_floating_text(
+                                player_pos,
+                                "⚡ РАЗЛОМ ЗАКРЫТ! ВЫБЕРИТЕ РЕЛИКВИЮ!".to_string(),
+                                GOLD,
+                                3.0,
+                            );
+                        } else {
+                            let granted_relic = grant_boss_relic_reward(world, boss_id);
+                            let relic_name = granted_relic
+                                .map(|r| crate::content::passives::get_passive_def(r).name)
+                                .unwrap_or("Усиление Характеристик");
+                            world.add_floating_text(
+                                player_pos,
+                                format!("⚡ ДАР РАЗЛОМА: [{}]!", relic_name),
+                                GOLD,
+                                3.0,
+                            );
+                        }
                     }
                 }
                 world.screen_shake = 25.0;
@@ -970,7 +999,7 @@ pub fn update_combat(world: &mut World, dt: f32) {
                 world.spawn_particles(st_pos, 40, SKYBLUE, 180.0);
                 world.add_floating_text(
                     st_pos,
-                    "ИНФЕРНАЛЬНЫЙ РАЗЛОМ ЗАКРЫТ! ПОЛУЧЕНА РЕЛИКВИЯ!".to_string(),
+                    "ИНФЕРНАЛЬНЫЙ РАЗЛОМ ЗАКРЫТ! ВЫБЕРИТЕ РЕЛИКВИЮ!".to_string(),
                     GOLD,
                     3.2,
                 );
@@ -1043,8 +1072,8 @@ pub fn update_combat(world: &mut World, dt: f32) {
 
     if collected_xp > 0.0 {
         world.grant_shared_boss_xp(collected_xp);
-        crate::ecs::systems::coop::apply_pending_level_ups(world);
     }
+    crate::ecs::systems::coop::apply_pending_level_ups(world);
 
     // 6. Проверка Эгиды Бессмертия (ImmortalAegis Revive):
     if !world.boss_health.is_alive() && has_immortal_aegis && !world.boss_inventory.has_used_aegis_revive {
@@ -1088,12 +1117,10 @@ fn merge_excess_gems(gems: &mut Vec<SoulGemEntity>, target_max: usize, boss_pos:
     let boss_dist_min_sq = 150.0 * 150.0;
     let merge_dist: f32 = 70.0;
     let len = gems.len();
-    // 1. O(N) слияние близких кристаллов через пространственную сетку 70x70 px.
+    // 1. O(N) слияние близких кристаллов через хеш-таблицу ячеек 70x70 px.
     // Опыт не теряется: XP поглощённого кристалла переходит представителю ячейки.
     let cell = merge_dist.max(1.0);
-    let cols = (crate::core::MAP_WIDTH / cell).ceil() as usize + 1;
-    let rows = (crate::core::MAP_HEIGHT / cell).ceil() as usize + 1;
-    let mut cell_representative: Vec<Option<usize>> = vec![None; cols * rows];
+    let mut cell_representative: std::collections::HashMap<(usize, usize), usize> = std::collections::HashMap::with_capacity(len);
 
     for i in 0..len {
         if gems[i].is_magnet || gems[i].xp_value <= 0.0 {
@@ -1105,13 +1132,12 @@ fn merge_excess_gems(gems: &mut Vec<SoulGemEntity>, target_max: usize, boss_pos:
 
         let cx = (gems[i].pos.x.max(0.0) / cell).floor() as usize;
         let cy = (gems[i].pos.y.max(0.0) / cell).floor() as usize;
-        let key = cy.min(rows - 1) * cols + cx.min(cols - 1);
 
-        if let Some(rep) = cell_representative[key] {
+        if let Some(&rep) = cell_representative.get(&(cx, cy)) {
             gems[rep].xp_value += gems[i].xp_value;
             gems[i].xp_value = 0.0;
         } else {
-            cell_representative[key] = Some(i);
+            cell_representative.insert((cx, cy), i);
         }
     }
 
@@ -1121,10 +1147,8 @@ fn merge_excess_gems(gems: &mut Vec<SoulGemEntity>, target_max: usize, boss_pos:
     // Это сохраняет 100% пространственную локальность (сливаются ТОЛЬКО соседние кристаллы, без телепортации!)
     if gems.len() > target_max {
         let cell_large = 140.0f32;
-        let cols_l = (crate::core::MAP_WIDTH / cell_large).ceil() as usize + 1;
-        let rows_l = (crate::core::MAP_HEIGHT / cell_large).ceil() as usize + 1;
-        let mut large_rep: Vec<Option<usize>> = vec![None; cols_l * rows_l];
         let len_l = gems.len();
+        let mut large_rep: std::collections::HashMap<(usize, usize), usize> = std::collections::HashMap::with_capacity(len_l);
 
         for i in 0..len_l {
             if gems[i].is_magnet || gems[i].xp_value <= 0.0 {
@@ -1135,44 +1159,16 @@ fn merge_excess_gems(gems: &mut Vec<SoulGemEntity>, target_max: usize, boss_pos:
             }
             let cx = (gems[i].pos.x.max(0.0) / cell_large).floor() as usize;
             let cy = (gems[i].pos.y.max(0.0) / cell_large).floor() as usize;
-            let key = cy.min(rows_l - 1) * cols_l + cx.min(cols_l - 1);
 
-            if let Some(rep) = large_rep[key] {
+            if let Some(&rep) = large_rep.get(&(cx, cy)) {
                 gems[rep].xp_value += gems[i].xp_value;
                 gems[i].xp_value = 0.0;
             } else {
-                large_rep[key] = Some(i);
+                large_rep.insert((cx, cy), i);
             }
         }
         gems.retain(|g| g.is_magnet || g.xp_value > 0.0);
     }
-}
-
-fn is_legendary_relic(kind: PassiveType) -> bool {
-    matches!(
-        kind,
-        PassiveType::ImmortalAegis
-            | PassiveType::ArchmageShard
-            | PassiveType::DivineRapier
-            | PassiveType::OctarineCore
-            | PassiveType::SolarRelic
-            | PassiveType::StaticCore
-            | PassiveType::ColossalEye
-            | PassiveType::BlessedHeart
-            | PassiveType::Pyromaniac
-            | PassiveType::SoulHarvester
-            | PassiveType::DivinityAura
-            | PassiveType::UkuleleResonance
-            | PassiveType::FateWeaver
-            | PassiveType::SiegeMortar
-            | PassiveType::SporeMushroom
-            | PassiveType::DuplicatorRelic
-            | PassiveType::CandelabraOfFury
-            | PassiveType::AbyssalCurseStone
-            | PassiveType::SilverTears
-            | PassiveType::GoldenSeal
-            | PassiveType::TitanBloodArmor
-    )
 }
 
 fn grant_boss_relic_reward(
@@ -1195,114 +1191,15 @@ fn grant_boss_relic_reward(
 }
 
 fn grant_boss_relic_internal(world: &mut World) -> Option<PassiveType> {
-    use crate::ecs::components::inventory::{
-        BossInventory, PerkChoice, MAX_PASSIVE_LEVEL, MAX_PASSIVE_SLOTS,
-    };
-
-    // 1. Пассивки/реликвии, которые уже есть у босса и ещё не достигли максимума (Lvl < 5)
-    let unmaxed_existing: Vec<PassiveType> = world
-        .boss_inventory
-        .passives
-        .iter()
-        .filter(|p| p.level < MAX_PASSIVE_LEVEL)
-        .map(|p| p.kind)
-        .collect();
-
-    // 2. Новые пассивки (если есть свободные слоты < 10)
-    let has_free_slots = world.boss_inventory.passives.len() < MAX_PASSIVE_SLOTS;
-    let mut unowned_synergies = Vec::new();
-    let mut unowned_legendaries = Vec::new();
-    let mut unowned_others = Vec::new();
-
-    if has_free_slots {
-        const ALL_PASSIVES: [PassiveType; 37] = [
-            PassiveType::SpeedGloves,
-            PassiveType::GiantHeart,
-            PassiveType::CooldownTome,
-            PassiveType::LightArmor,
-            PassiveType::FrostRing,
-            PassiveType::CorrosiveFlask,
-            PassiveType::BloodStone,
-            PassiveType::EagleScope,
-            PassiveType::ChronoHourglass,
-            PassiveType::MagnetSphere,
-            PassiveType::TeslaCoil,
-            PassiveType::CloverOfFate,
-            PassiveType::PrismaticFocus,
-            PassiveType::TitanAegis,
-            PassiveType::ImmortalAegis,
-            PassiveType::ArchmageShard,
-            PassiveType::DivineRapier,
-            PassiveType::OctarineCore,
-            PassiveType::SolarRelic,
-            PassiveType::StaticCore,
-            PassiveType::ColossalEye,
-            PassiveType::BlessedHeart,
-            PassiveType::Pyromaniac,
-            PassiveType::SoulHarvester,
-            PassiveType::DivinityAura,
-            PassiveType::UkuleleResonance,
-            PassiveType::FateWeaver,
-            PassiveType::SiegeMortar,
-            PassiveType::SporeMushroom,
-            PassiveType::DuplicatorRelic,
-            PassiveType::CandelabraOfFury,
-            PassiveType::AbyssalCurseStone,
-            PassiveType::SilverTears,
-            PassiveType::GoldenSeal,
-            PassiveType::TitanBloodArmor,
-            PassiveType::BerserkerBlood,
-            PassiveType::MartyrVanguard,
-        ];
-
-        for &p in &ALL_PASSIVES {
-            if !world.boss_inventory.has_passive(p) {
-                let is_synergy = world
-                    .boss_inventory
-                    .weapons
-                    .iter()
-                    .any(|w| BossInventory::get_evolution_passive_for_weapon(w.kind) == Some(p));
-                if is_synergy {
-                    unowned_synergies.push(p);
-                } else if is_legendary_relic(p) {
-                    unowned_legendaries.push(p);
-                } else {
-                    unowned_others.push(p);
-                }
-            }
+    let options = crate::ecs::systems::boss_ai::generate_relic_choices(&world.boss_inventory);
+    if let Some(choice) = options.first().cloned() {
+        crate::ecs::systems::boss_ai::apply_perk_choice(world, choice.clone());
+        match choice {
+            crate::ecs::components::inventory::PerkChoice::UpgradePassive(k) => Some(k),
+            _ => None,
         }
-    }
-
-    let mut candidates: Vec<(PassiveType, u32)> = Vec::new();
-    for p in unowned_synergies {
-        candidates.push((p, 300));
-    }
-    for p in unmaxed_existing {
-        candidates.push((p, 180));
-    }
-    for p in unowned_legendaries {
-        candidates.push((p, 140));
-    }
-    for p in unowned_others {
-        candidates.push((p, 80));
-    }
-
-    if !candidates.is_empty() {
-        let total_weight: u32 = candidates.iter().map(|(_, w)| *w).sum();
-        let mut roll = rand::gen_range(0, total_weight);
-        let mut chosen = candidates[0].0;
-        for (p, w) in candidates {
-            if roll < w {
-                chosen = p;
-                break;
-            }
-            roll -= w;
-        }
-
-        crate::ecs::systems::boss_ai::apply_perk_choice(world, PerkChoice::UpgradePassive(chosen));
-        Some(chosen)
     } else {
-        // Все 10 слотов заполнены и прокачаны до 5-го уровня: альтернативное усиление характеристик
+        // Все слоты заполнены и прокачаны до 5-го уровня: альтернативное усиление характеристик
         world.boss_health.max += 250.0;
         world.boss_health.heal(250.0);
         world.boss_resistances.flat_armor += 3.0;

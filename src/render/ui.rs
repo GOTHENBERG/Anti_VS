@@ -411,6 +411,38 @@ pub fn render_ui(
         }
     }
 
+    // 4.1. Предупреждающий баннер активного Инфернального Разлома (Обелиска)
+    if let Some(obelisk) = world.structures.iter().find(|s| s.structure_type == crate::content::structures::STRUCTURE_OBELISK && s.is_active) {
+        let half_w = crate::core::MAP_WIDTH * 0.5;
+        let half_h = crate::core::MAP_HEIGHT * 0.5;
+        let corner_name = if obelisk.pos.x < half_w && obelisk.pos.y < half_h {
+            "Северо-Запад"
+        } else if obelisk.pos.x >= half_w && obelisk.pos.y < half_h {
+            "Северо-Восток"
+        } else if obelisk.pos.x < half_w && obelisk.pos.y >= half_h {
+            "Юго-Запад"
+        } else {
+            "Юго-Восток"
+        };
+        let pulse = (get_time() as f32 * 4.5).sin() * 0.5 + 0.5;
+        let banner_w = 640.0;
+        let banner_h = 32.0;
+        let bx = (screen_w - banner_w) / 2.0;
+        let by = if world.boss_inventory.perk_announcement_timer > 0.0 {
+            field_y + field_h + 46.0
+        } else {
+            field_y + field_h + 8.0
+        };
+
+        draw_rectangle(bx, by, banner_w, banner_h, Color::new(0.12, 0.04, 0.06, 0.94));
+        let border_col = Color::new(1.0, 0.2 + 0.5 * pulse, 0.2, 0.95);
+        draw_rectangle_lines(bx, by, banner_w, banner_h, 2.0, border_col);
+
+        let warn_text = format!("⚡ ИНФЕРНАЛЬНЫЙ РАЗЛОМ [{}]! ДО ПРОРЫВА: {:.0} СЕК", corner_name, obelisk.state_timer.max(0.0));
+        let tw = fonts.measure_heading(&warn_text, 14.0).width;
+        fonts.draw_heading(&warn_text, (screen_w - tw) / 2.0, by + 21.0, 14.0, GOLD);
+    }
+
     // 5. Верхняя левая кнопка: Кодекс [ Кодекс (I) ] с графической иконкой книги
     let codex_btn_w = 145.0;
     let codex_btn_h = 34.0;
@@ -1508,17 +1540,36 @@ pub fn render_boss_ui(
         // Полупрозрачный фон
         draw_rectangle(0.0, 0.0, w, h, Color::new(0.02, 0.02, 0.06, 0.88));
 
-        let title = "НОВЫЙ УРОВЕНЬ! ВЫБЕРИТЕ УЛУЧШЕНИЕ";
+        let is_relic_draft = world.boss_pending_relic_choices > 0;
+        let title = if is_relic_draft {
+            "⚡ ДАР РАЗЛОМА! ВЫБЕРИТЕ РЕЛИКВИЮ"
+        } else {
+            "НОВЫЙ УРОВЕНЬ! ВЫБЕРИТЕ УЛУЧШЕНИЕ"
+        };
+        let title_color = if is_relic_draft {
+            Color::new(1.0, 0.85, 0.3, 1.0)
+        } else {
+            GOLD
+        };
         let title_y = panel_y + panel_h + 24.0;
         let tw = fonts.measure_heading(title, 22.0).width;
-        fonts.draw_heading(title, (w - tw) / 2.0, title_y, 22.0, GOLD);
+        fonts.draw_heading(title, (w - tw) / 2.0, title_y, 22.0, title_color);
 
-        let sub = "Нажмите [ 1 ], [ 2 ], [ 3 ] на клавиатуре или выберите карту кликом мыши";
+        let sub = if is_relic_draft {
+            "Инфернальный Обелиск повержен! Выберите великую реликвию [ 1 ], [ 2 ], [ 3 ]"
+        } else {
+            "Нажмите [ 1 ], [ 2 ], [ 3 ] на клавиатуре или выберите карту кликом мыши"
+        };
         let sw = fonts.measure_text(sub, 12.0).width;
         fonts.draw_text(sub, (w - sw) / 2.0, title_y + 24.0, 12.0, Color::new(0.75, 0.78, 0.88, 1.0));
 
         let mut card_y = title_y + 54.0;
-        if world.boss_pending_level_ups > 1 {
+        if is_relic_draft && world.boss_pending_relic_choices > 1 {
+            let pend_str = format!("В очереди ещё даров разлома: {}", world.boss_pending_relic_choices - 1);
+            let pw = fonts.measure_heading(&pend_str, 12.0).width;
+            fonts.draw_heading(&pend_str, (w - pw) / 2.0, title_y + 44.0, 12.0, PURPLE);
+            card_y += 18.0;
+        } else if !is_relic_draft && world.boss_pending_level_ups > 1 {
             let pend_str = format!("В очереди ещё уровней: {}", world.boss_pending_level_ups - 1);
             let pw = fonts.measure_heading(&pend_str, 12.0).width;
             fonts.draw_heading(&pend_str, (w - pw) / 2.0, title_y + 44.0, 12.0, ORANGE);
@@ -1562,10 +1613,19 @@ pub fn render_boss_ui(
                 crate::ecs::components::inventory::PerkChoice::UpgradePassive(kind) => {
                     let def = get_passive_def(*kind);
                     let existing = world.boss_inventory.passives.iter().find(|p| p.kind == *kind);
+                    let is_relic = crate::content::passives::is_legendary_relic(*kind);
                     let (cat, lvl) = if let Some(p) = existing {
-                        ("УЛУЧШЕНИЕ РЕЛИКВИИ", format!("Ур. {} -> {}", p.level, p.level + 1))
+                        if is_relic {
+                            ("УЛУЧШЕНИЕ РЕЛИКВИИ", format!("Ур. {} -> {}", p.level, p.level + 1))
+                        } else {
+                            ("УЛУЧШЕНИЕ ПАССИВКИ", format!("Ур. {} -> {}", p.level, p.level + 1))
+                        }
                     } else {
-                        ("НОВАЯ РЕЛИКВИЯ", "НОВАЯ".to_string())
+                        if is_relic {
+                            ("ЛЕГЕНДАРНАЯ РЕЛИКВИЯ", "РЕЛИКВИЯ".to_string())
+                        } else {
+                            ("НОВАЯ ПАССИВКА", "НОВАЯ".to_string())
+                        }
                     };
                     (cat, def.name.to_string(), def.description.to_string(), lvl, false, None, Some(*kind))
                 }
@@ -1589,6 +1649,8 @@ pub fn render_boss_ui(
                 }
             };
 
+            let is_passive_relic = pas_kind.map(crate::content::passives::is_legendary_relic).unwrap_or(false);
+
             // Фон карты
             let card_bg = if is_card_hover {
                 Color::new(0.14, 0.12, 0.22, 0.98)
@@ -1601,6 +1663,8 @@ pub fn render_boss_ui(
                 Color::new(0.9, 0.6, 0.2, 0.9)
             } else if wep_kind.is_some() {
                 Color::new(0.35, 0.60, 0.85, 0.85)
+            } else if is_passive_relic {
+                Color::new(0.85, 0.70, 0.20, 0.95)
             } else {
                 Color::new(0.65, 0.35, 0.85, 0.85)
             };
@@ -1615,7 +1679,7 @@ pub fn render_boss_ui(
             fonts.draw_heading(&hotkey_badge, cx + card_w - hkw - 8.0, card_y + 20.0, 11.0, if is_card_hover { GOLD } else { WHITE });
 
             // Категория
-            fonts.draw_heading(category, cx + 12.0, card_y + 20.0, 10.0, if is_evo { GOLD } else if wep_kind.is_some() { SKYBLUE } else { PURPLE });
+            fonts.draw_heading(category, cx + 12.0, card_y + 20.0, 10.0, if is_evo { GOLD } else if wep_kind.is_some() { SKYBLUE } else if is_passive_relic { GOLD } else { PURPLE });
 
             // Иконка по центру
             let icon_box_s = 64.0;
@@ -1961,7 +2025,8 @@ fn draw_wall_widget_tooltip(ww_x: f32, ww_y: f32, screen_w: f32, fonts: &GameFon
     fonts.draw_text(&cost_str, card_x + 12.0, card_y + 64.0, 11.0, YELLOW);
     fonts.draw_text("• Физический барьер: Босс не может пройти сквозь стену!", card_x + 12.0, card_y + 84.0, 11.0, SKYBLUE);
     fonts.draw_text("• Тактика: Ограждайте Алтари, запирайте босса в узких проходах", card_x + 12.0, card_y + 104.0, 11.0, GREEN);
-    fonts.draw_text("• Прочность: 350 HP (Броня: 14) | Рывок босса наносит 160 урона", card_x + 12.0, card_y + 124.0, 11.0, LIGHTGRAY);
+    let wall_hp_str = format!("• Прочность: {:.0} HP (Броня: 14) | Рывок босса наносит 160 урона", crate::content::structures::WALL_BASE_HP);
+    fonts.draw_text(&wall_hp_str, card_x + 12.0, card_y + 124.0, 11.0, LIGHTGRAY);
     fonts.draw_text("• Разрушение боссом: Даёт боссу +15 XP", card_x + 12.0, card_y + 146.0, 11.0, ORANGE);
 }
 

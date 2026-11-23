@@ -1,6 +1,6 @@
 use macroquad::prelude::Vec2;
 
-pub const CELL_SIZE: f32 = 64.0;
+pub const CELL_SIZE: f32 = 128.0;
 
 /// Высокопроизводительная пространственная сетка с предварительно выделенной памятью
 /// Позволяет мгновенно находить соседей за O(1) вместо O(N^2)
@@ -11,6 +11,7 @@ pub struct SpatialGrid {
     rows: usize,
     /// Одномерный вектор корзин (flat array) для максимального кэш-попадания процессора
     buckets: Vec<Vec<usize>>,
+    active_cells: Vec<usize>,
 }
 
 impl SpatialGrid {
@@ -29,14 +30,18 @@ impl SpatialGrid {
             cols,
             rows,
             buckets,
+            active_cells: Vec::with_capacity(2048),
         }
     }
 
-    /// Очищает корзины без перевыделения памяти
+    /// Очищает только заполненные корзины без перевыделения памяти
     pub fn clear(&mut self) {
-        for bucket in &mut self.buckets {
-            bucket.clear();
+        for &idx in &self.active_cells {
+            if idx < self.buckets.len() {
+                self.buckets[idx].clear();
+            }
         }
+        self.active_cells.clear();
     }
 
     #[inline(always)]
@@ -61,6 +66,9 @@ impl SpatialGrid {
     /// Вставка сущности в сетку
     pub fn insert(&mut self, entity_idx: usize, pos: Vec2) {
         if let Some(idx) = self.get_cell_index(pos) {
+            if self.buckets[idx].is_empty() {
+                self.active_cells.push(idx);
+            }
             self.buckets[idx].push(entity_idx);
         }
     }

@@ -299,7 +299,7 @@ impl BossInventory {
             passives: Vec::new(),
             level: 1,
             current_xp: 0.0,
-            xp_to_next_level: 40.0,
+            xp_to_next_level: 65.0,
             magnet_radius: 120.0,
             melee_damage_recent: 0.0,
             ranged_damage_recent: 0.0,
@@ -335,7 +335,7 @@ impl BossInventory {
         while self.current_xp >= self.xp_to_next_level {
             self.current_xp -= self.xp_to_next_level;
             self.level += 1;
-            self.xp_to_next_level = (self.xp_to_next_level * 1.20 + 10.0).floor();
+            self.xp_to_next_level = (self.xp_to_next_level * 1.30).round();
             level_ups += 1;
         }
         level_ups

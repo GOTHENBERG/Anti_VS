@@ -3,7 +3,15 @@ use crate::ecs::world::MobEntity;
 use crate::render::textures::GameTextures;
 
 /// Отрисовка фона большой карты: плиты, трещины, текстуры и границы
-pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
+pub fn draw_environment(
+    map_w: f32,
+    map_h: f32,
+    textures: &GameTextures,
+    view_min_x: f32,
+    view_max_x: f32,
+    view_min_y: f32,
+    view_max_y: f32,
+) {
     // 1. Базовый фон
     clear_background(Color::new(0.07, 0.07, 0.10, 1.0));
 
@@ -12,15 +20,20 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
     let cols = (map_w / tile_size) as usize;
     let rows = (map_h / tile_size) as usize;
 
-    // 2. Текстурный каменный пол подземелья (Атмосферные гранитные плиты арены)
+    let start_x = ((view_min_x.max(0.0) / tile_size).floor() as usize).min(cols);
+    let end_x = (((view_max_x.max(0.0) / tile_size).ceil() as usize) + 1).min(cols);
+    let start_y = ((view_min_y.max(0.0) / tile_size).floor() as usize).min(rows);
+    let end_y = (((view_max_y.max(0.0) / tile_size).ceil() as usize) + 1).min(rows);
+
+    // 2. Текстурный каменный пол подземелья (Атмосферные гранитные плиты арены с фрустум-куллингом)
     if let Some(plain_tex) = textures.floor_dungeon_plain.as_ref() {
         let cracked_tex = textures.floor_dungeon_cracked.as_ref().unwrap_or(plain_tex);
         let blood_tex = textures.floor_dungeon_blood.as_ref().unwrap_or(plain_tex);
         let runic_tex = textures.floor_dungeon_runic.as_ref().unwrap_or(plain_tex);
 
-        for y in 0..rows {
+        for y in start_y..end_y {
             let py = (y as f32) * tile_size;
-            for x in 0..cols {
+            for x in start_x..end_x {
                 let px = (x as f32) * tile_size;
                 let hash = ((x * 73856093) ^ (y * 19349663)) % 100;
 
@@ -64,9 +77,9 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
             }
         }
     } else if let Some(floor_tex) = textures.floor_stone.as_ref() {
-        for y in 0..rows {
+        for y in start_y..end_y {
             let py = (y as f32) * tile_size;
-            for x in 0..cols {
+            for x in start_x..end_x {
                 let px = (x as f32) * tile_size;
                 let hash = ((x * 73856093) ^ (y * 19349663)) % 100;
                 let tint = if hash < 15 {
@@ -104,9 +117,9 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
         let grid_color = Color::new(0.18, 0.16, 0.24, 0.5);
         let tile_border = Color::new(0.10, 0.08, 0.14, 0.95);
 
-        for y in 0..rows {
+        for y in start_y..end_y {
             let py = (y as f32) * tile_size;
-            for x in 0..cols {
+            for x in start_x..end_x {
                 let px = (x as f32) * tile_size;
                 draw_rectangle_lines(px, py, tile_size, tile_size, 1.8, tile_border);
                 draw_line(px + 50.0, py, px + 50.0, py + tile_size, 1.0, grid_color);
@@ -115,30 +128,44 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
         }
     }
 
-    // 3. Кирпичные границы подземелья
+    // 3. Кирпичные границы подземелья (видимые фрагменты)
     if let Some(wall_tex) = textures.wall_brick.as_ref() {
         let wall_h = 32.0;
-        for x in 0..cols {
-            let px = (x as f32) * tile_size;
-            draw_texture_ex(wall_tex, px, 0.0, WHITE, DrawTextureParams {
-                dest_size: Some(Vec2::new(tile_size, wall_h)),
-                ..Default::default()
-            });
-            draw_texture_ex(wall_tex, px, map_h - wall_h, WHITE, DrawTextureParams {
-                dest_size: Some(Vec2::new(tile_size, wall_h)),
-                ..Default::default()
-            });
+        if view_min_y <= wall_h + 10.0 {
+            for x in start_x..end_x {
+                let px = (x as f32) * tile_size;
+                draw_texture_ex(wall_tex, px, 0.0, WHITE, DrawTextureParams {
+                    dest_size: Some(Vec2::new(tile_size, wall_h)),
+                    ..Default::default()
+                });
+            }
         }
-        for y in 0..rows {
-            let py = (y as f32) * tile_size;
-            draw_texture_ex(wall_tex, 0.0, py, WHITE, DrawTextureParams {
-                dest_size: Some(Vec2::new(wall_h, tile_size)),
-                ..Default::default()
-            });
-            draw_texture_ex(wall_tex, map_w - wall_h, py, WHITE, DrawTextureParams {
-                dest_size: Some(Vec2::new(wall_h, tile_size)),
-                ..Default::default()
-            });
+        if view_max_y >= map_h - wall_h - 10.0 {
+            for x in start_x..end_x {
+                let px = (x as f32) * tile_size;
+                draw_texture_ex(wall_tex, px, map_h - wall_h, WHITE, DrawTextureParams {
+                    dest_size: Some(Vec2::new(tile_size, wall_h)),
+                    ..Default::default()
+                });
+            }
+        }
+        if view_min_x <= wall_h + 10.0 {
+            for y in start_y..end_y {
+                let py = (y as f32) * tile_size;
+                draw_texture_ex(wall_tex, 0.0, py, WHITE, DrawTextureParams {
+                    dest_size: Some(Vec2::new(wall_h, tile_size)),
+                    ..Default::default()
+                });
+            }
+        }
+        if view_max_x >= map_w - wall_h - 10.0 {
+            for y in start_y..end_y {
+                let py = (y as f32) * tile_size;
+                draw_texture_ex(wall_tex, map_w - wall_h, py, WHITE, DrawTextureParams {
+                    dest_size: Some(Vec2::new(wall_h, tile_size)),
+                    ..Default::default()
+                });
+            }
         }
     }
 
@@ -149,17 +176,33 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
 
     // Угловые и промежуточные обелиски арены
     let pillar_spacing = 300.0;
-    let mut px = 0.0;
-    while px <= map_w {
-        draw_pillar(Vec2::new(px, 0.0));
-        draw_pillar(Vec2::new(px, map_h));
-        px += pillar_spacing;
+    if view_min_y <= 50.0 || view_max_y >= map_h - 50.0 {
+        let min_p = ((view_min_x.max(0.0) / pillar_spacing).floor() * pillar_spacing).max(0.0);
+        let max_p = (((view_max_x / pillar_spacing).ceil() * pillar_spacing) + pillar_spacing).min(map_w);
+        let mut px = min_p;
+        while px <= max_p {
+            if view_min_y <= 50.0 {
+                draw_pillar(Vec2::new(px, 0.0));
+            }
+            if view_max_y >= map_h - 50.0 {
+                draw_pillar(Vec2::new(px, map_h));
+            }
+            px += pillar_spacing;
+        }
     }
-    let mut py = 0.0;
-    while py <= map_h {
-        draw_pillar(Vec2::new(0.0, py));
-        draw_pillar(Vec2::new(map_w, py));
-        py += pillar_spacing;
+    if view_min_x <= 50.0 || view_max_x >= map_w - 50.0 {
+        let min_p = ((view_min_y.max(0.0) / pillar_spacing).floor() * pillar_spacing).max(0.0);
+        let max_p = (((view_max_y / pillar_spacing).ceil() * pillar_spacing) + pillar_spacing).min(map_h);
+        let mut py = min_p;
+        while py <= max_p {
+            if view_min_x <= 50.0 {
+                draw_pillar(Vec2::new(0.0, py));
+            }
+            if view_max_x >= map_w - 50.0 {
+                draw_pillar(Vec2::new(map_w, py));
+            }
+            py += pillar_spacing;
+        }
     }
 }
 

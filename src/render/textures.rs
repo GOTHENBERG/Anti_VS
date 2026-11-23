@@ -114,6 +114,9 @@ pub struct GameTextures {
     pub icon_spectral_jar: Option<Texture2D>,
     pub icon_stormhammer_core: Option<Texture2D>,
     pub icon_void_rift: Option<Texture2D>,
+    pub icon_faith_boomerang: Option<Texture2D>,
+    pub icon_cursed_chalice: Option<Texture2D>,
+    pub icon_astral_cloak: Option<Texture2D>,
     // Новые яркие цельные иконки оружия и пассивок (взамен прозрачных)
     pub icon_wind_blade: Option<Texture2D>,
     pub icon_magic_wand: Option<Texture2D>,
@@ -279,6 +282,9 @@ impl GameTextures {
         let icon_spectral_jar = load_filtered("assets/icons/icon_spectral_jar.png", ui_filter).await;
         let icon_stormhammer_core = load_filtered("assets/icons/icon_stormhammer_core.png", ui_filter).await;
         let icon_void_rift = load_filtered("assets/icons/icon_void_rift.png", ui_filter).await;
+        let icon_faith_boomerang = load_filtered("assets/icons/icon_faith_boomerang.png", ui_filter).await;
+        let icon_cursed_chalice = load_filtered("assets/icons/icon_cursed_chalice.png", ui_filter).await;
+        let icon_astral_cloak = load_filtered("assets/icons/icon_astral_cloak.png", ui_filter).await;
 
         // Новые цельные иконки оружия и пассивок
         let icon_wind_blade = load_filtered("assets/icons/icon_wind_blade.png", ui_filter).await;
@@ -403,6 +409,9 @@ impl GameTextures {
             icon_spectral_jar,
             icon_stormhammer_core,
             icon_void_rift,
+            icon_faith_boomerang,
+            icon_cursed_chalice,
+            icon_astral_cloak,
             icon_wind_blade,
             icon_magic_wand,
             icon_poison_orbs,
@@ -471,9 +480,9 @@ impl GameTextures {
             WeaponType::SingularityCollapse => self.icon_octarine_core.as_ref().or(self.icon_void_rift.as_ref()),
             WeaponType::SacredScriptures => self.icon_cooldown_tome.as_ref().or(self.icon_book.as_ref()),
             WeaponType::InfernalLiturgy => self.icon_cinder_heart.as_ref().or(self.icon_cooldown_tome.as_ref()),
-            WeaponType::FaithBoomerang => self.icon_wind_blade.as_ref().or(self.icon_sword.as_ref()),
+            WeaponType::FaithBoomerang => self.icon_faith_boomerang.as_ref().or(self.icon_wind_blade.as_ref()).or(self.icon_sword.as_ref()),
             WeaponType::HeavenlyJudgment => self.icon_evo_blade_storm.as_ref().or(self.icon_clover.as_ref()),
-            WeaponType::CursedChalice => self.icon_corrosive_flask.as_ref().or(self.icon_bottle.as_ref()),
+            WeaponType::CursedChalice => self.icon_cursed_chalice.as_ref().or(self.icon_corrosive_flask.as_ref()).or(self.icon_bottle.as_ref()),
             WeaponType::BloodDeluge => self.icon_blood_stone.as_ref().or(self.icon_corrosive_flask.as_ref()),
             WeaponType::VampiricAura => self.icon_fire_aura.as_ref().or(self.icon_ring.as_ref()),
             WeaponType::SoulFeast => self.icon_spectral_jar.as_ref().or(self.icon_fire_aura.as_ref()),
@@ -483,7 +492,7 @@ impl GameTextures {
             WeaponType::ApocalypseCascade => self.icon_chaos_meteor.as_ref().or(self.icon_void_rift.as_ref()),
             WeaponType::ChronoStasis => self.icon_chrono_hourglass.as_ref().or(self.icon_hourglass.as_ref()),
             WeaponType::InfiniteDilation => self.icon_singularity.as_ref().or(self.icon_chrono_hourglass.as_ref()),
-            WeaponType::AstralCloak => self.icon_aegis.as_ref().or(self.icon_shield.as_ref()),
+            WeaponType::AstralCloak => self.icon_astral_cloak.as_ref().or(self.icon_aegis.as_ref()).or(self.icon_shield.as_ref()),
             WeaponType::BloodEmperorShroud => self.icon_immortal_aegis.as_ref().or(self.icon_aegis.as_ref()),
         }
     }

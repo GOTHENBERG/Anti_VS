@@ -21,9 +21,10 @@ pub const WALL_COST: f32 = 10.0;
 pub const WALL_MAX_COOLDOWN: f32 = 2.0;
 pub const WALL_LIFETIME: f32 = 60.0;
 pub const WALL_RADIUS: f32 = 25.0; // 50x50 px баррикада
+pub const WALL_BASE_HP: f32 = 1050.0; // Базовое HP баррикады (было 350.0, увеличено на 200%)
 pub const OBELISK_RADIUS: f32 = 75.0; // 300x300 px визуальный размер
 pub const OBELISK_FOOTPRINT_HALF_EXTENT: f32 = OBELISK_RADIUS * 2.0;
-pub const OBELISK_BASE_HP_PER_BOSS: f32 = 2400.0; // 2400 HP на каждого живого босса
+pub const OBELISK_BASE_HP_PER_BOSS: f32 = 4800.0; // Базовое HP обелиска на босса (было 2400.0, увеличено на 100%)
 pub const OBELISK_CHARGE_SECONDS: f32 = 180.0; // 3 минуты до инфернального прорыва
 pub const OBELISK_REWARD_BASE_XP: f32 = 350.0;
 pub const OBELISK_REWARD_NEXT_LEVEL_PERCENT: f32 = 0.25; // +25% от шкалы опыта следующего уровня
@@ -82,20 +83,25 @@ pub fn snap_to_build_grid(pos: Vec2) -> Vec2 {
     Vec2::new(snap_axis(pos.x, crate::core::MAP_WIDTH), snap_axis(pos.y, crate::core::MAP_HEIGHT))
 }
 
-fn apply_carapace(resistances: &mut Resistances, level: u32) {
+pub fn apply_carapace(resistances: &mut Resistances, level: u32) {
     resistances.flat_armor += level as f32 * 2.5;
     resistances.physical_res = (resistances.physical_res + level as f32 * 0.05).min(0.70);
 }
 
-/// Applies a newly purchased Carapace level to already placed Director structures.
+/// Applies a newly purchased Carapace level to already placed Director structures, heroes, and mobs.
 pub fn upgrade_structure_carapace(world: &mut World, levels: u32) {
     if levels == 0 {
         return;
     }
+    // 1. Все строения Директора (баррикады, алтари, обелиски, клетки)
     for structure in &mut world.structures {
         if structure.faction == Faction::Director {
             apply_carapace(&mut structure.resistances, levels);
         }
+    }
+    // 2. Все живые мобы и герои Директора
+    for mob in &mut world.mobs {
+        apply_carapace(&mut mob.resistances, levels);
     }
 }
 
@@ -335,7 +341,7 @@ pub fn spawn_wall(world: &mut World, pos: Vec2) {
     world.structures.push(StructureEntity {
         id,
         pos,
-        health: Health::new(350.0),
+        health: Health::new(WALL_BASE_HP),
         resistances,
         faction: Faction::Director,
         radius: WALL_RADIUS,
@@ -409,8 +415,8 @@ mod tests {
         spawn_corner_obelisks(&mut world);
         assert_eq!(world.structures.len(), 4);
         for st in &world.structures {
-            assert_eq!(st.health.max, 2400.0);
-            assert_eq!(st.health.current, 2400.0);
+            assert_eq!(st.health.max, 4800.0);
+            assert_eq!(st.health.current, 4800.0);
             assert!(!st.is_active);
         }
 
@@ -418,10 +424,10 @@ mod tests {
         world.add_coop_boss(2, Vec2::new(1200.0, 1200.0), "Boss2".to_string(), 0);
         assert_eq!(world.living_boss_count(), 2);
 
-        // При 2 боссах обелиски должны отмасштабироваться до 4800 HP
+        // При 2 боссах обелиски должны отмасштабироваться до 9600 HP (4800 * 2)
         for st in &world.structures {
-            assert_eq!(st.health.max, 4800.0);
-            assert_eq!(st.health.current, 4800.0);
+            assert_eq!(st.health.max, 9600.0);
+            assert_eq!(st.health.current, 9600.0);
         }
 
         // Активируем первый обелиск (на 3 минуты = 180с)
@@ -447,7 +453,7 @@ mod tests {
         let obelisk = world.structures.iter().find(|s| s.id == obelisk_id).unwrap();
         assert!(!obelisk.is_active);
         assert_eq!(obelisk.state_timer, 0.0);
-        assert_eq!(obelisk.health.current, 4800.0);
+        assert_eq!(obelisk.health.current, 9600.0);
     }
 
     #[test]
@@ -487,5 +493,157 @@ mod tests {
         // One obelisk should now become active!
         let active_count = world.structures.iter().filter(|s| s.is_active).count();
         assert_eq!(active_count, 1, "After hero dies, obelisk cycle can activate an obelisk");
+    }
+
+    #[test]
+    fn test_obelisk_relic_draft_human_boss() {
+        let mut world = World::new();
+        world.boss_human_controlled = true;
+        spawn_corner_obelisks(&mut world);
+
+        let obelisk_id = world.structures[0].id;
+        world.structures[0].is_active = true;
+        world.record_obelisk_contribution(obelisk_id);
+
+        assert_eq!(world.boss_inventory.passives.len(), 0);
+        assert_eq!(world.boss_pending_relic_choices, 0);
+        assert!(world.boss_level_up_options.is_none());
+
+        // Уничтожаем активный обелиск
+        world.structures[0].health.current = 0.0;
+        crate::ecs::systems::combat::update_combat(&mut world, 0.016);
+
+        // Для живого игрока-человека не выдается реликвия автоматически,
+        // а открывается интерфейс с выбором из 3 реликвий!
+        assert_eq!(world.boss_pending_relic_choices, 1);
+        assert!(world.boss_level_up_options.is_some());
+        let options = world.boss_level_up_options.as_ref().unwrap();
+        assert_eq!(options.len(), 3);
+        for opt in options {
+            if let crate::ecs::components::inventory::PerkChoice::UpgradePassive(k) = opt {
+                assert!(crate::content::passives::is_legendary_relic(*k));
+            }
+        }
+        // Пассивка ещё не добавлена (игрок выбирает)
+        assert_eq!(world.boss_inventory.passives.len(), 0);
+
+        // Игрок выбирает карту #0
+        crate::ecs::systems::coop::apply_player_perk_choice_by_index(&mut world, 0, 0);
+
+        // Выбор применен!
+        assert_eq!(world.boss_pending_relic_choices, 0);
+        assert!(world.boss_level_up_options.is_none());
+        assert_eq!(world.boss_inventory.passives.len(), 1);
+        assert!(crate::content::passives::is_legendary_relic(world.boss_inventory.passives[0].kind));
+    }
+
+    #[test]
+    fn test_map_dimensions_traversal_time_and_obelisk_activation_audio() {
+        use crate::core::{MAP_WIDTH, MAP_HEIGHT, MAP_DIAGONAL};
+
+        // 1. Проверяем расчет времени пробега по диагонали карты при базовой скорости босса 160 px/s
+        let boss_speed = 160.0f32;
+        let diagonal = (MAP_WIDTH * MAP_WIDTH + MAP_HEIGHT * MAP_HEIGHT).sqrt();
+        assert!((diagonal - MAP_DIAGONAL).abs() < 1.0, "MAP_DIAGONAL must match sqrt(W^2 + H^2)");
+
+        let travel_time_seconds = diagonal / boss_speed;
+        let travel_time_minutes = travel_time_seconds / 60.0;
+
+        // Требование пользователя: 3 - 3.5 минуты (180 - 210 секунд)
+        assert!(
+            travel_time_seconds >= 180.0 && travel_time_seconds <= 210.0,
+            "Corner-to-corner travel time must be 3-3.5 minutes! Got {:.2} min ({:.1} s)",
+            travel_time_minutes,
+            travel_time_seconds
+        );
+
+        // 2. Проверяем активацию обелиска: звук активации и уведомления
+        let mut world = World::new();
+        world.is_headless = false;
+        spawn_corner_obelisks(&mut world);
+
+        world.obelisk_cycle_timer = 0.0;
+        // Запускаем обновление структур
+        crate::ecs::systems::skills::update_world_structures(&mut world, 0.1);
+
+        // Обелиск должен стать активным
+        let active_obelisk = world.structures.iter().find(|s| s.is_active);
+        assert!(active_obelisk.is_some(), "An obelisk must activate when cycle timer expires");
+
+        // Должен быть воспроизведен звук активации разлома
+        assert!(
+            world.audio_events.contains(&crate::audio::AudioEvent::ObeliskActivate),
+            "AudioEvent::ObeliskActivate must be triggered on rift activation"
+        );
+
+        // Должно быть отправлено уведомление игроку-боссу
+        assert!(
+            world.floating_texts.iter().any(|ft| ft.text.contains("ТРЕЩИТ ЗЕМЛЯ") || ft.text.contains("ИНФЕРНАЛЬНЫЙ РАЗЛОМ")),
+            "Notification floating text must be dispatched to player"
+        );
+    }
+
+    #[test]
+    fn test_barricade_hp_and_carapace_buff_propagation() {
+        let mut world = World::new();
+        assert_eq!(WALL_BASE_HP, 1050.0);
+        assert_eq!(OBELISK_BASE_HP_PER_BOSS, 4800.0);
+
+        // 1. Ставим баррикаду
+        let wall_pos = snap_to_build_grid(Vec2::new(300.0, 300.0));
+        spawn_wall(&mut world, wall_pos);
+        assert_eq!(world.structures.len(), 1);
+        let wall = &world.structures[0];
+        assert_eq!(wall.health.max, 1050.0, "Баррикада должна иметь 1050 HP (+200% от 350.0)");
+        assert_eq!(wall.resistances.flat_armor, 14.0);
+        assert_eq!(wall.resistances.physical_res, 0.35);
+
+        // 2. Ставим алтарь и обелиск
+        let altar_pos = snap_altar_to_grid(Vec2::new(550.0, 550.0));
+        spawn_blood_altar(&mut world, altar_pos);
+        spawn_corner_obelisks(&mut world);
+
+        // 3. Добавляем обычного моба и героя
+        let mob_id = world.alloc_id();
+        let mut mob = crate::ecs::world::MobEntity::new_test(mob_id, Vec2::new(700.0, 700.0), 1);
+        mob.resistances.flat_armor = 0.0;
+        mob.resistances.physical_res = 0.05;
+        world.mobs.push(mob);
+
+        let hero_id = world.alloc_id();
+        let mut hero = crate::ecs::world::MobEntity::new_test(hero_id, Vec2::new(800.0, 800.0), 17);
+        hero.is_hero = true;
+        hero.resistances.flat_armor = 35.0;
+        hero.resistances.physical_res = 0.50;
+        world.mobs.push(hero);
+
+        // 4. Директор прокачивает Панцирь (Carapace) на 2 уровня:
+        // +2.5 * 2 = +5.0 к броне, +0.05 * 2 = +0.10 к физ. резисту
+        upgrade_structure_carapace(&mut world, 2);
+
+        // Проверяем баррикаду:
+        let wall = &world.structures[0];
+        assert_eq!(wall.resistances.flat_armor, 19.0, "Баррикада должна получить +5 брони");
+        assert_eq!(wall.resistances.physical_res, 0.45, "Баррикада должна получить +10% физ. реза");
+
+        // Проверяем алтарь:
+        let altar = &world.structures[1];
+        assert_eq!(altar.resistances.flat_armor, 17.0, "Алтарь должен получить +5 брони");
+        assert_eq!(altar.resistances.physical_res, 0.50, "Алтарь должен получить +10% физ. реза");
+
+        // Проверяем обелиск:
+        let obelisk = &world.structures[2];
+        assert_eq!(obelisk.resistances.flat_armor, 20.0, "Обелиск должен получить +5 брони");
+        assert_eq!(obelisk.resistances.physical_res, 0.45, "Обелиск должен получить +10% физ. реза");
+
+        // Проверяем обычного моба:
+        let m = &world.mobs[0];
+        assert_eq!(m.resistances.flat_armor, 5.0, "Моб должен получить +5 брони");
+        assert_eq!(m.resistances.physical_res, 0.15, "Моб должен получить +10% физ. реза");
+
+        // Проверяем героя:
+        let h = &world.mobs[1];
+        assert_eq!(h.resistances.flat_armor, 40.0, "Герой должен получить +5 брони");
+        assert_eq!(h.resistances.physical_res, 0.60, "Герой должен получить +10% физ. реза");
     }
 }

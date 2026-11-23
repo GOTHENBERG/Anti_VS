@@ -70,7 +70,7 @@ impl MobEntity {
             is_elite: false,
             knockback_immune: false,
             knockback_vel: Vec2::ZERO,
-            attack_timer: 1.0,
+            attack_timer: 0.0,
             is_hero: false,
             hero_enrage_timer: 0.0,
             hero_skill_timers: [0.0; 4],
@@ -279,6 +279,7 @@ pub struct BossPlayerState {
     pub revive_progress: f32,
     pub revive_target_id: Option<u8>,
     pub pending_level_ups: usize,
+    pub pending_relic_choices: usize,
     pub human_controlled: bool,
     pub level_up_options: Option<Vec<crate::ecs::components::inventory::PerkChoice>>,
     pub input_move_dir: Vec2,
@@ -325,6 +326,7 @@ impl BossPlayerState {
             revive_progress: 0.0,
             revive_target_id: None,
             pending_level_ups: 0,
+            pending_relic_choices: 0,
             human_controlled: false,
             level_up_options: None,
             input_move_dir: Vec2::ZERO,
@@ -364,6 +366,7 @@ pub struct World {
     pub boss_input_aim_dir: Vec2,
     pub boss_input_dash_pressed: bool,
     pub boss_pending_level_ups: usize,
+    pub boss_pending_relic_choices: usize,
     pub boss_level_up_options: Option<Vec<crate::ecs::components::inventory::PerkChoice>>,
     /// ID of the Boss state temporarily loaded into the legacy `boss_*` fields.
     pub active_boss_id: u8,
@@ -448,6 +451,7 @@ impl World {
         swap_field!(boss_poison_dps);
         std::mem::swap(&mut self.boss_revive_progress, &mut player.revive_progress);
         std::mem::swap(&mut self.boss_pending_level_ups, &mut player.pending_level_ups);
+        std::mem::swap(&mut self.boss_pending_relic_choices, &mut player.pending_relic_choices);
         std::mem::swap(&mut self.boss_level_up_options, &mut player.level_up_options);
         std::mem::swap(&mut self.boss_human_controlled, &mut player.human_controlled);
         swap_field!(blade_storm_angle);
@@ -593,6 +597,7 @@ impl World {
             boss_input_aim_dir: Vec2::X,
             boss_input_dash_pressed: false,
             boss_pending_level_ups: 0,
+            boss_pending_relic_choices: 0,
             boss_level_up_options: None,
             active_boss_id: 1,
             blade_storm_angle: 0.0,

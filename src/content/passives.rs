@@ -6,6 +6,57 @@ pub struct PassiveDefinition {
     pub description: &'static str,
 }
 
+pub const ALL_LEGENDARY_RELICS: [PassiveType; 21] = [
+    PassiveType::ImmortalAegis,
+    PassiveType::ArchmageShard,
+    PassiveType::DivineRapier,
+    PassiveType::OctarineCore,
+    PassiveType::SolarRelic,
+    PassiveType::StaticCore,
+    PassiveType::ColossalEye,
+    PassiveType::BlessedHeart,
+    PassiveType::Pyromaniac,
+    PassiveType::SoulHarvester,
+    PassiveType::DivinityAura,
+    PassiveType::UkuleleResonance,
+    PassiveType::FateWeaver,
+    PassiveType::SiegeMortar,
+    PassiveType::SporeMushroom,
+    PassiveType::DuplicatorRelic,
+    PassiveType::CandelabraOfFury,
+    PassiveType::AbyssalCurseStone,
+    PassiveType::SilverTears,
+    PassiveType::GoldenSeal,
+    PassiveType::TitanBloodArmor,
+];
+
+pub fn is_legendary_relic(kind: PassiveType) -> bool {
+    matches!(
+        kind,
+        PassiveType::ImmortalAegis
+            | PassiveType::ArchmageShard
+            | PassiveType::DivineRapier
+            | PassiveType::OctarineCore
+            | PassiveType::SolarRelic
+            | PassiveType::StaticCore
+            | PassiveType::ColossalEye
+            | PassiveType::BlessedHeart
+            | PassiveType::Pyromaniac
+            | PassiveType::SoulHarvester
+            | PassiveType::DivinityAura
+            | PassiveType::UkuleleResonance
+            | PassiveType::FateWeaver
+            | PassiveType::SiegeMortar
+            | PassiveType::SporeMushroom
+            | PassiveType::DuplicatorRelic
+            | PassiveType::CandelabraOfFury
+            | PassiveType::AbyssalCurseStone
+            | PassiveType::SilverTears
+            | PassiveType::GoldenSeal
+            | PassiveType::TitanBloodArmor
+    )
+}
+
 pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
     match kind {
         PassiveType::SpeedGloves => PassiveDefinition {

@@ -5,6 +5,6 @@ pub mod time;
 
 pub use random as rand;
 
-pub const MAP_WIDTH: f32 = 3600.0;
-pub const MAP_HEIGHT: f32 = 2400.0;
-pub const MAP_DIAGONAL: f32 = 4326.66;
+pub const MAP_WIDTH: f32 = 25920.0;
+pub const MAP_HEIGHT: f32 = 17280.0;
+pub const MAP_DIAGONAL: f32 = 31151.96;

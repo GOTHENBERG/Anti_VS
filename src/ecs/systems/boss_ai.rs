@@ -638,6 +638,10 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             PassiveType::MartyrVanguard,
         ];
         for ap in all_passives {
+            // При обычном level-up босс не может получать новые реликвии (только из Обелисков)
+            if crate::content::passives::is_legendary_relic(ap) {
+                continue;
+            }
             if !inventory.has_passive(ap) {
                 let has_pair = match ap {
                     PassiveType::SpeedGloves => inventory.has_weapon(WeaponType::WindBlade),
@@ -685,6 +689,78 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
     }
 
     // 6. ЗАПРЕДЕЛЬНОЕ ВОЗВЫШЕНИЕ (Limit Break после 10-й минуты)
+    if available.is_empty() {
+        for (i, w) in inventory.weapons.iter().enumerate() {
+            let def = crate::content::weapons::get_weapon_def(w.kind);
+            available.push((PerkChoice::LimitBreakDamage { weapon_idx: i, name: def.name.to_string() }, 90.0));
+            available.push((PerkChoice::LimitBreakCooldown { weapon_idx: i, name: def.name.to_string() }, 70.0));
+            available.push((PerkChoice::LimitBreakProjectiles { weapon_idx: i, name: def.name.to_string() }, 85.0));
+        }
+        available.push((PerkChoice::LimitBreakTitanVigor, 110.0));
+        available.push((PerkChoice::LimitBreakAdaptiveArmor, 100.0));
+        available.push((PerkChoice::LimitBreakPredatorSpeed, 60.0));
+    }
+
+    // Взвешенный выбор 3 уникальных карт (Рулетка)
+    let mut selected = Vec::new();
+    while selected.len() < 3 && !available.is_empty() {
+        let total_w: f32 = available.iter().map(|(_, w)| *w).sum();
+        if total_w <= 0.0 {
+            break;
+        }
+        let mut pick_val = rand::gen_range(0.0, total_w);
+        let mut chosen_idx = 0;
+        for (idx, (_, w)) in available.iter().enumerate() {
+            if pick_val <= *w {
+                chosen_idx = idx;
+                break;
+            }
+            pick_val -= *w;
+        }
+        let (choice, _) = available.remove(chosen_idx);
+        selected.push(choice);
+    }
+
+    selected
+}
+
+/// Генерирует до 3 карт на выбор при разрушении Инфернального Обелиска.
+/// Предлагает только легендарные реликвии (новые или улучшение уже имеющихся).
+pub fn generate_relic_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
+    let mut available: Vec<(PerkChoice, f32)> = Vec::new();
+
+    // 1. Улучшение уже имеющихся у босса реликвий (если уровень < MAX_PASSIVE_LEVEL)
+    for p in &inventory.passives {
+        if crate::content::passives::is_legendary_relic(p.kind) && p.level < MAX_PASSIVE_LEVEL {
+            let weight = 160.0 + (p.level as f32 * 15.0);
+            available.push((PerkChoice::UpgradePassive(p.kind), weight));
+        }
+    }
+
+    // 2. Новые легендарные реликвии (если есть свободные слоты < MAX_PASSIVE_SLOTS)
+    if inventory.passives.len() < MAX_PASSIVE_SLOTS {
+        for &relic in &crate::content::passives::ALL_LEGENDARY_RELICS {
+            if !inventory.has_passive(relic) {
+                let is_synergy = inventory
+                    .weapons
+                    .iter()
+                    .any(|w| BossInventory::get_evolution_passive_for_weapon(w.kind) == Some(relic));
+                let weight = if is_synergy { 280.0 } else { 140.0 };
+                available.push((PerkChoice::UpgradePassive(relic), weight));
+            }
+        }
+    }
+
+    // 3. Если реликвий не хватает для 3 карт (например, все получены и прокачаны, либо все слоты забиты)
+    if available.len() < 3 {
+        for p in &inventory.passives {
+            if !crate::content::passives::is_legendary_relic(p.kind) && p.level < MAX_PASSIVE_LEVEL {
+                available.push((PerkChoice::UpgradePassive(p.kind), 90.0));
+            }
+        }
+    }
+
+    // 4. Запредельное возвышение (Limit Break), если все 10 слотов забиты и прокачаны
     if available.is_empty() {
         for (i, w) in inventory.weapons.iter().enumerate() {
             let def = crate::content::weapons::get_weapon_def(w.kind);
