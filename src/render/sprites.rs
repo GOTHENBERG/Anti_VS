@@ -46,12 +46,12 @@ pub fn draw_environment(map_w: f32, map_h: f32, textures: &GameTextures) {
                     },
                 );
 
-                // Внутренние разделительные линии 4 клеток игры 50x50 внутри 100x100 плиты
-                let sub_grid_col = Color::new(0.18, 0.16, 0.24, 0.40);
+                // Внутренние разделительные линии 4 клеток игры 50x50 внутри 100x100 плиты (приглушены для читаемости боя)
+                let sub_grid_col = Color::new(0.14, 0.12, 0.18, 0.22);
                 draw_line(px + 50.0, py, px + 50.0, py + tile_size, 1.0, sub_grid_col);
                 draw_line(px, py + 50.0, px + tile_size, py + 50.0, 1.0, sub_grid_col);
                 // Внешний шов каменной плиты 100x100
-                draw_rectangle_lines(px, py, tile_size, tile_size, 1.5, Color::new(0.10, 0.08, 0.14, 0.85));
+                draw_rectangle_lines(px, py, tile_size, tile_size, 1.2, Color::new(0.08, 0.07, 0.12, 0.55));
 
                 // Случайные мелкие булыжники и осколки камня на полу
                 if hash == 42 || hash == 88 {
@@ -295,14 +295,15 @@ pub fn draw_mob_sprite(mob: &MobEntity, time: f32, textures: &GameTextures, boss
     };
 
     if let Some(tex) = textures.get_mob_texture(mob.tier, frame_idx) {
-        // Тень под мобом
+        // Тень под мобом (усилена для контраста с плитами пола)
+        let shadow_mult = if mob.is_hero { 1.35 } else { 1.15 };
         draw_ellipse(
             mob.pos.x,
-            mob.pos.y + mob.radius * 0.7,
-            mob.radius * 1.1,
-            mob.radius * 0.45,
+            mob.pos.y + mob.radius * 0.72,
+            mob.radius * shadow_mult,
+            mob.radius * 0.46,
             0.0,
-            Color::new(0.0, 0.0, 0.0, 0.38),
+            Color::new(0.0, 0.0, 0.0, 0.52),
         );
 
         let size = match mob.tier {
@@ -314,14 +315,22 @@ pub fn draw_mob_sprite(mob: &MobEntity, time: f32, textures: &GameTextures, boss
             6 => 38.0, // Демон теней
             7 => 42.0, // Огненный элементаль
             8 => 62.0, // Жнец Смерти (Титан)
-            17 => if mob.is_hero { 140.0 } else { 32.0 }, // Владыка Пустоты (Герой / Копия)
+            9 => 34.0, // Дред-Фаланга
+            10 => 38.0, // Адские Гончие
+            11 => 36.0, // Архикультисты Бездны
+            12 => 54.0, // Обсидиановые Колоссы
+            13 => 32.0, // Проклятые Мучители
+            14 => 40.0, // Призрачные Ловчие
+            15 => 46.0, // Солнечные Архонты
+            16 => 72.0, // Аватар Забвения (Колосс)
+            17 => if mob.is_hero { 140.0 } else { 38.0 }, // Владыка Пустоты (Герой / Копия)
             18 => 155.0, // Архидемон Инферно (Герой)
-            _ => 28.0,
+            _ => 32.0,
         };
 
-        // Гончая шире (32x16)
-        let (draw_w, draw_h) = if mob.tier == 2 {
-            (size * 1.6, size * 0.8)
+        // Гончие шире обычных гуманоидов
+        let (draw_w, draw_h) = if mob.tier == 2 || mob.tier == 10 {
+            (size * 1.5, size * 0.85)
         } else {
             (size, size)
         };

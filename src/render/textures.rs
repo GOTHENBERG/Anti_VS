@@ -21,6 +21,9 @@ pub struct GameTextures {
     pub mob_tier14: Option<Texture2D>,
     pub mob_tier15: Option<Texture2D>,
     pub mob_tier16: Option<Texture2D>,
+    // Hero Titans (Tiers 17 & 18)
+    pub hero_void_lord: Option<Texture2D>,
+    pub hero_inferno_archdemon: Option<Texture2D>,
 
     // Boss (Knight)
     pub knight_idle: Vec<Texture2D>,
@@ -177,6 +180,8 @@ impl GameTextures {
         let mob_tier14 = load_filtered("assets/sprites/mob_tier14_shadow_stalker.png", p_filter).await;
         let mob_tier15 = load_filtered("assets/sprites/mob_tier15_solar_archon.png", p_filter).await;
         let mob_tier16 = load_filtered("assets/sprites/mob_tier16_avatar_oblivion.png", p_filter).await;
+        let hero_void_lord = load_filtered("assets/sprites/mob_tier17_void_lord.png", p_filter).await;
+        let hero_inferno_archdemon = load_filtered("assets/sprites/mob_tier18_inferno_archdemon.png", p_filter).await;
 
         let mut knight_idle = Vec::new();
         for i in 0..4 {
@@ -317,6 +322,8 @@ impl GameTextures {
             mob_tier14,
             mob_tier15,
             mob_tier16,
+            hero_void_lord,
+            hero_inferno_archdemon,
             knight_idle,
             knight_walk,
             altar,
@@ -547,8 +554,8 @@ impl GameTextures {
             14 => self.mob_tier14.as_ref(),
             15 => self.mob_tier15.as_ref(),
             16 => self.mob_tier16.as_ref(),
-            17 => self.shadow_demon.as_ref().or(self.bringer_death.as_ref()),
-            18 => self.fire_elemental.as_ref().or(self.bringer_death.as_ref()),
+            17 => self.hero_void_lord.as_ref().or(self.shadow_demon.as_ref()).or(self.bringer_death.as_ref()),
+            18 => self.hero_inferno_archdemon.as_ref().or(self.fire_elemental.as_ref()).or(self.bringer_death.as_ref()),
             _ => None,
         }
     }

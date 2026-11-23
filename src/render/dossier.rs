@@ -77,8 +77,20 @@ pub fn draw_mob_dossier(
 
     // Отрисовка спрайта моба
     if let Some(mob_tex) = textures.get_mob_texture(tier, 0) {
-        let mob_render_size = if tier == 8 { 130.0 } else if tier == 4 || tier == 7 { 110.0 } else { 90.0 };
-        let (pw, ph) = if tier == 2 { (mob_render_size * 1.3, mob_render_size * 0.65) } else { (mob_render_size, mob_render_size) };
+        let mob_render_size = if tier == 17 || tier == 18 {
+            165.0
+        } else if tier == 8 || tier == 16 {
+            135.0
+        } else if tier == 4 || tier == 7 || tier == 12 || tier == 15 {
+            115.0
+        } else {
+            90.0
+        };
+        let (pw, ph) = if tier == 2 || tier == 10 {
+            (mob_render_size * 1.35, mob_render_size * 0.75)
+        } else {
+            (mob_render_size, mob_render_size)
+        };
         let float_y = (time * 4.0).sin() * 5.0;
         draw_texture_ex(
             mob_tex,
@@ -109,7 +121,10 @@ pub fn draw_mob_dossier(
         13 => "Класс: Проклятые Мучители (Ядерный подрыв)",
         14 => "Класс: Призрачные Ловчие (Фазовый сдвиг)",
         15 => "Класс: Солнечные Архонты (Испепеляющая плазма)",
-        _ => "Класс: Аватар Забвения (Владыка Бездны)",
+        16 => "Класс: Аватар Забвения (Колосс Бездны)",
+        17 => "Класс: Владыка Пустоты (Исполин Бездны)",
+        18 => "Класс: Архидемон Инферно (Исполин Пламени)",
+        _ => "Класс: Существо Инферно",
     };
     fonts.draw_heading(class_str, left_x + 8.0, content_y + portrait_h - 14.0, 13.0, SKYBLUE);
 
