@@ -1,3 +1,4 @@
+pub mod flow_field;
 pub mod models;
 pub mod neural_net;
 pub mod pathing;

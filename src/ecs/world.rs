@@ -379,6 +379,9 @@ pub struct World {
     // Пространственная сетка для O(1) поиска
     pub spatial_grid: SpatialGrid,
 
+    // Векторное поле обтекания препятствий (Flow Field)
+    pub flow_field: crate::ai::flow_field::FlowField,
+
     // Мобы, снаряды, кристаллы (Data-Oriented плоские массивы)
     pub mobs: Vec<MobEntity>,
     pub projectiles: Vec<ProjectileEntity>,
@@ -601,6 +604,7 @@ impl World {
             game_time: 0.0,
             match_duration_secs: crate::core::time::GAME_DURATION_SECS,
             spatial_grid: SpatialGrid::new(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT),
+            flow_field: crate::ai::flow_field::FlowField::load_prebaked(),
             mobs: Vec::with_capacity(3000),
             projectiles: Vec::with_capacity(1500),
             gems: Vec::with_capacity(3000),

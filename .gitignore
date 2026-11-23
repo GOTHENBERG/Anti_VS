@@ -4,4 +4,6 @@
 *.zip
 player_settings.json
 *.log
+__pycache__/
+*.pyc
 

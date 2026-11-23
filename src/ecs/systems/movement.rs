@@ -11,6 +11,7 @@ fn update_single_mob(
     primary_boss_vel: Vec2,
     primary_boss_alive: bool,
     coop_bosses: &[crate::ecs::world::BossPlayerState],
+    flow_field: &crate::ai::flow_field::FlowField,
     dt: f32,
 ) {
     // Обновление таймеров статусов
@@ -115,7 +116,18 @@ fn update_single_mob(
     let dist = diff.length();
 
     if dist > 2.0 && speed_mult > 0.0 {
-        let dir = diff / dist;
+        // Навигация мобов:
+        // Стрелки (тир 3) и орбитальные элементали (тир 7) используют локальный вектор маневрирования на боевой дистанции.
+        // Все остальные мобы (и стрелки/элементали на дальних дистанциях) движутся по линиям тока векторного поля Flow Field,
+        // плавно огибая все обелиски, алтари и баррикады без единого застревания в тупиках.
+        let dir = if mob.tier == 3 && dist <= 280.0 {
+            diff / dist
+        } else if mob.tier == 7 && dist <= 260.0 {
+            diff / dist
+        } else {
+            flow_field.sample_mob_direction(mob.pos, target_pos)
+        };
+
         mob.vel = dir * (mob.speed * speed_mult);
         mob.pos += mob.vel * dt;
     } else {
@@ -148,10 +160,11 @@ pub fn update_movement(world: &mut World, dt: f32) {
     // 1. Обновление движения, физики и эффектов мобов:
     // В Headless (обучение): последовательный цикл внутри своего потока Rayon (0 оверхеда).
     // В игре с графикой: параллельное обновление на всех 8 потоках i3-10100F для максимального FPS.
+    let flow_field = &world.flow_field;
     if world.is_headless {
-        world.mobs.iter_mut().for_each(|mob| update_single_mob(mob, boss_pos, boss_vel, primary_boss_alive, coop_bosses, dt));
+        world.mobs.iter_mut().for_each(|mob| update_single_mob(mob, boss_pos, boss_vel, primary_boss_alive, coop_bosses, flow_field, dt));
     } else {
-        world.mobs.par_iter_mut().for_each(|mob| update_single_mob(mob, boss_pos, boss_vel, primary_boss_alive, coop_bosses, dt));
+        world.mobs.par_iter_mut().for_each(|mob| update_single_mob(mob, boss_pos, boss_vel, primary_boss_alive, coop_bosses, flow_field, dt));
     }
 
     // 2. Перестроение Пространственной Сетки (Spatial Grid) для мгновенных запросов O(1)
