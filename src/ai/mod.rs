@@ -1,4 +1,5 @@
 pub mod flow_field;
+pub mod league;
 pub mod models;
 pub mod neural_net;
 pub mod pathing;

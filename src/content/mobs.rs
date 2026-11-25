@@ -492,6 +492,7 @@ fn spawn_squad_arc_at(
             attack_count: 0,
             has_duplicated: false,
             owner_hero_id: None,
+            last_hit_boss_id: None,
         });
     }
 
@@ -589,6 +590,7 @@ pub fn spawn_single_mob_at_pos_with_elite(world: &mut World, tier: u8, pos: Vec2
         attack_count: 0,
         has_duplicated: false,
         owner_hero_id: None,
+        last_hit_boss_id: None,
     });
 
     if let Some(director) = world.directors.first_mut() {

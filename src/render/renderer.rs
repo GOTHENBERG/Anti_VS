@@ -357,12 +357,12 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         }
     }
 
-    // Способность: Огненная Аура / Адское Пекло (Fire Aura & Hellfire Inferno)
+    // Способность: Огненная Аура / Пекло Преисподней (Fire Aura & Nether Blaze)
     let has_fire_aura = world.boss_inventory.has_weapon(WeaponType::FireAura);
-    let has_hellfire = world.boss_inventory.has_weapon(WeaponType::Hellfire);
-    if has_fire_aura || has_hellfire {
-        let aura_radius = if has_hellfire { 150.0 } else { 110.0 };
-        let flame_count = if has_hellfire { 12 } else { 8 };
+    let has_nether_blaze = world.boss_inventory.has_weapon(WeaponType::NetherBlaze);
+    if has_fire_aura || has_nether_blaze {
+        let aura_radius = if has_nether_blaze { 150.0 } else { 110.0 };
+        let flame_count = if has_nether_blaze { 12 } else { 8 };
         let pulse = (time * 6.0).sin() * 4.0;
 
         // Пылающее поле под ногами
@@ -397,9 +397,9 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         }
     }
 
-    // Эволюция: Буря Клинков (BladeStorm) — вращающийся вихрь клинков
-    if world.boss_inventory.has_weapon(WeaponType::BladeStorm) {
-        let blade_count = (8 + world.boss_inventory.get_duplicator_projectiles()).min(16) as usize;
+    // Эволюция: Шквал Лезвий (BladeSquall) — вращающийся вихрь клинков
+    if world.boss_inventory.has_weapon(WeaponType::BladeSquall) {
+        let blade_count = (8 + world.boss_inventory.get_twin_prism_projectiles()).min(16) as usize;
         let radius = 78.0;
         for i in 0..blade_count {
             let angle = (time * 5.5) + (i as f32) * std::f32::consts::TAU / (blade_count as f32);
@@ -430,7 +430,7 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
     // Святой Молот (HolyHammer) — вращающиеся освященные молоты
     if world.boss_inventory.has_weapon(WeaponType::HolyHammer) {
         let extra_proj = world.boss_inventory.get_weapon(WeaponType::HolyHammer).map(|w| w.bonus_projectiles as usize).unwrap_or(0);
-        let hammer_count = (2 + extra_proj + world.boss_inventory.get_duplicator_projectiles()).clamp(2, 6);
+        let hammer_count = (2 + extra_proj + world.boss_inventory.get_twin_prism_projectiles()).clamp(2, 6);
         let radius = 86.0;
         for i in 0..hammer_count {
             let angle = (time * 3.8) + (i as f32) * std::f32::consts::TAU / (hammer_count as f32);
@@ -458,15 +458,15 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
         }
     }
 
-    // Эволюция: Праведный Щит (DivineShield) — вращающиеся священные щиты
-    if world.boss_inventory.has_weapon(WeaponType::DivineShield) {
-        let shield_count = (3 + world.boss_inventory.get_duplicator_projectiles()).min(6) as usize;
+    // Эволюция: Бастион Света (LightBastion) — вращающиеся священные щиты
+    if world.boss_inventory.has_weapon(WeaponType::LightBastion) {
+        let shield_count = (3 + world.boss_inventory.get_twin_prism_projectiles()).min(6) as usize;
         let radius = 98.0;
         for i in 0..shield_count {
             let angle = (time * 3.5) + (i as f32) * std::f32::consts::TAU / (shield_count as f32);
             let s_pos = Vec2::new(bx + angle.cos() * radius, by + angle.sin() * radius);
 
-            if let Some(s_tex) = textures.icon_evo_divine_shield.as_ref().or(textures.icon_shield.as_ref()) {
+            if let Some(s_tex) = textures.icon_evo_light_bastion.as_ref().or(textures.icon_shield.as_ref()) {
                 draw_texture_ex(
                     s_tex,
                     s_pos.x - 16.0,
@@ -490,7 +490,7 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
 
     // Орбитальные Бастионы (AegisOrbiters) — защитные кристаллы-барьеры
     if world.boss_inventory.has_weapon(WeaponType::AegisOrbiters) {
-        let bastion_count = (3 + world.boss_inventory.get_duplicator_projectiles()).clamp(3, 7) as usize;
+        let bastion_count = (3 + world.boss_inventory.get_twin_prism_projectiles()).clamp(3, 7) as usize;
         let radius = 106.0;
         for i in 0..bastion_count {
             let angle = (-time * 2.8) + (i as f32) * std::f32::consts::TAU / (bastion_count as f32);
@@ -518,7 +518,7 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
 
     // Эволюция: Несокрушимая Крепость (InvincibleBastion) — сверхпрочное силовое поле и крепости
     if world.boss_inventory.has_weapon(WeaponType::InvincibleBastion) {
-        let bastion_count = (4 + world.boss_inventory.get_duplicator_projectiles()).clamp(4, 8) as usize;
+        let bastion_count = (4 + world.boss_inventory.get_twin_prism_projectiles()).clamp(4, 8) as usize;
         let radius = 125.0;
         let pulse = (time * 4.0).sin() * 3.0;
 
@@ -554,7 +554,7 @@ pub fn render_world(world: &World, fonts: &GameFonts, textures: &GameTextures, c
     let has_scriptures = world.boss_inventory.has_weapon(WeaponType::SacredScriptures);
     let has_liturgy = world.boss_inventory.has_weapon(WeaponType::InfernalLiturgy);
     if has_scriptures || has_liturgy {
-        let book_count = (if has_liturgy { 4 } else { 2 }) + world.boss_inventory.get_duplicator_projectiles() as usize;
+        let book_count = (if has_liturgy { 4 } else { 2 }) + world.boss_inventory.get_twin_prism_projectiles() as usize;
         let radius = if has_liturgy { 114.0 } else { 90.0 };
         let book_col = if has_liturgy { ORANGE } else { GOLD };
         let speed = if has_liturgy { 5.0 } else { 4.2 };
@@ -783,25 +783,28 @@ fn draw_soul_link(world: &World, time: f32) {
             if dist <= 0.01 { continue; }
             let dir = diff / dist;
             let normal = Vec2::new(-dir.y, dir.x);
+            let t_boost = world.soul_link_tension.clamp(0.0, 1.5);
+            let aura_w = 8.0 + t_boost * 4.0;
+            let wave_amp = 4.5 * (1.0 - t_boost * 0.4).max(0.25);
 
-            // 1. Мягкое широкое свечение (Аура Души)
-            draw_line(a.x, a.y, b.x, b.y, 8.0, Color::new(0.15, 0.70, 0.95, 0.28));
+            // 1. Мягкое широкое свечение (Аура Души усиливается от натяжения XPBD)
+            draw_line(a.x, a.y, b.x, b.y, aura_w, Color::new(0.15 + t_boost * 0.25, 0.70, 0.95, 0.28 + t_boost * 0.14));
 
             // 2. Энергетический луч
-            draw_line(a.x, a.y, b.x, b.y, 3.5, Color::new(0.35, 0.90, 1.0, 0.75));
+            draw_line(a.x, a.y, b.x, b.y, 3.5 + t_boost, Color::new(0.35 + t_boost * 0.3, 0.90, 1.0, 0.75));
 
             // 3. Белый плазменный сердечник
             draw_line(a.x, a.y, b.x, b.y, 1.5, Color::new(0.95, 1.0, 1.0, 0.95));
 
-            // 4. Волновые электрические колебания вдоль цепи
+            // 4. Волновые электрические колебания вдоль цепи (натянутая струна вибрирует с меньшей амплитудой)
             let segments = (dist / 28.0).ceil() as usize;
             for s in 0..segments {
                 let t1 = (s as f32) / (segments as f32);
                 let t2 = ((s + 1) as f32) / (segments as f32);
                 let p1 = a + diff * t1;
                 let p2 = a + diff * t2;
-                let wave1 = (time * 16.0 + t1 * 18.0).sin() * 4.5;
-                let wave2 = (time * 16.0 + t2 * 18.0).sin() * 4.5;
+                let wave1 = (time * 16.0 + t1 * 18.0).sin() * wave_amp;
+                let wave2 = (time * 16.0 + t2 * 18.0).sin() * wave_amp;
                 let wp1 = p1 + normal * wave1;
                 let wp2 = p2 + normal * wave2;
                 draw_line(wp1.x, wp1.y, wp2.x, wp2.y, 1.5, Color::new(0.6, 1.0, 0.85, 0.8));

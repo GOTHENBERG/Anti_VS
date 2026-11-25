@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use macroquad::prelude::*;
 
 pub const BASE_FONT_SIZE: f32 = 32.0;
@@ -19,7 +20,7 @@ pub fn quantize_font_size(size: f32) -> (u16, f32) {
     }
 }
 
-fn sanitize_text(text: &str) -> String {
+fn sanitize_text(text: &str) -> Cow<'_, str> {
     // If text only contains standard chars, avoid unnecessary allocations
     if text.chars().all(|c| {
         c < '\u{2000}'
@@ -31,7 +32,7 @@ fn sanitize_text(text: &str) -> String {
             || c == '…'
             || c == '№'
     }) {
-        return text.to_string();
+        return Cow::Borrowed(text);
     }
 
     let mut out = String::with_capacity(text.len());
@@ -74,7 +75,7 @@ fn sanitize_text(text: &str) -> String {
             _ => out.push(c),
         }
     }
-    out
+    Cow::Owned(out)
 }
 
 pub struct GameFonts {
@@ -315,8 +316,12 @@ mod tests {
 
     #[test]
     fn test_sanitize_text_filters_emojis_and_keeps_cyrillic() {
+        let plain = "Привет, мир! 100% — №1 «Бой»…";
+        assert!(matches!(sanitize_text(plain), Cow::Borrowed(s) if s == plain));
+
         let input = "⚙ НАСТРОЙКИ ЗВУКА: 100% | ⚔️ БОЙ ➔ ПОБЕДА! • Привет мир";
         let cleaned = sanitize_text(input);
+        assert!(matches!(cleaned, Cow::Owned(_)));
 
         // Должен сохранить кириллицу, проценты, двоеточие, буллеты
         assert!(cleaned.contains("НАСТРОЙКИ ЗВУКА: 100%"));

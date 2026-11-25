@@ -7,10 +7,10 @@ pub struct PassiveDefinition {
 }
 
 pub const ALL_LEGENDARY_RELICS: [PassiveType; 21] = [
-    PassiveType::ImmortalAegis,
-    PassiveType::ArchmageShard,
-    PassiveType::DivineRapier,
-    PassiveType::OctarineCore,
+    PassiveType::RevivalPhylactery,
+    PassiveType::ElderMageShard,
+    PassiveType::DoomedBlade,
+    PassiveType::OccultPrism,
     PassiveType::SolarRelic,
     PassiveType::StaticCore,
     PassiveType::ColossalEye,
@@ -20,12 +20,12 @@ pub const ALL_LEGENDARY_RELICS: [PassiveType; 21] = [
     PassiveType::DivinityAura,
     PassiveType::UkuleleResonance,
     PassiveType::FateWeaver,
-    PassiveType::SiegeMortar,
+    PassiveType::CalamityMortar,
     PassiveType::SporeMushroom,
-    PassiveType::DuplicatorRelic,
-    PassiveType::CandelabraOfFury,
+    PassiveType::TwinPrism,
+    PassiveType::AbyssalBrazier,
     PassiveType::AbyssalCurseStone,
-    PassiveType::SilverTears,
+    PassiveType::MoonDew,
     PassiveType::GoldenSeal,
     PassiveType::TitanBloodArmor,
 ];
@@ -33,10 +33,10 @@ pub const ALL_LEGENDARY_RELICS: [PassiveType; 21] = [
 pub fn is_legendary_relic(kind: PassiveType) -> bool {
     matches!(
         kind,
-        PassiveType::ImmortalAegis
-            | PassiveType::ArchmageShard
-            | PassiveType::DivineRapier
-            | PassiveType::OctarineCore
+        PassiveType::RevivalPhylactery
+            | PassiveType::ElderMageShard
+            | PassiveType::DoomedBlade
+            | PassiveType::OccultPrism
             | PassiveType::SolarRelic
             | PassiveType::StaticCore
             | PassiveType::ColossalEye
@@ -46,12 +46,12 @@ pub fn is_legendary_relic(kind: PassiveType) -> bool {
             | PassiveType::DivinityAura
             | PassiveType::UkuleleResonance
             | PassiveType::FateWeaver
-            | PassiveType::SiegeMortar
+            | PassiveType::CalamityMortar
             | PassiveType::SporeMushroom
-            | PassiveType::DuplicatorRelic
-            | PassiveType::CandelabraOfFury
+            | PassiveType::TwinPrism
+            | PassiveType::AbyssalBrazier
             | PassiveType::AbyssalCurseStone
-            | PassiveType::SilverTears
+            | PassiveType::MoonDew
             | PassiveType::GoldenSeal
             | PassiveType::TitanBloodArmor
     )
@@ -62,12 +62,12 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
         PassiveType::SpeedGloves => PassiveDefinition {
             kind,
             name: "Перчатка Скорости",
-            description: "+15% к скорости атаки оружия. Нужна для Бури Клинков.",
+            description: "+15% к скорости атаки оружия. Нужна для Шквала Лезвий.",
         },
         PassiveType::GiantHeart => PassiveDefinition {
             kind,
             name: "Сердце Гиганта",
-            description: "+25% к макс. здоровью и регенерации. Нужна для Адского Пекла.",
+            description: "+25% к макс. здоровью и регенерации. Нужна для Пекла Преисподней.",
         },
         PassiveType::CooldownTome => PassiveDefinition {
             kind,
@@ -77,7 +77,7 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
         PassiveType::LightArmor => PassiveDefinition {
             kind,
             name: "Броня Света",
-            description: "+8 к плоской броне и +15% к физ. защите. Нужна для Праведного Щита.",
+            description: "+8 к плоской броне и +15% к физ. защите. Нужна для Бастиона Света.",
         },
         PassiveType::FrostRing => PassiveDefinition {
             kind,
@@ -89,9 +89,9 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Едкий Сосуд",
             description: "+15% к пробитию брони для всех атак. Нужен для Токсичного Мора.",
         },
-        PassiveType::BloodStone => PassiveDefinition {
+        PassiveType::CrimsonHeartstone => PassiveDefinition {
             kind,
-            name: "Кровавый Камень",
+            name: "Багровый Сердцевик",
             description: "+12% к общему урону и +2.5 HP/сек регенерации. Нужен для Вихревого Секача.",
         },
         PassiveType::EagleScope => PassiveDefinition {
@@ -114,10 +114,10 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Катушка Теслы",
             description: "+12% шанс цепной молнии на 3 цели. Нужна для Горизонта Событий.",
         },
-        PassiveType::CloverOfFate => PassiveDefinition {
+        PassiveType::FortuneCoin => PassiveDefinition {
             kind,
-            name: "Клевер Судьбы",
-            description: "+12% шанс критического удара (х2 урон). Нужен для Абсолютного Ноля.",
+            name: "Монета Удачи",
+            description: "+12% шанс критического удара (х2 урон). Нужна для Абсолютного Ноля.",
         },
         PassiveType::PrismaticFocus => PassiveDefinition {
             kind,
@@ -129,25 +129,25 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Черный Эгис",
             description: "-2.5 плоского урона от каждого удара. Нужен для Осады Судного Дня.",
         },
-        PassiveType::ImmortalAegis => PassiveDefinition {
+        PassiveType::RevivalPhylactery => PassiveDefinition {
             kind,
-            name: "Эгида Бессмертия",
+            name: "Филактерия Возрождения",
             description: "Воскрешение со 100% HP и мощной ударной волной при гибели. Эволюция Бастиона.",
         },
-        PassiveType::ArchmageShard => PassiveDefinition {
+        PassiveType::ElderMageShard => PassiveDefinition {
             kind,
-            name: "Осколок Архимага",
-            description: "+1 дополнительный рикошет снарядов, -15% к откатy и +20% к площади всех атак.",
+            name: "Осколок Первомага",
+            description: "+1 дополнительный рикошет снарядов, -15% к откату и +20% к площади всех атак.",
         },
-        PassiveType::DivineRapier => PassiveDefinition {
+        PassiveType::DoomedBlade => PassiveDefinition {
             kind,
-            name: "Священная Рапира",
+            name: "Клинок Обречённых",
             description: "+60% к общему наносимому урону, но +15% к получаемому боссом урону.",
         },
-        PassiveType::OctarineCore => PassiveDefinition {
+        PassiveType::OccultPrism => PassiveDefinition {
             kind,
             name: "Оккультная Призма",
-            description: "22% вампиризма от любого урона заклинаний. Эволюция Коллапса Сверхновой.",
+            description: "6% вампиризма от любого урона заклинаний. Эволюция Коллапса Сверхновой.",
         },
         PassiveType::SolarRelic => PassiveDefinition {
             kind,
@@ -194,9 +194,9 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Ткач Судьбы",
             description: "Колесо Фортуны: все шансы срабатывания эффектов бросаются дважды в пользу босса.",
         },
-        PassiveType::SiegeMortar => PassiveDefinition {
+        PassiveType::CalamityMortar => PassiveDefinition {
             kind,
-            name: "Осадный Бегемот",
+            name: "Мортира Бедствия",
             description: "Прямые попадания вызывают вторичную детонацию по площади радиусом 55px.",
         },
         PassiveType::SporeMushroom => PassiveDefinition {
@@ -204,14 +204,14 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Споровый Мицелий",
             description: "Пускает целебные корни при остановке. Восстанавливает HP даже в гуще врагов и под градом ударов!",
         },
-        PassiveType::DuplicatorRelic => PassiveDefinition {
+        PassiveType::TwinPrism => PassiveDefinition {
             kind,
-            name: "Зеркальный Дупликатор",
-            description: "+1/+2/+3 дополнительных снаряда/луча/книги ко ВСЕМ способностям босса. Нужен для Искривления Пространства.",
+            name: "Призма Удвоения",
+            description: "+1/+2/+3 дополнительных снаряда/луча/книги ко ВСЕМ способностям босса. Нужна для Искривления Пространства.",
         },
-        PassiveType::CandelabraOfFury => PassiveDefinition {
+        PassiveType::AbyssalBrazier => PassiveDefinition {
             kind,
-            name: "Канделябр Ярости",
+            name: "Жаровня Бездны",
             description: "+20%/40%/60% к радиусу и площади (AoE) всех заклинаний, луж, аур и взрывов босса.",
         },
         PassiveType::AbyssalCurseStone => PassiveDefinition {
@@ -219,9 +219,9 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Проклятый Камень Бездны",
             description: "+35% к получаемому опыту и +25% к наносимому урону босса за счет усиления натиска вражеских полчищ.",
         },
-        PassiveType::SilverTears => PassiveDefinition {
+        PassiveType::MoonDew => PassiveDefinition {
             kind,
-            name: "Серебряная Слеза",
+            name: "Лунная Роса",
             description: "+3.0 HP/сек регенерация и +15% сопротивления холоду, яду и магии. Нужна для Бесконечной Дилатации.",
         },
         PassiveType::GoldenSeal => PassiveDefinition {
@@ -234,10 +234,10 @@ pub fn get_passive_def(kind: PassiveType) -> PassiveDefinition {
             name: "Доспех Кровавого Титана",
             description: "Преобразует потерянное здоровье в несокрушимую плоскую броню (+до 25) и яростный базовый урон (+20%).",
         },
-        PassiveType::BerserkerBlood => PassiveDefinition {
+        PassiveType::FrenzyIchor => PassiveDefinition {
             kind,
-            name: "Кровь Берсерка",
-            description: "Пассивка берсерка: повышает регенерацию (до +38 HP/с) и темп атаки оружия (до +60%) тем сильнее, чем ниже здоровье босса.",
+            name: "Ихор Неистовства",
+            description: "Ихор неистовства: повышает регенерацию (до +38 HP/с) и темп атаки оружия (до +60%) тем сильнее, чем ниже здоровье босса.",
         },
         PassiveType::MartyrVanguard => PassiveDefinition {
             kind,

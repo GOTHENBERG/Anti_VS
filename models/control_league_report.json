@@ -1,0 +1,203 @@
+{
+  "seeds": [
+    101,
+    202,
+    303
+  ],
+  "generations_per_seed": 5,
+  "population_size": 5,
+  "match_cap_arg": 300.0,
+  "baseline_disk": {
+    "league_version": 1,
+    "sensor_schema_dim": 437,
+    "model_format_version": 11,
+    "boss": {
+      "fitness_mean": -614.35925,
+      "win_rate": 0.5,
+      "avg_survival_frac": 0.77835083,
+      "avg_survival_secs": 308.3893,
+      "avg_level": 17.142857,
+      "avg_damage_taken": 4050.22,
+      "avg_altars_destroyed": 0.0,
+      "avg_obelisks_deactivated": 0.0,
+      "matches": 14
+    },
+    "director": {
+      "fitness_mean": 565.1656,
+      "win_rate": 0.42857143,
+      "avg_kill_time_secs": 360.26785,
+      "avg_damage_dealt": 7800.1797,
+      "avg_altars_built": 15.142858,
+      "avg_altar_uptime_secs": 3288.7366,
+      "matches": 14
+    },
+    "digest": 3839322526640206024
+  },
+  "seed_runs": [
+    {
+      "seed": 101,
+      "generation": 2,
+      "boss_train_fitness": -107.29796,
+      "director_train_fitness": 582.22754,
+      "total_matches": 200,
+      "control_report": {
+        "league_version": 1,
+        "sensor_schema_dim": 437,
+        "model_format_version": 11,
+        "boss": {
+          "fitness_mean": -719.16266,
+          "win_rate": 0.35714287,
+          "avg_survival_frac": 0.6338235,
+          "avg_survival_secs": 286.54288,
+          "avg_level": 15.214286,
+          "avg_damage_taken": 6311.3164,
+          "avg_altars_destroyed": 5.642857,
+          "avg_obelisks_deactivated": 0.0,
+          "matches": 14
+        },
+        "director": {
+          "fitness_mean": 543.62805,
+          "win_rate": 0.2857143,
+          "avg_kill_time_secs": 395.81427,
+          "avg_damage_dealt": 8046.2446,
+          "avg_altars_built": 20.714285,
+          "avg_altar_uptime_secs": 6535.7153,
+          "matches": 14
+        },
+        "digest": 5766379704554181307
+      }
+    },
+    {
+      "seed": 202,
+      "generation": 4,
+      "boss_train_fitness": -239.18065,
+      "director_train_fitness": 572.7282,
+      "total_matches": 200,
+      "control_report": {
+        "league_version": 1,
+        "sensor_schema_dim": 437,
+        "model_format_version": 11,
+        "boss": {
+          "fitness_mean": -493.4262,
+          "win_rate": 0.64285713,
+          "avg_survival_frac": 0.80011415,
+          "avg_survival_secs": 338.01074,
+          "avg_level": 16.928572,
+          "avg_damage_taken": 3738.9045,
+          "avg_altars_destroyed": 0.0,
+          "avg_obelisks_deactivated": 0.071428575,
+          "matches": 14
+        },
+        "director": {
+          "fitness_mean": 545.8043,
+          "win_rate": 0.2857143,
+          "avg_kill_time_secs": 329.21072,
+          "avg_damage_dealt": 7472.5854,
+          "avg_altars_built": 24.214285,
+          "avg_altar_uptime_secs": 3653.5916,
+          "matches": 14
+        },
+        "digest": 11051996961858322446
+      }
+    },
+    {
+      "seed": 303,
+      "generation": 2,
+      "boss_train_fitness": -110.715096,
+      "director_train_fitness": 751.33856,
+      "total_matches": 200,
+      "control_report": {
+        "league_version": 1,
+        "sensor_schema_dim": 437,
+        "model_format_version": 11,
+        "boss": {
+          "fitness_mean": -762.71765,
+          "win_rate": 0.2857143,
+          "avg_survival_frac": 0.6241638,
+          "avg_survival_secs": 272.93573,
+          "avg_level": 15.214286,
+          "avg_damage_taken": 8569.662,
+          "avg_altars_destroyed": 3.357143,
+          "avg_obelisks_deactivated": 0.0,
+          "matches": 14
+        },
+        "director": {
+          "fitness_mean": 753.23346,
+          "win_rate": 0.5714286,
+          "avg_kill_time_secs": 259.18573,
+          "avg_damage_dealt": 4694.2407,
+          "avg_altars_built": 20.428572,
+          "avg_altar_uptime_secs": 2490.7031,
+          "matches": 14
+        },
+        "digest": 15587336037216806477
+      }
+    }
+  ],
+  "boss_fitness_stats": {
+    "mean": -658.4355,
+    "std_dev": 118.0263,
+    "min": -762.71765,
+    "max": -493.4262
+  },
+  "boss_win_rate_stats": {
+    "mean": 42.857143,
+    "std_dev": 15.430334,
+    "min": 28.57143,
+    "max": 64.28571
+  },
+  "boss_survival_secs_stats": {
+    "mean": 299.16312,
+    "std_dev": 28.02549,
+    "min": 272.93573,
+    "max": 338.01074
+  },
+  "director_fitness_stats": {
+    "mean": 614.2219,
+    "std_dev": 98.299995,
+    "min": 543.62805,
+    "max": 753.23346
+  },
+  "director_win_rate_stats": {
+    "mean": 38.09524,
+    "std_dev": 13.468702,
+    "min": 28.57143,
+    "max": 57.14286
+  },
+  "director_kill_time_stats": {
+    "mean": 328.07025,
+    "std_dev": 55.7842,
+    "min": 259.18573,
+    "max": 395.81427
+  },
+  "best_boss_seed": 202,
+  "best_director_seed": 303,
+  "combined_control_report": {
+    "league_version": 1,
+    "sensor_schema_dim": 437,
+    "model_format_version": 11,
+    "boss": {
+      "fitness_mean": -493.4262,
+      "win_rate": 0.64285713,
+      "avg_survival_frac": 0.80011415,
+      "avg_survival_secs": 338.01074,
+      "avg_level": 16.928572,
+      "avg_damage_taken": 3738.9045,
+      "avg_altars_destroyed": 0.0,
+      "avg_obelisks_deactivated": 0.071428575,
+      "matches": 14
+    },
+    "director": {
+      "fitness_mean": 753.23346,
+      "win_rate": 0.5714286,
+      "avg_kill_time_secs": 259.18573,
+      "avg_damage_dealt": 4694.2407,
+      "avg_altars_built": 20.428572,
+      "avg_altar_uptime_secs": 2490.7031,
+      "matches": 14
+    },
+    "digest": 6569078115457819177
+  },
+  "promoted_to_live_models": true,
+  "timestamp": "2026-11-25T08:03:03Z"
+}

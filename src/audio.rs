@@ -9,7 +9,7 @@ pub enum AudioEvent {
     BladeSlash,
     FireBlast,
     LaserBeam,
-    MagicWand,
+    ArcaneScepter,
     LightningStrike,
     IceFreeze,
     RocketSwarm,
@@ -44,7 +44,7 @@ pub struct AudioManager {
     pub blade_slash: Option<Sound>,
     pub fire_blast: Option<Sound>,
     pub laser_beam: Option<Sound>,
-    pub magic_wand: Option<Sound>,
+    pub arcane_scepter: Option<Sound>,
     pub lightning_strike: Option<Sound>,
     pub ice_freeze: Option<Sound>,
     pub rocket_swarm: Option<Sound>,
@@ -101,7 +101,7 @@ impl AudioManager {
         let blade_slash = load_sound("assets/audio/blade_slash.ogg").await.ok();
         let fire_blast = load_sound("assets/audio/fire_blast.ogg").await.ok();
         let laser_beam = load_sound("assets/audio/laser_beam.ogg").await.ok();
-        let magic_wand = load_sound("assets/audio/magic_wand.ogg").await.ok();
+        let arcane_scepter = load_sound("assets/audio/magic_wand.ogg").await.ok();
         let lightning_strike = load_sound("assets/audio/lightning_strike.ogg").await.ok();
         let ice_freeze = load_sound("assets/audio/ice_freeze.ogg").await.ok();
         let rocket_swarm = load_sound("assets/audio/rocket_swarm.ogg").await.ok();
@@ -128,7 +128,7 @@ impl AudioManager {
             blade_slash,
             fire_blast,
             laser_beam,
-            magic_wand,
+            arcane_scepter,
             lightning_strike,
             ice_freeze,
             rocket_swarm,
@@ -190,7 +190,7 @@ impl AudioManager {
     pub fn shuffle_start(&mut self) {
         if self.playlist.is_empty() { return; }
         self.stop_music();
-        self.current_track_idx = crate::core::rand::gen_range(0, self.playlist.len());
+        self.current_track_idx = crate::core::visual_rand::gen_range(0, self.playlist.len());
         self.track_elapsed = 0.0;
         if !self.is_muted {
             self.start_music();
@@ -299,7 +299,7 @@ impl AudioManager {
             AudioEvent::BladeSlash => self.play_sfx(self.blade_slash.as_ref(), 0.55),
             AudioEvent::FireBlast => self.play_sfx(self.fire_blast.as_ref(), 0.65),
             AudioEvent::LaserBeam => self.play_sfx(self.laser_beam.as_ref(), 0.60),
-            AudioEvent::MagicWand => self.play_sfx(self.magic_wand.as_ref(), 0.55),
+            AudioEvent::ArcaneScepter => self.play_sfx(self.arcane_scepter.as_ref(), 0.55),
             AudioEvent::LightningStrike => self.play_sfx(self.lightning_strike.as_ref(), 0.65),
             AudioEvent::IceFreeze => self.play_sfx(self.ice_freeze.as_ref(), 0.65),
             AudioEvent::RocketSwarm => self.play_sfx(self.rocket_swarm.as_ref(), 0.60),

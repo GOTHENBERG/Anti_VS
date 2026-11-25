@@ -9,17 +9,152 @@ use crate::ecs::world::{
 };
 use crate::protocol::commands::NetVec2;
 
+#[inline]
+fn min_dist_sq_to_focus(pos: Vec2, focus: &[Vec2]) -> f32 {
+    let mut best = f32::MAX;
+    for &pt in focus {
+        let d = pt.distance_squared(pos);
+        if d < best {
+            best = d;
+        }
+    }
+    best
+}
+
+/// Выбирает `count` ближайших к набору точек `focus` индексов без полной O(N log N) сортировки:
+/// ровно 1 линейный проход расчёта дистанций в кэш-локальный буфер + `select_nth_unstable_by` за O(N).
 fn nearest_indices<T>(items: &[T], count: usize, focus: &[Vec2], position: impl Fn(&T) -> Vec2) -> Vec<usize> {
-    let mut indices: Vec<usize> = (0..items.len()).collect();
-    indices.sort_unstable_by(|&a, &b| {
-        let distance = |item: &T| {
-            let pos = position(item);
-            focus.iter().map(|point| point.distance_squared(pos)).fold(f32::MAX, f32::min)
-        };
-        distance(&items[a]).total_cmp(&distance(&items[b]))
-    });
-    indices.truncate(count);
-    indices
+    if count == 0 || items.is_empty() {
+        return Vec::new();
+    }
+    if items.len() <= count {
+        return (0..items.len()).collect();
+    }
+
+    let mut scored: Vec<(f32, usize)> = items
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| (min_dist_sq_to_focus(position(item), focus), idx))
+        .collect();
+
+    scored.select_nth_unstable_by(count - 1, |a, b| a.0.total_cmp(&b.0));
+    scored[..count].iter().map(|&(_, idx)| idx).collect()
+}
+
+/// Адаптивный выбор Top-K ближайших мобов:
+/// - Если боссы расположены кучно (разброс <= 2400 px) и мобов много (> 1500),
+///   использует Multi-Source Ring BFS по готовой `SpatialGrid` и останавливается,
+///   как только доказано, что вне кольца не осталось более близких целей (0 обходов дальних 18к мобов).
+/// - Если боссы разбросаны по всей карте или мобов мало — мгновенно переходит на O(N) `select_nth_unstable_by`.
+fn nearest_mob_indices(world: &World, count: usize, focus: &[Vec2]) -> Vec<usize> {
+    let n = world.mobs.len();
+    if count == 0 || n == 0 {
+        return Vec::new();
+    }
+    if n <= count {
+        return (0..n).collect();
+    }
+
+    if n > 1500 && !focus.is_empty() && world.spatial_grid.len() == n {
+        let mut min_x = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut min_y = f32::MAX;
+        let mut max_y = f32::MIN;
+        for &pt in focus {
+            min_x = min_x.min(pt.x);
+            max_x = max_x.max(pt.x);
+            min_y = min_y.min(pt.y);
+            max_y = max_y.max(pt.y);
+        }
+        let focus_span = (max_x - min_x).max(max_y - min_y);
+
+        if focus_span <= 2400.0 {
+            let grid = &world.spatial_grid;
+            let cols = grid.cols();
+            let rows = grid.rows();
+            let cell_size = grid.cell_size();
+
+            let mut focus_cells = Vec::with_capacity(focus.len());
+            let mut all_valid = true;
+            for &pt in focus {
+                if let Some(c) = grid.get_cell_coords(pt) {
+                    focus_cells.push(c);
+                } else {
+                    all_valid = false;
+                    break;
+                }
+            }
+
+            if all_valid && cols > 0 && rows > 0 {
+                let mut visited = grid.new_visited_mask();
+                let mut candidates: Vec<(f32, usize)> = Vec::with_capacity(count * 2);
+                let max_ring = 22usize;
+
+                for ring in 0..=max_ring {
+                    if ring == 0 {
+                        for &(fcx, fcy) in &focus_cells {
+                            grid.visit_cell_with_mask(fcx, fcy, &mut visited, &mut |idx| {
+                                let d_sq = min_dist_sq_to_focus(world.mobs[idx].pos, focus);
+                                candidates.push((d_sq, idx));
+                            });
+                        }
+                    } else {
+                        for &(fcx, fcy) in &focus_cells {
+                            let fx0 = fcx.saturating_sub(ring);
+                            let fx1 = (fcx + ring).min(cols - 1);
+                            let fy0 = fcy.saturating_sub(ring);
+                            let fy1 = (fcy + ring).min(rows - 1);
+
+                            if fcx >= ring {
+                                let nx = fcx - ring;
+                                for ny in fy0..=fy1 {
+                                    grid.visit_cell_with_mask(nx, ny, &mut visited, &mut |idx| {
+                                        candidates.push((min_dist_sq_to_focus(world.mobs[idx].pos, focus), idx));
+                                    });
+                                }
+                            }
+                            if fcx + ring < cols {
+                                let nx = fcx + ring;
+                                for ny in fy0..=fy1 {
+                                    grid.visit_cell_with_mask(nx, ny, &mut visited, &mut |idx| {
+                                        candidates.push((min_dist_sq_to_focus(world.mobs[idx].pos, focus), idx));
+                                    });
+                                }
+                            }
+                            if fcy >= ring {
+                                let ny = fcy - ring;
+                                for nx in fx0..=fx1 {
+                                    grid.visit_cell_with_mask(nx, ny, &mut visited, &mut |idx| {
+                                        candidates.push((min_dist_sq_to_focus(world.mobs[idx].pos, focus), idx));
+                                    });
+                                }
+                            }
+                            if fcy + ring < rows {
+                                let ny = fcy + ring;
+                                for nx in fx0..=fx1 {
+                                    grid.visit_cell_with_mask(nx, ny, &mut visited, &mut |idx| {
+                                        candidates.push((min_dist_sq_to_focus(world.mobs[idx].pos, focus), idx));
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    if ring >= 2 && candidates.len() >= count {
+                        let safe_radius = ((ring - 1) as f32) * cell_size;
+                        let safe_sq = safe_radius * safe_radius;
+                        let confirmed = candidates.iter().filter(|&&(d_sq, _)| d_sq <= safe_sq).count();
+                        if confirmed >= count {
+                            candidates.select_nth_unstable_by(count - 1, |a, b| a.0.total_cmp(&b.0));
+                            return candidates[..count].iter().map(|&(_, idx)| idx).collect();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    nearest_indices(&world.mobs, count, focus, |mob| mob.pos)
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -40,8 +175,10 @@ pub struct BossSnapshot {
     pub mushroom_still_time: f32,
     pub revive_progress: f32,
     pub dash_cooldown: f32,
-    pub blade_storm_angle: f32,
-    pub divine_shield_angle: f32,
+    #[serde(alias = "blade_storm_angle")]
+    pub blade_squall_angle: f32,
+    #[serde(alias = "divine_shield_angle")]
+    pub light_bastion_angle: f32,
     #[serde(default)]
     pub level_up_options: Option<Vec<crate::ecs::components::inventory::PerkChoice>>,
 }
@@ -171,8 +308,8 @@ impl WorldSnapshot {
             mushroom_still_time: world.boss_mushroom_still_time,
             revive_progress: world.boss_revive_progress,
             dash_cooldown: world.boss_dash_cooldown,
-            blade_storm_angle: world.blade_storm_angle,
-            divine_shield_angle: world.divine_shield_angle,
+            blade_squall_angle: world.blade_squall_angle,
+            light_bastion_angle: world.light_bastion_angle,
             level_up_options: world.boss_level_up_options.clone(),
         });
         bosses.extend(world.coop_bosses.iter().map(|player| BossSnapshot {
@@ -192,8 +329,8 @@ impl WorldSnapshot {
             mushroom_still_time: player.boss_mushroom_still_time,
             revive_progress: player.revive_progress,
             dash_cooldown: player.boss_dash_cooldown,
-            blade_storm_angle: player.blade_storm_angle,
-            divine_shield_angle: player.divine_shield_angle,
+            blade_squall_angle: player.blade_squall_angle,
+            light_bastion_angle: player.light_bastion_angle,
             level_up_options: player.level_up_options.clone(),
         }));
 
@@ -202,7 +339,7 @@ impl WorldSnapshot {
             .map(|boss| boss.pos.into())
             .collect();
         if focus.is_empty() { focus.push(world.boss_pos); }
-        let mob_indices = nearest_indices(&world.mobs, 600, &focus, |mob| mob.pos);
+        let mob_indices = nearest_mob_indices(world, 600, &focus);
         let projectile_indices = nearest_indices(&world.projectiles, 320, &focus, |projectile| projectile.pos);
         let gem_indices = nearest_indices(&world.gems, 350, &focus, |gem| gem.pos);
         let acid_indices = nearest_indices(&world.acid_pools, 128, &focus, |pool| pool.pos);
@@ -283,8 +420,8 @@ pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_i
         world.boss_mushroom_still_time = local.mushroom_still_time;
         world.boss_revive_progress = local.revive_progress;
         world.boss_dash_cooldown = local.dash_cooldown;
-        world.blade_storm_angle = local.blade_storm_angle;
-        world.divine_shield_angle = local.divine_shield_angle;
+        world.blade_squall_angle = local.blade_squall_angle;
+        world.light_bastion_angle = local.light_bastion_angle;
         world.boss_level_up_options = local.level_up_options.clone();
     }
 
@@ -304,8 +441,8 @@ pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_i
             player.boss_mushroom_still_time = boss.mushroom_still_time;
             player.revive_progress = boss.revive_progress;
             player.boss_dash_cooldown = boss.dash_cooldown;
-            player.blade_storm_angle = boss.blade_storm_angle;
-            player.divine_shield_angle = boss.divine_shield_angle;
+            player.blade_squall_angle = boss.blade_squall_angle;
+            player.light_bastion_angle = boss.light_bastion_angle;
             player.level_up_options = boss.level_up_options.clone();
             player
         }).collect();
@@ -322,12 +459,13 @@ pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_i
         attack_count: 0,
         has_duplicated: false,
         owner_hero_id: None,
+        last_hit_boss_id: None,
     }).collect();
     world.projectiles = snapshot.projectiles.into_iter().map(|projectile| ProjectileEntity {
-        id: projectile.id, pos: projectile.pos.into(), vel: projectile.vel.into(),
+        id: projectile.id, pos: projectile.pos.into(), prev_pos: projectile.pos.into(), vel: projectile.vel.into(),
         damage: projectile.damage, damage_type: projectile.damage_type, armor_penetration: 0.0,
         lifetime: projectile.lifetime, radius: projectile.radius, pierce: 0,
-        faction: projectile.faction, source_weapon: projectile.source_weapon, homing_strength: 0.0,
+        faction: projectile.faction, owner_boss_id: None, source_weapon: projectile.source_weapon, homing_strength: 0.0,
     }).collect();
     world.gems = snapshot.gems.into_iter().map(|gem| SoulGemEntity {
         id: gem.id, pos: gem.pos.into(), xp_value: gem.xp_value, is_magnet: gem.is_magnet,
@@ -342,7 +480,7 @@ pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_i
     }).collect();
     world.acid_pools = snapshot.acid_pools.into_iter().map(|pool| AcidPoolEntity {
         pos: pool.pos.into(), radius: pool.radius, lifetime: pool.lifetime, dps: pool.dps,
-        corrosive: pool.corrosive, is_director_source: pool.is_director_source,
+        corrosive: pool.corrosive, is_director_source: pool.is_director_source, owner_boss_id: None,
     }).collect();
     world.black_holes = snapshot.black_holes.into_iter().map(|bh| crate::ecs::world::BlackHoleEntity {
         id: bh.id,
@@ -356,6 +494,7 @@ pub fn apply_to_world(snapshot: WorldSnapshot, world: &mut World, local_player_i
         is_active: bh.is_active,
         spin_angle: bh.spin_angle,
     }).collect();
+    world.rebuild_spatial_grid();
 }
 
 #[cfg(test)]
@@ -382,5 +521,92 @@ mod tests {
         apply_to_world(decoded, &mut client_world, 1);
         assert!(client_world.is_network_paused);
         assert_eq!(client_world.pause_initiator.as_deref(), Some("Босс (Игрок)"));
+    }
+
+    #[test]
+    fn test_apply_to_world_rebuilds_spatial_grid() {
+        let mut host_world = World::new();
+        let mob_pos = Vec2::new(1200.0, 900.0);
+        host_world.mobs.push(MobEntity::new_test(501, mob_pos, 1));
+        host_world.rebuild_spatial_grid();
+
+        let snapshot = WorldSnapshot::from_world(&host_world, 7);
+        let mut client_world = World::new();
+        apply_to_world(snapshot, &mut client_world, 1);
+
+        assert_eq!(client_world.mobs.len(), 1);
+        assert_eq!(client_world.spatial_grid.len(), 1);
+        let nearby = client_world.spatial_grid.query_nearby(mob_pos, 100.0);
+        assert_eq!(nearby, vec![0]);
+    }
+
+    #[test]
+    fn test_snapshot_nearest_topk_matches_exact_ground_truth() {
+        let mut world = World::new();
+        let boss1 = Vec2::new(5000.0, 5000.0);
+        let boss2_near = Vec2::new(5400.0, 5100.0); // Clustered (span = 400 <= 2400)
+        world.boss_pos = boss1;
+
+        // Создаем 2500 мобов по всей карте
+        for i in 0..2500usize {
+            let angle = (i as f32) * 0.37;
+            let radius = 30.0 + ((i % 900) as f32) * 5.0;
+            let pos = boss1 + Vec2::new(angle.cos() * radius, angle.sin() * radius);
+            let clamped = Vec2::new(
+                pos.x.clamp(50.0, crate::core::MAP_WIDTH - 50.0),
+                pos.y.clamp(50.0, crate::core::MAP_HEIGHT - 50.0),
+            );
+            let id = world.alloc_id();
+            world.mobs.push(MobEntity::new_test(id, clamped, 1));
+        }
+        world.rebuild_spatial_grid();
+
+        let focus_clustered = [boss1, boss2_near];
+        let fast_indices = nearest_mob_indices(&world, 600, &focus_clustered);
+        assert_eq!(fast_indices.len(), 600);
+
+        // Проверяем точность против полной эталонной сортировки
+        let mut exact: Vec<(f32, usize)> = world
+            .mobs
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (min_dist_sq_to_focus(m.pos, &focus_clustered), i))
+            .collect();
+        exact.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+
+        let cutoff_dist_sq = exact[599].0;
+        let max_fast_dist_sq = fast_indices
+            .iter()
+            .map(|&i| min_dist_sq_to_focus(world.mobs[i].pos, &focus_clustered))
+            .fold(0.0f32, f32::max);
+        assert!(
+            (max_fast_dist_sq - cutoff_dist_sq).abs() < 1e-3,
+            "Ring-BFS Top-600 cutoff mismatch: fast={}, exact={}",
+            max_fast_dist_sq,
+            cutoff_dist_sq
+        );
+
+        // Тест разнесённых боссов (fallback на buffer + select_nth)
+        let boss2_far = Vec2::new(15000.0, 12000.0);
+        let focus_spread = [boss1, boss2_far];
+        let spread_indices = nearest_mob_indices(&world, 600, &focus_spread);
+        assert_eq!(spread_indices.len(), 600);
+
+        let mut exact_spread: Vec<f32> = world
+            .mobs
+            .iter()
+            .map(|m| min_dist_sq_to_focus(m.pos, &focus_spread))
+            .collect();
+        exact_spread.sort_unstable_by(|a, b| a.total_cmp(b));
+
+        let spread_cutoff = exact_spread[599];
+        let max_spread_dist = spread_indices
+            .iter()
+            .map(|&i| min_dist_sq_to_focus(world.mobs[i].pos, &focus_spread))
+            .fold(0.0f32, f32::max);
+        assert!(
+            (max_spread_dist - spread_cutoff).abs() < 1e-3,
+            "Spread Top-600 cutoff mismatch"
+        );
     }
 }

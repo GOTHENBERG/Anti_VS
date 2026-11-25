@@ -1,0 +1,26 @@
+{
+  "league_version": 1,
+  "sensor_schema_dim": 437,
+  "model_format_version": 11,
+  "boss": {
+    "fitness_mean": -719.16266,
+    "win_rate": 0.35714287,
+    "avg_survival_frac": 0.6338235,
+    "avg_survival_secs": 286.54288,
+    "avg_level": 15.214286,
+    "avg_damage_taken": 6311.3164,
+    "avg_altars_destroyed": 5.642857,
+    "avg_obelisks_deactivated": 0.0,
+    "matches": 14
+  },
+  "director": {
+    "fitness_mean": 543.62805,
+    "win_rate": 0.2857143,
+    "avg_kill_time_secs": 395.81427,
+    "avg_damage_dealt": 8046.2446,
+    "avg_altars_built": 20.714285,
+    "avg_altar_uptime_secs": 6535.7153,
+    "matches": 14
+  },
+  "digest": 5766379704554181307
+}

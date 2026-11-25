@@ -154,8 +154,13 @@ impl FlowField {
     /// при входе в радиус ближнего боя (< 140 px).
     #[inline(always)]
     pub fn sample_mob_direction(&self, mob_pos: Vec2, target_pos: Vec2) -> Vec2 {
-        let flow_dir = self.sample_vector(mob_pos.x, mob_pos.y);
+        let max_coord = (self.n - 1) as f32 * self.cell_size;
         let direct_diff = target_pos - mob_pos;
+        if mob_pos.x < 0.0 || mob_pos.x >= max_coord || mob_pos.y < 0.0 || mob_pos.y >= max_coord {
+            return direct_diff.normalize_or_zero();
+        }
+
+        let flow_dir = self.sample_vector(mob_pos.x, mob_pos.y);
         let direct_dist = direct_diff.length();
 
         if direct_dist < 100.0 || flow_dir.length_squared() < 0.01 {

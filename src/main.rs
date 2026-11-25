@@ -4,6 +4,7 @@ use macroquad::prelude::*;
 
 mod ai;
 mod audio;
+mod bench;
 mod content;
 mod core;
 mod ecs;
@@ -21,7 +22,7 @@ use crate::content::structures::{
     WALL_COST,
     STRUCTURE_WALL,
 };
-use crate::core::time::GameClock;
+use crate::core::time::{DIRECTOR_PERIOD_TICKS, FIXED_SIM_DT, GameClock};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum PlacementMode {
@@ -33,7 +34,6 @@ use crate::core::{MAP_HEIGHT, MAP_WIDTH};
 use crate::ecs::systems::{
     boss_ai::update_boss_ai,
     director::update_director,
-    movement::update_movement,
 };
 use crate::ecs::world::World;
 use crate::network::driver::NetworkDriver;
@@ -58,10 +58,32 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    // Бенчмарк Шага 4: Dense Linked vs CSR на полном 20 Гц тике + профиль сетевого трафика (без GUI)
+    if args.iter().any(|a| a == "--bench-step4") {
+        bench::run_step4_benchmarks();
+        return;
+    }
+
+    // Оценка политик на фиксированной Контрольной Лиге
+    if args.iter().any(|a| a == "--control-league") {
+        crate::ai::trainer::run_control_league_cli();
+        return;
+    }
+
+    // Экспорт реального лога пространственных кадров (spatial frames) из headless-симуляции
+    // Supports: --export-frames [duration_per_match] [out_path]
+    if let Some(pos) = args.iter().position(|a| a == "--export-frames" || a == "--dump-frames") {
+        let duration = args.get(pos + 1).and_then(|s| s.parse::<f32>().ok()).unwrap_or(90.0);
+        let out_path = args.get(pos + 2).cloned().unwrap_or_else(|| "data/headless_frames.json".to_string());
+        export_frames_cli(duration, &out_path);
+        return;
+    }
+
     // Режим автономного со-эволюционного обучения ботов (Self-Play Training)
     // Supports --train [generations] [population] [duration] [--bosses N] [--think-ms 50|100|200] [--clean / --reset]
-    //          [--island NAME] [--exchange PATH] [--migrate-every N].
-    let args: Vec<String> = std::env::args().collect();
+    //          [--seed U64] [--seeds s1,s2,...] [--force-promote] [--island NAME] [--exchange PATH] [--migrate-every N].
     if let Some(pos) = args.iter().position(|a| a == "--train") {
         let generations = args.get(pos + 1).and_then(|s| s.parse().ok()).unwrap_or(8);
         let population = args.get(pos + 2).and_then(|s| s.parse().ok()).unwrap_or(8);
@@ -71,6 +93,22 @@ async fn main() {
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(1);
         let reset = args.iter().any(|a| a == "--clean" || a == "--reset");
+        let force_promote = args.iter().any(|a| a == "--force-promote");
+        let single_seed = args
+            .iter()
+            .position(|a| a == "--seed")
+            .and_then(|idx| args.get(idx + 1))
+            .and_then(|v| v.parse::<u64>().ok());
+        let multi_seeds: Option<Vec<u64>> = args
+            .iter()
+            .position(|a| a == "--seeds")
+            .and_then(|idx| args.get(idx + 1))
+            .map(|raw| {
+                raw.split(',')
+                    .filter_map(|s| s.trim().parse::<u64>().ok())
+                    .collect::<Vec<u64>>()
+            })
+            .filter(|v| !v.is_empty());
         let training_think_interval = args
             .iter()
             .position(|a| a == "--think-ms")
@@ -123,15 +161,30 @@ async fn main() {
             args.get(pos + 3).and_then(|s| s.parse::<f32>().ok())
         };
 
-        crate::ai::trainer::run_co_evolutionary_training(
-            generations,
-            population,
-            reset,
-            round_duration,
-            training_think_interval,
-            boss_count,
-            island_config,
-        );
+        if let Some(seeds) = multi_seeds {
+            crate::ai::trainer::run_multi_seed_training_and_league(
+                &seeds,
+                generations,
+                population,
+                reset,
+                round_duration,
+                training_think_interval,
+                boss_count,
+                &island_config,
+                force_promote,
+            );
+        } else {
+            crate::ai::trainer::run_co_evolutionary_training(
+                generations,
+                population,
+                reset,
+                round_duration,
+                training_think_interval,
+                boss_count,
+                island_config,
+                single_seed,
+            );
+        }
         return;
     }
 
@@ -190,6 +243,10 @@ async fn main() {
     };
     let fonts = GameFonts::load();
     let textures = GameTextures::load().await;
+    if args.iter().any(|a| a == "--profile-live") {
+        bench::run_live_frame_profile(&fonts, &textures).await;
+        return;
+    }
     let mut audio = AudioManager::load().await;
     let auto_screenshot = std::env::args().any(|a| a == "--screenshot");
     let auto_codex = std::env::args().any(|a| a == "--codex");
@@ -197,7 +254,10 @@ async fn main() {
     let auto_recipe = std::env::args().any(|a| a == "--recipe" || a == "--dossier-item");
     let auto_settings = std::env::args().any(|a| a == "--settings" || a == "--pause");
     let mut is_paused = auto_settings;
-    let mut director_ai_timer = 0.0f32;
+    const MAX_SIM_TICKS_PER_FRAME: usize = 4;
+    let mut director_ai_ticks: u32 = 0;
+    let mut sim_accumulator = 0.0f32;
+    let mut latched_boss_dash = false;
     let mut boss_death_sound_played = false;
 
     // Скрываем стандартный системный курсор мыши (заменяем демонической дланью Повелителя)
@@ -222,7 +282,7 @@ async fn main() {
     let mut active_dossier_tier: Option<u8> = if auto_dossier { Some(1) } else { None };
     let mut opened_dossier_from_codex = false;
     let mut active_item_inspection: Option<crate::render::item_dossier::ItemInspectionTarget> = if auto_recipe {
-        Some(crate::render::item_dossier::ItemInspectionTarget::Weapon(crate::ecs::components::inventory::WeaponType::Hellfire, 8, 0))
+        Some(crate::render::item_dossier::ItemInspectionTarget::Weapon(crate::ecs::components::inventory::WeaponType::NetherBlaze, 8, 0))
     } else {
         None
     };
@@ -238,7 +298,7 @@ async fn main() {
     }
 
     loop {
-        let dt = get_frame_time().min(0.05);
+        let frame_dt = get_frame_time().min(0.25);
         frame_count += 1;
         let current_mpos = Vec2::from(mouse_position());
         let mouse_delta = current_mpos - last_mouse_pos;
@@ -306,6 +366,9 @@ async fn main() {
                         world.match_duration_secs = duration_secs;
                         apply_player_profile(&mut world, &menu.settings, game_role);
                         clock = GameClock::with_duration(duration_secs);
+                        director_ai_ticks = 0;
+                        sim_accumulator = 0.0;
+                        latched_boss_dash = false;
                         cam_pos = world.boss_pos;
                         follow_boss = true;
                         spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
@@ -332,7 +395,7 @@ async fn main() {
 
         if auto_screenshot && frame_count == 10 {
             world.boss_inventory.weapons.push(crate::ecs::components::inventory::WeaponSlot {
-                kind: crate::ecs::components::inventory::WeaponType::Hellfire,
+                kind: crate::ecs::components::inventory::WeaponType::NetherBlaze,
                 level: 8,
                 cooldown_timer: 0.0,
                 base_cooldown: 0.5,
@@ -370,7 +433,7 @@ async fn main() {
                 level: 2,
             });
             world.boss_inventory.passives.push(crate::ecs::components::inventory::PassiveSlot {
-                kind: crate::ecs::components::inventory::PassiveType::BloodStone,
+                kind: crate::ecs::components::inventory::PassiveType::CrimsonHeartstone,
                 level: 1,
             });
             world.boss_inventory.passives.push(crate::ecs::components::inventory::PassiveSlot {
@@ -509,7 +572,7 @@ async fn main() {
             &mut cam_zoom,
             &mut follow_boss,
             world.boss_pos,
-            dt,
+            frame_dt,
             game_role == crate::render::main_menu::GameRole::Director,
         );
 
@@ -533,23 +596,23 @@ async fn main() {
         // 2. Сбор ввода игрока-директора -> генерация Команд
         let mut player_move_dir = Vec2::ZERO;
         let mut player_aim_dir = Vec2::ZERO;
-        let mut player_dash_pressed = false;
         if is_running {
-            clock.tick(dt);
             match game_role {
                 crate::render::main_menu::GameRole::Director => {
                     handle_player_input(&world, &mut net_driver, &world_cam);
                 }
                 crate::render::main_menu::GameRole::Boss => {
-                    (player_move_dir, player_aim_dir, player_dash_pressed) =
+                    let dash_pressed;
+                    (player_move_dir, player_aim_dir, dash_pressed) =
                         collect_boss_player_input(&menu.settings, &mut world, &world_cam);
+                    latched_boss_dash |= dash_pressed;
                     if net_driver.is_network_client() {
                         if let Some(player_id) = net_driver.assigned_player_id() {
                             net_driver.send_command(Command::BossInput {
                                 player_id,
                                 move_dir: player_move_dir.into(),
                                 aim_dir: player_aim_dir.into(),
-                                dash_pressed: player_dash_pressed,
+                                dash_pressed,
                             });
                         }
                     }
@@ -609,80 +672,35 @@ async fn main() {
             }
         }
 
-        // 4. Обновление систем мира
+        // 4. Обновление систем мира на фиксированной частоте 20 Гц (FIXED_SIM_DT = 0.05с)
         if is_running && !net_driver.is_network_client() {
-            update_director(&mut world, dt);
-            match game_role {
-                crate::render::main_menu::GameRole::Director => {
-                    if world.boss_human_controlled {
-                        let move_dir = world.boss_input_move_dir;
-                        let aim_dir = world.boss_input_aim_dir;
-                        let dash_pressed = world.boss_input_dash_pressed;
-                        crate::ecs::systems::boss_ai::update_player_boss(
-                            &mut world,
-                            dt,
-                            move_dir,
-                            aim_dir,
-                            dash_pressed,
-                        );
-                        world.boss_input_dash_pressed = false;
-                    } else {
-                        update_boss_ai(&mut world, dt);
-                    }
-                }
-                crate::render::main_menu::GameRole::Boss => {
-                    director_ai_timer += dt;
-                    if director_ai_timer >= 0.4 {
-                        director_ai_timer -= 0.4;
-                        crate::ai::simulation::update_director_policy(
-                            &mut world,
-                            clock.elapsed_secs,
-                            &director_model,
-                        );
-                    }
-                    crate::ecs::systems::boss_ai::update_player_boss(
-                        &mut world,
-                        dt,
-                        player_move_dir,
-                        player_aim_dir,
-                        player_dash_pressed,
-                    );
+            sim_accumulator = (sim_accumulator + frame_dt)
+                .min(FIXED_SIM_DT * MAX_SIM_TICKS_PER_FRAME as f32);
+            while sim_accumulator >= FIXED_SIM_DT {
+                sim_accumulator -= FIXED_SIM_DT;
+                clock.tick(FIXED_SIM_DT);
+                let tick_dash = std::mem::take(&mut latched_boss_dash);
+                step_runtime_world_tick(
+                    &mut world,
+                    game_role,
+                    clock.elapsed_secs,
+                    &director_model,
+                    &mut director_ai_ticks,
+                    player_move_dir,
+                    player_aim_dir,
+                    tick_dash,
+                );
+                audio.process_events(&mut world);
+                if !world.any_boss_alive() || clock.is_time_up() {
+                    sim_accumulator = 0.0;
+                    break;
                 }
             }
-            for index in 0..world.coop_bosses.len() {
-                let (human_controlled, move_dir, aim_dir, dash_pressed) = {
-                    let player = &world.coop_bosses[index];
-                    (player.human_controlled, player.input_move_dir, player.input_aim_dir, player.input_dash_pressed)
-                };
-                if world.swap_coop_boss_context(index) {
-                    if human_controlled {
-                    crate::ecs::systems::boss_ai::update_player_boss(
-                        &mut world,
-                        dt,
-                        move_dir,
-                        aim_dir,
-                        dash_pressed,
-                    );
-                    } else {
-                        update_boss_ai(&mut world, dt);
-                    }
-                    if let Some(player) = world.coop_bosses.get_mut(index) {
-                        player.input_dash_pressed = false;
-                    }
-                    world.swap_coop_boss_context(index);
-                }
-            }
-            crate::ecs::systems::coop::tick_coop_boss_timers(&mut world, dt);
-            crate::ecs::systems::coop::update_all_boss_effects(&mut world, dt);
-            update_movement(&mut world, dt);
-            crate::ecs::systems::coop::update_coop_boss_environment(&mut world, dt);
-            crate::ecs::systems::coop::update_all_boss_combat(&mut world, dt);
-            crate::ecs::systems::coop::update_revives(&mut world, dt);
-            audio.process_events(&mut world);
-            audio.update_music(dt, cam_pos, world.boss_pos);
         } else {
-            audio.update_music(dt, cam_pos, world.boss_pos);
+            sim_accumulator = 0.0;
+            latched_boss_dash = false;
         }
+        audio.update_music(frame_dt, cam_pos, world.boss_pos);
         net_driver.publish_snapshot(&world);
 
         // 5. Отрисовка мира через камеру с Viewport Frustum Culling
@@ -1101,6 +1119,9 @@ async fn main() {
                     is_paused = false;
                     world.is_network_paused = false;
                     world.pause_initiator = None;
+                    director_ai_ticks = 0;
+                    sim_accumulator = 0.0;
+                    latched_boss_dash = false;
                     if net_driver.is_networked() {
                         net_driver.send_command(Command::TogglePause { player_id: my_player_id, paused: false });
                     }
@@ -1119,6 +1140,9 @@ async fn main() {
                 world.match_duration_secs = duration_secs;
                 apply_player_profile(&mut world, &menu.settings, game_role);
                 clock = GameClock::with_duration(duration_secs);
+                director_ai_ticks = 0;
+                sim_accumulator = 0.0;
+                latched_boss_dash = false;
                 cam_pos = world.boss_pos;
                 follow_boss = true;
                 spawn_blood_altar(&mut world, Vec2::new(MAP_WIDTH * 0.5 - 280.0, MAP_HEIGHT * 0.5));
@@ -1295,18 +1319,34 @@ fn collect_boss_player_input(
             }
 
             let (mx, my) = mouse_position();
-            let mouse_world = world_cam.screen_to_world(Vec2::new(mx, my));
-
             let screen_w = screen_width();
+            let screen_h = screen_height();
+
+            // Координаты миникарты в нижнем левом углу
+            let mini_w = 185.0;
+            let mini_h = 124.0;
+            let mini_x = 20.0;
+            let mini_y = screen_h - mini_h - 18.0;
+
+            let in_minimap = mx >= mini_x && mx <= mini_x + mini_w && my >= mini_y && my <= mini_y + mini_h;
             let top_panel_w = 680.0f32.min(screen_w - 240.0);
             let top_panel_x = (screen_w - top_panel_w) / 2.0;
             let in_top_hud = mx >= top_panel_x && mx <= top_panel_x + top_panel_w && my >= 12.0 && my <= 120.0;
             let in_side_hud = mx >= screen_w - 185.0 && my >= 10.0 && my <= 105.0;
 
             if is_mouse_button_pressed(MouseButton::Right) && !in_top_hud && !in_side_hud {
+                let target_point = if in_minimap {
+                    Vec2::new(
+                        ((mx - mini_x) / mini_w) * crate::core::MAP_WIDTH,
+                        ((my - mini_y) / mini_h) * crate::core::MAP_HEIGHT,
+                    )
+                } else {
+                    world_cam.screen_to_world(Vec2::new(mx, my))
+                };
+
                 let clamped_target = Vec2::new(
-                    mouse_world.x.clamp(35.0, crate::core::MAP_WIDTH - 35.0),
-                    mouse_world.y.clamp(35.0, crate::core::MAP_HEIGHT - 35.0),
+                    target_point.x.clamp(35.0, crate::core::MAP_WIDTH - 35.0),
+                    target_point.y.clamp(35.0, crate::core::MAP_HEIGHT - 35.0),
                 );
 
                 let is_shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
@@ -1318,10 +1358,13 @@ fn collect_boss_player_input(
             }
 
             let mut move_dir = Vec2::ZERO;
+            let max_speed = world.boss_inventory.get_movement_speed(160.0);
+            let arrival_r = 22.0f32.max(max_speed * 0.08);
+
             while let Some(&target) = world.boss_waypoint_queue.front() {
                 let to_target = target - world.boss_pos;
                 let dist = to_target.length();
-                if dist <= 12.0 {
+                if dist <= arrival_r {
                     world.boss_waypoint_queue.pop_front();
                 } else {
                     move_dir = to_target / dist;
@@ -1434,6 +1477,93 @@ fn try_summon_squad(director: &crate::ecs::world::DirectorState, tier: u8, drive
             tier,
         });
     }
+}
+
+/// Advances one authoritative 20 Hz simulation tick for host/local runtime execution.
+#[allow(clippy::too_many_arguments)]
+fn step_runtime_world_tick(
+    world: &mut World,
+    game_role: crate::render::main_menu::GameRole,
+    elapsed_secs: f32,
+    director_model: &crate::ai::models::DirectorModel,
+    director_ai_ticks: &mut u32,
+    player_move_dir: Vec2,
+    player_aim_dir: Vec2,
+    player_dash_pressed: bool,
+) {
+    let dt = FIXED_SIM_DT;
+    update_director(world, dt);
+
+    match game_role {
+        crate::render::main_menu::GameRole::Director => {
+            if world.boss_human_controlled {
+                let move_dir = world.boss_input_move_dir;
+                let aim_dir = world.boss_input_aim_dir;
+                let dash_pressed = world.boss_input_dash_pressed;
+                crate::ecs::systems::boss_ai::update_player_boss(
+                    world,
+                    dt,
+                    move_dir,
+                    aim_dir,
+                    dash_pressed,
+                );
+                world.boss_input_dash_pressed = false;
+            } else {
+                update_boss_ai(world, dt);
+            }
+        }
+        crate::render::main_menu::GameRole::Boss => {
+            if *director_ai_ticks % DIRECTOR_PERIOD_TICKS == 0 {
+                crate::ai::simulation::update_director_policy(
+                    world,
+                    elapsed_secs,
+                    director_model,
+                );
+            }
+            *director_ai_ticks = director_ai_ticks.wrapping_add(1);
+            crate::ecs::systems::boss_ai::update_player_boss(
+                world,
+                dt,
+                player_move_dir,
+                player_aim_dir,
+                player_dash_pressed,
+            );
+        }
+    }
+
+    for index in 0..world.coop_bosses.len() {
+        let (human_controlled, move_dir, aim_dir, dash_pressed) = {
+            let player = &world.coop_bosses[index];
+            (
+                player.human_controlled,
+                player.input_move_dir,
+                player.input_aim_dir,
+                player.input_dash_pressed,
+            )
+        };
+        if world.swap_coop_boss_context(index) {
+            if human_controlled {
+                crate::ecs::systems::boss_ai::update_player_boss(
+                    world,
+                    dt,
+                    move_dir,
+                    aim_dir,
+                    dash_pressed,
+                );
+            } else {
+                update_boss_ai(world, dt);
+            }
+            if let Some(player) = world.coop_bosses.get_mut(index) {
+                player.input_dash_pressed = false;
+            }
+            world.swap_coop_boss_context(index);
+        }
+    }
+
+    // Примечание: update_boss_ai и update_player_boss уже вызывают update_boss_timers
+    // для основного и каждого сменного co-op босса, поэтому tick_coop_boss_timers здесь не нужен.
+    crate::ecs::systems::coop::update_all_boss_effects(world, dt);
+    crate::ecs::systems::coop::update_post_effects_tick(world, dt);
 }
 
 fn execute_command(world: &mut World, cmd: Command) {
@@ -1744,4 +1874,124 @@ fn draw_game_over(world: &World, clock: &GameClock, victory: bool, fonts: &GameF
     let restart_prompt = "Нажмите [ Пробел ] для перезапуска сражения | [ Esc ] в меню";
     let rw = fonts.measure_text(restart_prompt, 22.0).width;
     fonts.draw_text(restart_prompt, (screen_w - rw) / 2.0, screen_h * 0.78, 22.0, GOLD);
+}
+
+fn export_frames_cli(duration: f32, out_path: &str) {
+    use std::io::Write;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+
+    println!("============================================================");
+    println!(" [SPATIAL DATASET EXPORTER] Starting Headless Simulation...");
+    println!(" Target match duration per seed: {:.1}s", duration);
+
+    let boss_model = crate::ai::load_trained_boss_model().unwrap_or_default();
+    let director_model = crate::ai::load_trained_director_model().unwrap_or_default();
+
+    let seeds = [42u64, 1337u64, 2026u64, 777u64, 9999u64];
+    let mut all_frames: Vec<Vec<[usize; 2]>> = Vec::new();
+    let mut total_coords = 0usize;
+    let mut min_cells_in_frame = usize::MAX;
+    let mut max_cells_in_frame = 0usize;
+
+    for (i, &seed) in seeds.iter().enumerate() {
+        println!(" -> Running match {}/{} (seed: {})...", i + 1, seeds.len(), seed);
+        let (result, frames) = crate::ai::simulation::run_headless_simulation_collecting_frames(
+            &boss_model,
+            &director_model,
+            seed,
+            duration,
+            crate::ai::neural_net::BOSS_TRAINING_DECISION_INTERVAL,
+            1,
+        );
+        println!(
+            "    Survived: {:.1}s, Boss Won: {}, Altars: {}, Mobs spawned: {}",
+            result.survival_time,
+            result.boss_won,
+            result.altars_built,
+            result.mobs_spawned_by_tier.iter().sum::<usize>()
+        );
+        for frame in &frames {
+            let len = frame.len();
+            total_coords += len;
+            min_cells_in_frame = min_cells_in_frame.min(len);
+            max_cells_in_frame = max_cells_in_frame.max(len);
+        }
+        all_frames.extend(frames);
+    }
+
+    if all_frames.is_empty() {
+        eprintln!("Error: No frames collected!");
+        return;
+    }
+
+    let avg_cells = total_coords as f64 / all_frames.len() as f64;
+    println!("------------------------------------------------------------");
+    println!(" Total frames recorded: {}", all_frames.len());
+    println!(" Total active cell occurrences: {}", total_coords);
+    println!(" Cells per frame: min={}, max={}, avg={:.1}", min_cells_in_frame, max_cells_in_frame, avg_cells);
+
+    // Ensure output parent directory exists
+    if let Some(parent) = std::path::Path::new(out_path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let json_bytes = serde_json::to_vec(&all_frames).expect("Failed to serialize frames to JSON");
+    std::fs::write(out_path, &json_bytes).expect("Failed to write JSON file");
+    println!(" Saved raw JSON: {} ({:.2} MB)", out_path, json_bytes.len() as f64 / (1024.0 * 1024.0));
+
+    // Also write .gz compressed version
+    let gz_path = format!("{}.gz", out_path);
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&json_bytes).expect("Failed to compress JSON");
+    let gz_bytes = encoder.finish().expect("Failed to finish gzip");
+    std::fs::write(&gz_path, &gz_bytes).expect("Failed to write GZ file");
+    println!(" Saved compressed GZ: {} ({:.2} KB)", gz_path, gz_bytes.len() as f64 / 1024.0);
+    println!("============================================================");
+}
+
+#[cfg(test)]
+mod runtime_tick_tests {
+    use super::*;
+
+    #[test]
+    fn test_runtime_world_tick_single_decrement_coop_timers_and_dash() {
+        let mut world = World::new();
+        world.is_headless = true;
+        world.boss_pos = Vec2::new(2000.0, 2000.0);
+        world.boss_dash_cooldown = 0.0;
+        world.add_coop_boss(2, Vec2::new(2500.0, 2000.0), "Bot2".to_string(), 0);
+        world.coop_bosses[0].boss_dash_cooldown = 1.0;
+        world.coop_bosses[0].boss_invulnerable_timer = 0.25;
+
+        let director_model = crate::ai::models::DirectorModel::default();
+        let mut director_ai_ticks = 0u32;
+
+        step_runtime_world_tick(
+            &mut world,
+            crate::render::main_menu::GameRole::Boss,
+            FIXED_SIM_DT,
+            &director_model,
+            &mut director_ai_ticks,
+            Vec2::X,
+            Vec2::X,
+            true,
+        );
+
+        assert_eq!(director_ai_ticks, 1);
+        assert!(
+            world.boss_dash_cooldown > 0.0 && world.boss_invulnerable_timer > 0.0,
+            "Player dash must activate inside 20Hz runtime tick"
+        );
+        assert!(
+            (world.coop_bosses[0].boss_dash_cooldown - 0.95).abs() < 1e-4,
+            "Runtime 20Hz tick must decrement AI co-op dash cooldown once by 0.05s, got {}",
+            world.coop_bosses[0].boss_dash_cooldown
+        );
+        assert!(
+            (world.coop_bosses[0].boss_invulnerable_timer - 0.20).abs() < 1e-4,
+            "Runtime 20Hz tick must decrement AI co-op invuln once by 0.05s, got {}",
+            world.coop_bosses[0].boss_invulnerable_timer
+        );
+    }
 }

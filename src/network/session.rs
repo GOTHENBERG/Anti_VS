@@ -14,8 +14,23 @@ const PROTOCOL_VERSION: u16 = 1;
 const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(100);
 const INPUT_INTERVAL: Duration = Duration::from_millis(50);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(12);
-const CHUNK_PAYLOAD: usize = 1100;
+pub(crate) const SNAPSHOT_CHUNK_PAYLOAD: usize = 1100;
+const CHUNK_PAYLOAD: usize = SNAPSHOT_CHUNK_PAYLOAD;
 const MAX_SNAPSHOT_BYTES: usize = 2_000_000;
+const MAX_DECOMPRESSED_SNAPSHOT_BYTES: usize = 8_000_000;
+
+pub(crate) fn decode_snapshot_payload(compressed: &[u8]) -> Option<WorldSnapshot> {
+    if compressed.len() > MAX_SNAPSHOT_BYTES {
+        return None;
+    }
+    let mut decoder = ZlibDecoder::new(compressed)
+        .take((MAX_DECOMPRESSED_SNAPSHOT_BYTES + 1) as u64);
+    let mut json = Vec::new();
+    if decoder.read_to_end(&mut json).is_err() || json.len() > MAX_DECOMPRESSED_SNAPSHOT_BYTES {
+        return None;
+    }
+    serde_json::from_slice::<WorldSnapshot>(&json).ok()
+}
 
 #[derive(Serialize, Deserialize)]
 enum ControlPacket {
@@ -114,6 +129,14 @@ impl UdpDriver {
     pub fn is_host(&self) -> bool { matches!(self.mode, SessionMode::Host { .. }) }
     pub fn is_networked(&self) -> bool { !matches!(self.mode, SessionMode::Local { .. }) }
 
+    #[cfg(test)]
+    pub(crate) fn host_local_addr(&self) -> Option<SocketAddr> {
+        match &self.mode {
+            SessionMode::Host { socket, .. } => socket.local_addr().ok(),
+            _ => None,
+        }
+    }
+
     pub fn player_id(&self) -> Option<u8> {
         match &self.mode {
             SessionMode::Client { player_id, .. } => *player_id,
@@ -208,12 +231,16 @@ impl UdpDriver {
                     let welcome = ControlPacket::Welcome { version: PROTOCOL_VERSION, player_id: id };
                     if let Ok(payload) = serde_json::to_vec(&welcome) { let _ = socket.send_to(&payload, addr); }
                 }
-                ControlPacket::Command { version, command: Command::BossInput { player_id, move_dir, aim_dir, dash_pressed } }
-                    if version == PROTOCOL_VERSION =>
-                {
-                    if let Some(peer) = peers.get_mut(&addr) {
+                ControlPacket::Command { version, command } if version == PROTOCOL_VERSION => {
+                    let cmd_player_id = match &command {
+                        Command::BossInput { player_id, .. }
+                        | Command::SelectPerk { player_id, .. }
+                        | Command::TogglePause { player_id, .. } => Some(*player_id),
+                        _ => None,
+                    };
+                    if let (Some(player_id), Some(peer)) = (cmd_player_id, peers.get_mut(&addr)) {
                         peer.last_seen = Instant::now();
-                        // A BossInput packet can arrive before the periodic Hello after
+                        // Any validated peer packet can arrive before the periodic Hello after
                         // a timeout. Restore human control here so this packet cannot
                         // consume the disconnected flag and leave the actor AI-driven.
                         if peer.disconnected {
@@ -225,7 +252,7 @@ impl UdpDriver {
                         }
                         peer.disconnected = false;
                         if peer.id == player_id {
-                            inbox.push(Command::BossInput { player_id, move_dir, aim_dir, dash_pressed });
+                            inbox.push(command);
                         }
                     }
                 }
@@ -311,16 +338,10 @@ impl UdpDriver {
                     let pending = pending_snapshots.remove(&sequence).unwrap();
                     let mut compressed = Vec::new();
                     for chunk in pending.chunks.into_iter().flatten() { compressed.extend_from_slice(&chunk); }
-                    if compressed.len() <= MAX_SNAPSHOT_BYTES {
-                        let mut decoder = ZlibDecoder::new(compressed.as_slice());
-                        let mut json = Vec::new();
-                        if decoder.read_to_end(&mut json).is_ok() {
-                            if let Ok(snapshot) = serde_json::from_slice::<WorldSnapshot>(&json) {
-                                *last_sequence = Some(sequence);
-                                *latest_snapshot = Some(snapshot);
-                                *last_snapshot_received = Some(Instant::now());
-                            }
-                        }
+                    if let Some(snapshot) = decode_snapshot_payload(&compressed) {
+                        *last_sequence = Some(sequence);
+                        *latest_snapshot = Some(snapshot);
+                        *last_snapshot_received = Some(Instant::now());
                     }
                 }
             } else if let Ok(ControlPacket::Welcome { version, player_id: id }) = serde_json::from_slice::<ControlPacket>(bytes) {
@@ -335,13 +356,21 @@ impl super::driver::NetworkDriver for UdpDriver {
     fn send_command(&mut self, command: Command) {
         match &mut self.mode {
             SessionMode::Local { inbox } | SessionMode::Host { inbox, .. } => inbox.push(command),
-            SessionMode::Client { socket, host, pending_input, pending_dash, .. } => {
-                if let Command::BossInput { dash_pressed, .. } = &command {
-                    *pending_dash |= *dash_pressed;
-                    *pending_input = Some(command);
-                } else {
-                    let packet = ControlPacket::Command { version: PROTOCOL_VERSION, command };
-                    if let Ok(bytes) = serde_json::to_vec(&packet) { let _ = socket.send_to(&bytes, *host); }
+            SessionMode::Client { socket, host, player_id, pending_input, pending_dash, .. } => {
+                match &command {
+                    Command::BossInput { dash_pressed, .. } => {
+                        *pending_dash |= *dash_pressed;
+                        *pending_input = Some(command);
+                    }
+                    Command::SelectPerk { .. } | Command::TogglePause { .. } => {
+                        if player_id.is_some() {
+                            let packet = ControlPacket::Command { version: PROTOCOL_VERSION, command };
+                            if let Ok(bytes) = serde_json::to_vec(&packet) {
+                                let _ = socket.send_to(&bytes, *host);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -382,5 +411,73 @@ impl super::driver::NetworkDriver for UdpDriver {
                 .collect(),
             _ => Vec::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::network::driver::NetworkDriver;
+
+    #[test]
+    fn test_decode_snapshot_payload_rejects_oversized_zlib_bomb() {
+        let oversized = vec![b'A'; MAX_DECOMPRESSED_SNAPSHOT_BYTES + 4096];
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(&oversized).expect("compress oversized test buffer");
+        let compressed = encoder.finish().expect("finish zlib stream");
+        assert!(compressed.len() <= MAX_SNAPSHOT_BYTES);
+        assert!(decode_snapshot_payload(&compressed).is_none());
+    }
+
+    #[test]
+    fn test_udp_host_accepts_select_perk_and_toggle_pause_and_blocks_spoofing() {
+        let mut host = UdpDriver::host("127.0.0.1:0").expect("bind UDP host");
+        let host_addr = host.host_local_addr().expect("host addr");
+        let mut client = UdpDriver::client(host_addr, "TestBoss".to_string(), 1)
+            .expect("bind UDP client");
+
+        // Handshake Hello -> Welcome
+        let mut joined = false;
+        let mut host_cmds = Vec::new();
+        for _ in 0..50 {
+            let _ = client.poll_commands();
+            host_cmds.extend(host.poll_commands());
+            let _ = client.poll_commands();
+            if client.assigned_player_id() == Some(1)
+                && host_cmds.iter().any(|c| matches!(c, Command::JoinBoss { player_id: 1, .. }))
+            {
+                joined = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(joined, "Client should complete Hello/Welcome handshake");
+
+        // Валидные команды клиента + попытка спуфинга чужого ID и запрещённой хостовой команды
+        client.send_command(Command::SelectPerk { player_id: 1, choice_index: 2 });
+        client.send_command(Command::TogglePause { player_id: 1, paused: true });
+        client.send_command(Command::SelectPerk { player_id: 2, choice_index: 0 });
+        if let SessionMode::Client { socket, host: target, .. } = &client.mode {
+            let spoofed_host_cmd = ControlPacket::Command {
+                version: PROTOCOL_VERSION,
+                command: Command::SpawnSquad { director_id: 0, tier: 1 },
+            };
+            let bytes = serde_json::to_vec(&spoofed_host_cmd).unwrap();
+            let _ = socket.send_to(&bytes, *target);
+        }
+
+        let mut received = Vec::new();
+        for _ in 0..50 {
+            received.extend(host.poll_commands());
+            if received.len() >= 2 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
+        assert!(received.iter().any(|c| matches!(c, Command::SelectPerk { player_id: 1, choice_index: 2 })));
+        assert!(received.iter().any(|c| matches!(c, Command::TogglePause { player_id: 1, paused: true })));
+        assert!(!received.iter().any(|c| matches!(c, Command::SelectPerk { player_id: 2, .. })));
+        assert!(!received.iter().any(|c| matches!(c, Command::SpawnSquad { .. })));
     }
 }

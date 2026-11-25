@@ -5,29 +5,44 @@ use crate::ecs::components::inventory::{DamageSourceKind, PassiveType, WeaponTyp
 use crate::ecs::world::World;
 
 #[inline(always)]
+fn tick_status_timer(timer: &mut f32, dt: f32) {
+    *timer -= dt;
+    if *timer <= 1e-4 {
+        *timer = 0.0;
+    }
+}
+
+#[inline(always)]
 fn update_single_mob(
+    mob_idx: usize,
     mob: &mut crate::ecs::world::MobEntity,
     primary_boss_pos: Vec2,
-    primary_boss_vel: Vec2,
+    _primary_boss_vel: Vec2,
     primary_boss_alive: bool,
     coop_bosses: &[crate::ecs::world::BossPlayerState],
-    flow_field: &crate::ai::flow_field::FlowField,
+    _flow_field: &crate::ai::flow_field::FlowField,
+    crowd_grid: &crate::core::crowd::CrowdDensityGrid,
+    prev_positions: &[Vec2],
+    spatial_grid: &crate::core::spatial_grid::SpatialGrid,
     dt: f32,
 ) {
-    // Обновление таймеров статусов
+    // Обновление таймеров статусов: вычисляем замедление/заморозку на текущий тик ДО декремента
+    // и обнуляем суб-эпсилонный float-остаток, чтобы длительность N * 0.05с работала ровно N тиков.
+    mob.status.burned_this_tick = mob.status.burn_timer > 0.0;
     if mob.status.burn_timer > 0.0 {
-        mob.status.burn_timer = (mob.status.burn_timer - dt).max(0.0);
+        tick_status_timer(&mut mob.status.burn_timer, dt);
         mob.health.take_damage(mob.status.burn_dps * dt);
     }
     if mob.status.poison_timer > 0.0 {
-        mob.status.poison_timer = (mob.status.poison_timer - dt).max(0.0);
+        tick_status_timer(&mut mob.status.poison_timer, dt);
         mob.health.take_damage(mob.status.poison_dps * dt);
     }
+    let speed_mult = mob.status.get_speed_multiplier();
     if mob.status.slow_timer > 0.0 {
-        mob.status.slow_timer = (mob.status.slow_timer - dt).max(0.0);
+        tick_status_timer(&mut mob.status.slow_timer, dt);
     }
     if mob.status.freeze_timer > 0.0 {
-        mob.status.freeze_timer = (mob.status.freeze_timer - dt).max(0.0);
+        tick_status_timer(&mut mob.status.freeze_timer, dt);
     }
 
     // Кулдаун атаки уменьшается непрерывно, в том числе во время движения к боссу
@@ -39,101 +54,51 @@ fn update_single_mob(
     // сам выбирает цель по текущей дистанции, не закрепляясь навсегда за одним игроком.
     let assigned_target = mob.target_boss_id.and_then(|id| {
         if id == 1 && primary_boss_alive {
-            Some((primary_boss_pos, primary_boss_vel))
+            Some(primary_boss_pos)
         } else {
             coop_bosses.iter()
                 .find(|player| player.id == id && player.boss_health.is_alive())
-                .map(|player| (player.boss_pos, player.boss_vel))
+                .map(|player| player.boss_pos)
         }
     });
-    let (boss_pos, boss_vel) = if let Some(target) = assigned_target {
-        target
+    let boss_pos = if let Some(pos) = assigned_target {
+        pos
     } else {
         let mut nearest = if primary_boss_alive {
-            Some((primary_boss_pos, primary_boss_vel, primary_boss_pos.distance_squared(mob.pos)))
+            Some((primary_boss_pos, primary_boss_pos.distance_squared(mob.pos)))
         } else { None };
         for player in coop_bosses.iter().filter(|player| player.boss_health.is_alive()) {
             let distance = player.boss_pos.distance_squared(mob.pos);
-            if nearest.map_or(true, |(_, _, best)| distance < best) {
-                nearest = Some((player.boss_pos, player.boss_vel, distance));
+            if nearest.map_or(true, |(_, best)| distance < best) {
+                nearest = Some((player.boss_pos, distance));
             }
         }
-        nearest.map_or((primary_boss_pos, primary_boss_vel), |(pos, vel, _)| (pos, vel))
+        nearest.map_or(primary_boss_pos, |(pos, _)| pos)
     };
 
-    // Вычисление целевой точки в зависимости от роли моба
-    let target_pos = match mob.tier {
-        // Тир 2 (Гончие): бегут на упреждение траектории босса (фланкирование)
-        2 => boss_pos + boss_vel * 0.45,
-        // Тир 3 (Культисты-стрелки): кайтят босса, держа дистанцию 240-280 пикселей
-        3 => {
-            let diff = boss_pos - mob.pos;
-            let dist = diff.length();
-            if dist < 230.0 {
-                // Отступают назад
-                mob.pos - diff.normalize_or_zero() * 100.0
-            } else if dist > 280.0 {
-                // Приближаются
-                boss_pos
-            } else {
-                // Стоят и стреляют
-                mob.pos
-            }
-        }
-        // Тир 6 (Демон теней): если далеко, телепортируется за спину босса!
-        6 => {
-            let diff = boss_pos - mob.pos;
-            let dist = diff.length();
-            if dist > 320.0 && mob.attack_timer <= 0.0 {
-                mob.attack_timer = 4.5;
-                let behind_dir = -boss_vel.normalize_or_zero();
-                let offset = if behind_dir.length_squared() > 0.5 {
-                    behind_dir * 140.0
-                } else {
-                    Vec2::new(120.0, 0.0)
-                };
-                mob.pos = boss_pos + offset;
-            }
-            boss_pos
-        }
-        // Тир 7 (Огненный элементаль): кружит вокруг босса на средней дистанции (180px)
-        7 => {
-            let diff = boss_pos - mob.pos;
-            let dist = diff.length();
-            if dist < 170.0 {
-                mob.pos - diff.normalize_or_zero() * 80.0
-            } else if dist > 260.0 {
-                boss_pos
-            } else {
-                // Орбитальное движение
-                let perp = Vec2::new(-diff.y, diff.x).normalize_or_zero();
-                mob.pos + perp * 60.0
-            }
-        }
-        // Остальные идут напролом
-        _ => boss_pos,
-    };
+    // Прямой кратчайший путь к боссу: мгновенная реакция на любое перемещение босса
+    let target_pos = boss_pos;
 
     // Движение к цели с учетом замедления и заморозки
-    let speed_mult = mob.status.get_speed_multiplier();
     let diff = target_pos - mob.pos;
     let dist = diff.length();
 
     if dist > 2.0 && speed_mult > 0.0 {
-        // Навигация мобов:
-        // Стрелки (тир 3) и орбитальные элементали (тир 7) используют локальный вектор маневрирования на боевой дистанции.
-        // Все остальные мобы (и стрелки/элементали на дальних дистанциях) движутся по линиям тока векторного поля Flow Field,
-        // плавно огибая все обелиски, алтари и баррикады без единого застревания в тупиках.
-        let dir = if mob.tier == 3 && dist <= 280.0 {
-            diff / dist
-        } else if mob.tier == 7 && dist <= 260.0 {
-            diff / dist
-        } else {
-            flow_field.sample_mob_direction(mob.pos, target_pos)
-        };
+        let goal_dir = diff / dist;
+        let speed = mob.speed * speed_mult;
 
-        mob.vel = dir * (mob.speed * speed_mult);
+        // Continuum Crowds: комбинируем вектор цели с градиентом давления толпы
+        mob.vel = crowd_grid.compute_steering(mob.pos, goal_dir, speed);
         mob.pos += mob.vel * dt;
+
+        // Микро-отталкивание для мобов в той же ячейке (проверяет не более 1-2 соседей)
+        crate::core::crowd::CrowdDensityGrid::micro_separate_same_cell(
+            mob_idx,
+            &mut mob.pos,
+            prev_positions,
+            spatial_grid,
+            mob.radius * 1.8,
+        );
     } else {
         mob.vel = Vec2::ZERO;
     }
@@ -154,34 +119,95 @@ pub fn update_movement(world: &mut World, dt: f32) {
     let boss_pos = world.boss_pos;
     let boss_vel = world.boss_vel;
     let primary_boss_alive = world.boss_health.is_alive();
-    let coop_bosses = &world.coop_bosses;
-    let live_coop_bosses: Vec<(u8, Vec2)> = coop_bosses
-        .iter()
-        .filter(|player| player.boss_health.is_alive())
-        .map(|player| (player.id, player.boss_pos))
-        .collect();
 
-    // 1. Обновление движения, физики и эффектов мобов:
-    // В Headless (обучение): последовательный цикл внутри своего потока Rayon (0 оверхеда).
-    // В игре с графикой: параллельное обновление на всех 8 потоках i3-10100F для максимального FPS.
-    let flow_field = &world.flow_field;
-    if world.is_headless {
-        world.mobs.iter_mut().for_each(|mob| update_single_mob(mob, boss_pos, boss_vel, primary_boss_alive, coop_bosses, flow_field, dt));
-    } else {
-        world.mobs.par_iter_mut().for_each(|mob| update_single_mob(mob, boss_pos, boss_vel, primary_boss_alive, coop_bosses, flow_field, dt));
+    // 1. Построение плоского массива позиций (SoA) и сетки плотностей Continuum Crowds
+    world.mob_positions_scratch.clear();
+    for mob in &world.mobs {
+        world.mob_positions_scratch.push(mob.pos);
     }
+    world.crowd_grid.clear();
+    world.crowd_grid.splat_positions(&world.mob_positions_scratch);
+    world.crowd_grid.compute_blurred_gradients();
 
-    // 2. Перестроение Пространственной Сетки (Spatial Grid) для мгновенных запросов O(1)
+    // 2. Построение SpatialGrid по текущим координатам для мгновенного микро-отталкивания
     world.rebuild_spatial_grid();
 
-    // 3. Обновление снарядов (включая активное самонаведение в полете)
-    let has_divinity_aura = world.boss_inventory.has_passive(PassiveType::DivinityAura);
+    // 3. Обновление движения, физики и эффектов мобов:
+    // В Headless (обучение): последовательный цикл внутри своего потока Rayon (0 оверхеда).
+    // В игре с графикой: параллельное обновление на всех потоках для максимального FPS.
+    let is_headless = world.is_headless;
+    let flow_field = &world.flow_field;
+    let crowd_grid = &world.crowd_grid;
+    let prev_positions = &world.mob_positions_scratch;
+    let spatial_grid = &world.spatial_grid;
+    let coop_bosses = &world.coop_bosses;
+
+    if is_headless {
+        world.mobs.iter_mut().enumerate().for_each(|(idx, mob)| {
+            update_single_mob(
+                idx,
+                mob,
+                boss_pos,
+                boss_vel,
+                primary_boss_alive,
+                coop_bosses,
+                flow_field,
+                crowd_grid,
+                prev_positions,
+                spatial_grid,
+                dt,
+            );
+        });
+    } else {
+        world.mobs.par_iter_mut().enumerate().for_each(|(idx, mob)| {
+            update_single_mob(
+                idx,
+                mob,
+                boss_pos,
+                boss_vel,
+                primary_boss_alive,
+                coop_bosses,
+                flow_field,
+                crowd_grid,
+                prev_positions,
+                spatial_grid,
+                dt,
+            );
+        });
+    }
+
+    // 4. Перестроение Пространственной Сетки (Spatial Grid) для мгновенных запросов снарядов O(1)
+    world.rebuild_spatial_grid();
+
+    let live_coop_bosses: Vec<(u8, Vec2, Vec2)> = world.coop_bosses
+        .iter()
+        .filter(|player| player.boss_health.is_alive())
+        .map(|player| (player.id, player.boss_pos, player.boss_vel))
+        .collect();
+
+    // 5. Обновление снарядов (включая активное самонаведение в полете)
+    let primary_id = world.active_boss_id;
+    let primary_has_divinity = world.boss_inventory.has_passive(PassiveType::DivinityAura);
+    let boss_owner_states: Vec<(u8, Vec2, bool)> = std::iter::once((
+        primary_id,
+        boss_pos,
+        primary_has_divinity,
+    ))
+    .chain(world.coop_bosses.iter().map(|p| {
+        (p.id, p.boss_pos, p.boss_inventory.has_passive(PassiveType::DivinityAura))
+    }))
+    .collect();
+
     let mut homing_buf: Vec<usize> = Vec::with_capacity(64);
     let mut divinity_buf: Vec<usize> = Vec::with_capacity(32);
     for proj in &mut world.projectiles {
+        if proj.lifetime <= 0.0 || proj.pierce == 0 {
+            continue;
+        }
         if proj.homing_strength > 0.0 {
             let search_radius = 450.0f32;
             let mut closest_target_pos = None;
+            let mut closest_target_vel = Vec2::ZERO;
             let mut min_dist_sq = search_radius * search_radius;
 
             if proj.faction == Faction::Boss {
@@ -194,6 +220,7 @@ pub fn update_movement(world: &mut World, dt: f32) {
                             if dist_sq < min_dist_sq {
                                 min_dist_sq = dist_sq;
                                 closest_target_pos = Some(mob.pos);
+                                closest_target_vel = mob.vel;
                             }
                         }
                     }
@@ -206,6 +233,7 @@ pub fn update_movement(world: &mut World, dt: f32) {
                             if dist_sq < min_dist_sq {
                                 min_dist_sq = dist_sq;
                                 closest_target_pos = Some(st.pos);
+                                closest_target_vel = Vec2::ZERO;
                             }
                         }
                     }
@@ -213,40 +241,42 @@ pub fn update_movement(world: &mut World, dt: f32) {
             } else if proj.faction == Faction::Director {
                 if primary_boss_alive {
                     closest_target_pos = Some(boss_pos);
+                    closest_target_vel = boss_vel;
                     min_dist_sq = proj.pos.distance_squared(boss_pos);
                 }
-                for &(_, player_pos) in &live_coop_bosses {
+                for &(_, player_pos, player_vel) in &live_coop_bosses {
                     let dist_sq = proj.pos.distance_squared(player_pos);
                     if dist_sq < min_dist_sq {
                         min_dist_sq = dist_sq;
                         closest_target_pos = Some(player_pos);
+                        closest_target_vel = player_vel;
                     }
                 }
             }
 
             if let Some(target_pos) = closest_target_pos {
-                let to_target = target_pos - proj.pos;
-                let dist_sq = to_target.length_squared();
-                if dist_sq > 4.0 {
-                    let target_dir = to_target.normalize();
-                    let current_speed = proj.vel.length();
-                    if current_speed > 1.0 {
-                        let current_dir = proj.vel / current_speed;
-                        let turn_factor = (proj.homing_strength * dt).min(1.0);
-                        let new_dir = current_dir.lerp(target_dir, turn_factor).normalize_or_zero();
-                        proj.vel = new_dir * current_speed;
-                    }
-                }
+                proj.vel = crate::core::math::calculate_proportional_navigation_vel(
+                    proj.pos,
+                    proj.vel,
+                    target_pos,
+                    closest_target_vel,
+                    proj.homing_strength,
+                    dt,
+                );
             }
         }
 
         // Механика бумеранга (FaithBoomerang и HeavenlyJudgment):
-        // После первой фазы полета плавно возвращается к боссу
+        // После первой фазы полета плавно возвращается к выпустившему его боссу
+        let owner_id = proj.owner_boss_id.unwrap_or(primary_id);
+        let owner_state = boss_owner_states.iter().find(|&&(bid, _, _)| bid == owner_id);
         if let Some(src) = proj.source_weapon {
-            if (src == WeaponType::FaithBoomerang && proj.lifetime < 0.65)
-                || (src == WeaponType::HeavenlyJudgment && proj.lifetime < 0.70)
+            let remaining_after_step = proj.lifetime - dt;
+            if (src == WeaponType::FaithBoomerang && remaining_after_step < 0.65)
+                || (src == WeaponType::HeavenlyJudgment && remaining_after_step < 0.70)
             {
-                let to_boss = (boss_pos - proj.pos).normalize_or_zero();
+                let return_pos = owner_state.map_or(boss_pos, |&(_, pos, _)| pos);
+                let to_boss = (return_pos - proj.pos).normalize_or_zero();
                 let current_spd = proj.vel.length().max(280.0);
                 proj.vel = proj.vel.lerp(to_boss * current_spd, (5.0 * dt).min(1.0));
             }
@@ -264,23 +294,28 @@ pub fn update_movement(world: &mut World, dt: f32) {
             }
         }
 
-        // Аура Божественности (DivinityAura): святой урон вокруг летящих снарядов
-        if has_divinity_aura && proj.faction == Faction::Boss {
+        // Аура Божественности (DivinityAura): святой урон вокруг летящих снарядов владельца
+        let owner_has_divinity = proj
+            .owner_boss_id
+            .map_or(primary_has_divinity, |_| owner_state.is_some_and(|&(_, _, has)| has));
+        if owner_has_divinity && proj.faction == Faction::Boss {
             let aura_rad = 52.0;
             world.spatial_grid.query_nearby_into(proj.pos, aura_rad, &mut divinity_buf);
             for &idx in &divinity_buf {
                 if let Some(mob) = world.mobs.get_mut(idx) {
                     if mob.health.is_alive() && mob.pos.distance_squared(proj.pos) < aura_rad * aura_rad {
                         mob.health.take_damage(35.0 * dt);
+                        if proj.owner_boss_id.is_some() {
+                            mob.last_hit_boss_id = proj.owner_boss_id;
+                        }
                     }
                 }
             }
         }
 
+        proj.prev_pos = proj.pos;
         proj.pos += proj.vel * dt;
-        proj.lifetime -= dt;
     }
-    world.projectiles.retain(|p| p.lifetime > 0.0);
 
     // Обновление таймеров электрических дуг молний
     world.lightning_arcs.retain_mut(|(_, _, timer)| {
@@ -291,6 +326,9 @@ pub fn update_movement(world: &mut World, dt: f32) {
     // 4. Обновление кислотных луж Босса (Чумные Сферы и Токсичный Мор)
     for pool in &mut world.acid_pools {
         pool.lifetime -= dt;
+        if pool.is_director_source {
+            continue;
+        }
 
         // Лужи Босса наносят урон МОБАМ (Босса они не трогают)
         world.spatial_grid.query_nearby_into(pool.pos, pool.radius, &mut homing_buf);
@@ -302,13 +340,14 @@ pub fn update_movement(world: &mut World, dt: f32) {
                         // Разъедает плоскую броню
                         mob.resistances.flat_armor = (mob.resistances.flat_armor - dt * 2.0).max(0.0);
                     }
-                    world.damage_queue.push(DamagePacket {
-                        source_id: Some(0),
-                        target_id: mob.id,
-                        amount: pool.dps * dt,
-                        damage_type: DamageType::Poison,
-                        armor_penetration: 0.5,
-                    });
+                    world.damage_queue.push(DamagePacket::mob(
+                        Some(0),
+                        idx,
+                        mob.id,
+                        pool.dps * dt,
+                        DamageType::Poison,
+                        0.5,
+                    ).with_owner(pool.owner_boss_id));
                 }
             }
         }
@@ -333,10 +372,10 @@ pub fn update_movement(world: &mut World, dt: f32) {
             world.boss_poison_dps = 0.0;
         }
 
-        if !world.is_headless && macroquad::prelude::rand::gen_range(0.0, 1.0) < 0.25 {
+        if !world.is_headless && crate::core::visual_rand::gen_range(0.0, 1.0) < 0.25 {
             world.particles.push(crate::ecs::world::ParticleEntity {
-                pos: world.boss_pos + Vec2::new(macroquad::prelude::rand::gen_range(-14.0, 14.0), macroquad::prelude::rand::gen_range(-14.0, 14.0)),
-                vel: Vec2::new(macroquad::prelude::rand::gen_range(-10.0, 10.0), macroquad::prelude::rand::gen_range(-25.0, -8.0)),
+                pos: world.boss_pos + Vec2::new(crate::core::visual_rand::gen_range(-14.0, 14.0), crate::core::visual_rand::gen_range(-14.0, 14.0)),
+                vel: Vec2::new(crate::core::visual_rand::gen_range(-10.0, 10.0), crate::core::visual_rand::gen_range(-25.0, -8.0)),
                 color: Color::new(0.65, 0.15, 0.85, 0.75),
                 radius: 2.2,
                 lifetime: 0.35,
@@ -378,32 +417,61 @@ pub fn update_movement(world: &mut World, dt: f32) {
                 let dist = dist_sq.sqrt();
                 let normal = diff / dist;
                 world.boss_pos = st.pos + normal * min_dist;
+
+                // Скольжение вдоль стены: устраняем составляющую скорости, направленную внутрь баррикады
+                let normal_vel = world.boss_vel.dot(normal);
+                if normal_vel < 0.0 {
+                    world.boss_vel -= normal * normal_vel;
+                }
             }
         }
     }
 
-    // 5. Магнетизм кристаллов душ к боссу (с учетом пассивки MagnetSphere)
-    let effective_magnet_r = world.boss_inventory.get_effective_magnet_radius();
-    let magnet_r_sq = effective_magnet_r.powi(2);
-    let mut magnet_active = false;
-
-    // Проверяем, подобрал ли босс предмет "Магнит"
-    for gem in &world.gems {
-        if gem.is_magnet && gem.pos.distance_squared(boss_pos) < magnet_r_sq {
-            magnet_active = true;
-            break;
+    // 5. Магнетизм кристаллов душ ко всем живым боссам (с учетом их MagnetSphere)
+    let mut magnet_bosses: Vec<(Vec2, f32, bool)> = Vec::with_capacity(world.coop_bosses.len() + 1);
+    if primary_boss_alive {
+        let r = world.boss_inventory.get_effective_magnet_radius();
+        let r_sq = r * r;
+        let picked_magnet = world
+            .gems
+            .iter()
+            .any(|g| g.is_magnet && g.pos.distance_squared(boss_pos) < r_sq);
+        magnet_bosses.push((boss_pos, r_sq, picked_magnet));
+    }
+    for player in &world.coop_bosses {
+        if player.boss_health.is_alive() {
+            let r = player.boss_inventory.get_effective_magnet_radius();
+            let r_sq = r * r;
+            let picked_magnet = world
+                .gems
+                .iter()
+                .any(|g| g.is_magnet && g.pos.distance_squared(player.boss_pos) < r_sq);
+            magnet_bosses.push((player.boss_pos, r_sq, picked_magnet));
         }
     }
 
-    for gem in &mut world.gems {
-        let diff = boss_pos - gem.pos;
-        let dist_sq = diff.length_squared();
-
-        if magnet_active || (dist_sq < magnet_r_sq && dist_sq > 1.0) {
-            let dist = dist_sq.sqrt().max(1.0);
-            let dir = diff / dist;
-            let pull_speed = if magnet_active { 550.0 } else { 280.0 };
-            gem.pos += dir * (pull_speed * dt);
+    if !magnet_bosses.is_empty() {
+        let any_magnet_active = magnet_bosses.iter().any(|&(_, _, m)| m);
+        for gem in &mut world.gems {
+            let mut best_target: Option<(Vec2, f32, bool)> = None;
+            for &(b_pos, r_sq, b_magnet) in &magnet_bosses {
+                if any_magnet_active && !b_magnet {
+                    continue;
+                }
+                let dist_sq = b_pos.distance_squared(gem.pos);
+                if (any_magnet_active || dist_sq < r_sq)
+                    && dist_sq > 1.0
+                    && best_target.map_or(true, |(_, best_sq, _)| dist_sq < best_sq)
+                {
+                    best_target = Some((b_pos, dist_sq, any_magnet_active));
+                }
+            }
+            if let Some((target_pos, dist_sq, is_global_magnet)) = best_target {
+                let dist = dist_sq.sqrt().max(1.0);
+                let dir = (target_pos - gem.pos) / dist;
+                let pull_speed = if is_global_magnet { 550.0 } else { 280.0 };
+                gem.pos += dir * (pull_speed * dt);
+            }
         }
     }
 

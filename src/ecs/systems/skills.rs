@@ -48,48 +48,51 @@ pub fn select_tactical_target(world: &World, boss_pos: Vec2, max_range: f32) -> 
 /// Для AoE-оружий (Метеоры, Сингулярность, Разлом Бездны, Ядовитые споры) целится в ближайшее
 /// наибольшее скопление противников без искусственных приоритетов.
 pub fn select_cluster_density_target(world: &World, boss_pos: Vec2, max_range: f32, aoe_radius: f32) -> Option<Vec2> {
-    let nearby_indices = world.spatial_grid.query_nearby(boss_pos, max_range);
-    let aoe_radius_sq = aoe_radius * aoe_radius;
-    let mut best_score = 0.0f32;
-    let mut best_cluster_center = None;
-
-    // Сэмплируем кандидатов среди живых мобов: ищем ближайшее скопление противников
-    let candidate_count = nearby_indices.len().min(32);
-    for i in 0..candidate_count {
-        let idx = nearby_indices[i];
-        if let Some(candidate_mob) = world.mobs.get(idx) {
-            if !candidate_mob.health.is_alive() {
-                continue;
-            }
-            let center_candidate = candidate_mob.pos;
-            let dist_to_boss = center_candidate.distance(boss_pos);
-            if dist_to_boss > max_range {
-                continue;
+    if world.crowd_grid.is_active() {
+        if let Some((coarse_center, _, _)) = world.crowd_grid.find_peak_density_cell(boss_pos, max_range, aoe_radius) {
+            if world.spatial_grid.is_empty() {
+                return Some(coarse_center);
             }
 
-            let cluster_mobs = world.spatial_grid.query_nearby(center_candidate, aoe_radius);
-            let mut mob_count = 0.0f32;
-            let mut weighted_pos = Vec2::ZERO;
+            // 2-шаговое Mean-Shift уточнение внутри окна AoE без единой аллокации:
+            // Шаг 0 стягивает фокус с центра квадрата 128x128 на плотное ядро (в т.ч. на границах ячеек),
+            // Шаг 1 точно центрирует круг поражения `aoe_radius` на центре масс мобов.
+            let aoe_radius_sq = aoe_radius * aoe_radius;
+            let expanded_rad = aoe_radius + world.crowd_grid.cell_size * 0.5;
+            let mut center = coarse_center;
 
-            for &m_idx in &cluster_mobs {
-                if let Some(m) = world.mobs.get(m_idx) {
-                    if m.health.is_alive() && m.pos.distance_squared(center_candidate) <= aoe_radius_sq {
-                        mob_count += 1.0;
-                        weighted_pos += m.pos;
+            for step in 0..2 {
+                let (query_r, query_r_sq) = if step == 0 {
+                    (expanded_rad, expanded_rad * expanded_rad)
+                } else {
+                    (aoe_radius, aoe_radius_sq)
+                };
+                let pad = Vec2::splat(query_r);
+                let mut sum_pos = Vec2::ZERO;
+                let mut count = 0.0f32;
+
+                world.spatial_grid.query_aabb_unique(center - pad, center + pad, |m_idx| {
+                    if let Some(m) = world.mobs.get(m_idx) {
+                        if m.health.is_alive() && m.pos.distance_squared(center) <= query_r_sq {
+                            sum_pos += m.pos;
+                            count += 1.0;
+                        }
+                    }
+                });
+
+                if count > 0.0 {
+                    let refined = sum_pos / count;
+                    if refined.distance(boss_pos) <= max_range + aoe_radius * 0.25 {
+                        center = refined;
                     }
                 }
             }
 
-            // Оценка: количество врагов в радиусе сплеша с приоритетом более близких к боссу скоплений
-            let score = mob_count * (1.0 + (max_range - dist_to_boss) / max_range);
-            if score > best_score && mob_count > 0.0 {
-                best_score = score;
-                best_cluster_center = Some(weighted_pos / mob_count);
-            }
+            return Some(center);
         }
     }
 
-    best_cluster_center.or_else(|| select_nearest_target(world, boss_pos, max_range))
+    select_nearest_target(world, boss_pos, max_range)
 }
 
 pub fn update_skills(world: &mut World, dt: f32) {
@@ -99,16 +102,17 @@ pub fn update_skills(world: &mut World, dt: f32) {
     let dmg_mult = world.boss_inventory.get_damage_multiplier();
     let spd_mult = world.boss_inventory.get_projectile_speed_multiplier();
     let aoe_mult = world.boss_inventory.get_aoe_multiplier();
-    let extra_proj = world.boss_inventory.get_duplicator_projectiles();
+    let extra_proj = world.boss_inventory.get_twin_prism_projectiles();
+    let owner_boss_id = Some(world.active_boss_id);
 
-    // Вращение орбит для Бури Клинков, Праведного Щита и Орбитального Гримуара
+    // Вращение орбит для Шквала Лезвий, Бастиона Света и Орбитального Гримуара
     // Shared match time advances once, even when co-op actors are evaluated through
     // the legacy single-Boss context swap.
     if world.active_boss_id == 1 {
         world.game_time += dt;
     }
-    world.blade_storm_angle = (world.blade_storm_angle + dt * 6.0) % (std::f32::consts::PI * 2.0);
-    world.divine_shield_angle = (world.divine_shield_angle + dt * 4.0) % (std::f32::consts::PI * 2.0);
+    world.blade_squall_angle = (world.blade_squall_angle + dt * 6.0) % (std::f32::consts::PI * 2.0);
+    world.light_bastion_angle = (world.light_bastion_angle + dt * 4.0) % (std::f32::consts::PI * 2.0);
     world.boss_inventory.scriptures_orbit_angle = (world.boss_inventory.scriptures_orbit_angle + dt * 4.5) % (std::f32::consts::PI * 2.0);
 
     // Пассивная перезарядка зарядов Астрального Савана / Савана Кровавого Императора
@@ -156,16 +160,16 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
             // Звуковой эффект применения способности босса
             let sfx = match weapon.kind {
-                WeaponType::WindBlade | WeaponType::BladeStorm | WeaponType::ExecutionerAxe |
+                WeaponType::WindBlade | WeaponType::BladeSquall | WeaponType::ExecutionerAxe |
                 WeaponType::WhirlwindCleaver | WeaponType::BloodDaggers | WeaponType::BloodHarvest => {
                     Some(crate::audio::AudioEvent::BladeSlash)
                 }
-                WeaponType::FireAura | WeaponType::Hellfire | WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => {
+                WeaponType::FireAura | WeaponType::NetherBlaze | WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => {
                     Some(crate::audio::AudioEvent::FireBlast)
                 }
-                WeaponType::MagicWand | WeaponType::HolyHammer | WeaponType::DivineShield |
+                WeaponType::ArcaneScepter | WeaponType::HolyHammer | WeaponType::LightBastion |
                 WeaponType::CelestialBow | WeaponType::StarfallBarrage => {
-                    Some(crate::audio::AudioEvent::MagicWand)
+                    Some(crate::audio::AudioEvent::ArcaneScepter)
                 }
                 WeaponType::DeathRay | WeaponType::BrimstoneRay | WeaponType::InfernalCataclysm => {
                     Some(crate::audio::AudioEvent::LaserBeam)
@@ -186,16 +190,16 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     Some(crate::audio::AudioEvent::BladeSlash)
                 }
                 WeaponType::SoulPhantoms | WeaponType::BansheeWail => {
-                    Some(crate::audio::AudioEvent::MagicWand)
+                    Some(crate::audio::AudioEvent::ArcaneScepter)
                 }
-                WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => {
+                WeaponType::FallingLuminary | WeaponType::ArmageddonStorm => {
                     Some(crate::audio::AudioEvent::FireBlast)
                 }
                 WeaponType::VoidRift | WeaponType::SingularityCollapse => {
                     Some(crate::audio::AudioEvent::LaserBeam)
                 }
                 WeaponType::SacredScriptures | WeaponType::InfernalLiturgy => {
-                    Some(crate::audio::AudioEvent::MagicWand)
+                    Some(crate::audio::AudioEvent::ArcaneScepter)
                 }
                 WeaponType::FaithBoomerang | WeaponType::HeavenlyJudgment => {
                     Some(crate::audio::AudioEvent::BladeSlash)
@@ -204,7 +208,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     Some(crate::audio::AudioEvent::FireBlast)
                 }
                 WeaponType::VampiricAura | WeaponType::SoulFeast => {
-                    Some(crate::audio::AudioEvent::MagicWand)
+                    Some(crate::audio::AudioEvent::ArcaneScepter)
                 }
                 WeaponType::RunicPrism | WeaponType::SpatialShatter => {
                     Some(crate::audio::AudioEvent::LaserBeam)
@@ -233,6 +237,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (320.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
@@ -241,14 +246,15 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 12.0,
                             pierce: 2,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::WindBlade),
                         });
                     }
                 }
 
-                // 1.2 Буря Клинков (ЭВОЛЮЦИЯ): непрерывный круговой вихрь клинков
-                WeaponType::BladeStorm => {}
+                // 1.2 Шквал Лезвий (ЭВОЛЮЦИЯ): непрерывный круговой вихрь клинков
+                WeaponType::BladeSquall => {}
 
                 // 1.3 Огненная Аура: волна огня в радиусе 125px
                 WeaponType::FireAura => {
@@ -258,13 +264,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         if let Some(mob) = world.mobs.get_mut(idx) {
                             if mob.pos.distance_squared(boss_pos) < aura_radius * aura_radius {
                                 mob.status.apply_burn(3.0, effective_damage * 0.4);
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: mob.id,
-                                    amount: effective_damage,
-                                    damage_type: DamageType::Fire,
-                                    armor_penetration: armor_pen,
-                                });
+                                world.damage_queue.push(DamagePacket::mob(
+                                    Some(0),
+                                    idx,
+                                    mob.id,
+                                    effective_damage,
+                                    DamageType::Fire,
+                                    armor_pen,
+                                ).with_owner(owner_boss_id));
                             }
                         }
                     }
@@ -272,21 +279,21 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     // Аура наносит урон и разрушаемым Алтарям Крови
                     for st in &world.structures {
                         if st.pos.distance_squared(boss_pos) < (aura_radius + st.radius).powi(2) {
-                            world.damage_queue.push(DamagePacket {
-                                source_id: Some(0),
-                                target_id: st.id,
-                                amount: effective_damage * 0.8,
-                                damage_type: DamageType::Fire,
-                                armor_penetration: armor_pen,
-                            });
+                            world.damage_queue.push(DamagePacket::structure(
+                                Some(0),
+                                st.id,
+                                effective_damage * 0.8,
+                                DamageType::Fire,
+                                armor_pen,
+                            ).with_owner(owner_boss_id));
                         }
                     }
 
                     world.spawn_particles(boss_pos, 25, ORANGE, 150.0);
                 }
 
-                // 1.4 Адское Пекло (ЭВОЛЮЦИЯ): процентный урон по площади + взрыв трупов
-                WeaponType::Hellfire => {
+                // 1.4 Пекло Преисподней (ЭВОЛЮЦИЯ): процентный урон по площади + взрыв трупов
+                WeaponType::NetherBlaze => {
                     let aura_radius = 175.0;
                     let mobs_in_range = world.spatial_grid.query_nearby(boss_pos, aura_radius);
                     for idx in mobs_in_range {
@@ -294,39 +301,41 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             if mob.pos.distance_squared(boss_pos) < aura_radius * aura_radius {
                                 let percent_dmg = mob.health.max * 0.10 + effective_damage;
                                 mob.status.apply_burn(4.0, effective_damage * 0.6);
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: mob.id,
-                                    amount: percent_dmg,
-                                    damage_type: DamageType::Fire,
-                                    armor_penetration: armor_pen + 0.25,
-                                });
+                                world.damage_queue.push(DamagePacket::mob(
+                                    Some(0),
+                                    idx,
+                                    mob.id,
+                                    percent_dmg,
+                                    DamageType::Fire,
+                                    armor_pen + 0.25,
+                                ).with_owner(owner_boss_id));
                             }
                         }
                     }
 
                     for st in &world.structures {
                         if st.pos.distance_squared(boss_pos) < (aura_radius + st.radius).powi(2) {
-                            world.damage_queue.push(DamagePacket {
-                                source_id: Some(0),
-                                target_id: st.id,
-                                amount: effective_damage * 1.3,
-                                damage_type: DamageType::Fire,
-                                armor_penetration: armor_pen + 0.25,
-                            });
+                            world.damage_queue.push(DamagePacket::structure(
+                                Some(0),
+                                st.id,
+                                effective_damage * 1.3,
+                                DamageType::Fire,
+                                armor_pen + 0.25,
+                            ).with_owner(owner_boss_id));
                         }
                     }
 
                     world.spawn_particles(boss_pos, 45, RED, 190.0);
                 }
 
-                // 1.5 Магический Жезл: быстрые стрелы в тактическую цель
-                WeaponType::MagicWand => {
+                // 1.5 Скипетр Арканы: быстрые стрелы в тактическую цель
+                WeaponType::ArcaneScepter => {
                     if let Some(target_pos) = tactical_target_pos {
                         let dir = (target_pos - boss_pos).normalize_or_zero();
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (420.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::True,
@@ -335,8 +344,9 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 8.0,
                             pierce: 1 + (weapon.level / 3) as u8,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
-                            source_weapon: Some(WeaponType::MagicWand),
+                            source_weapon: Some(WeaponType::ArcaneScepter),
                         });
                     }
                 }
@@ -352,8 +362,8 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     world.spawn_particles(boss_pos, 8, GOLD, 90.0);
                 }
 
-                // 1.8 Праведный Щит (ЭВОЛЮЦИЯ, ОРБИТАЛЬНЫЙ НАВЫК): священные щиты с вампиризмом
-                WeaponType::DivineShield => {
+                // 1.8 Бастион Света (ЭВОЛЮЦИЯ, ОРБИТАЛЬНЫЙ НАВЫК): священные щиты с вампиризмом
+                WeaponType::LightBastion => {
                     world.spawn_particles(boss_pos, 12, GOLD, 110.0);
                 }
 
@@ -375,6 +385,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (350.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Ice,
@@ -383,6 +394,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 9.0,
                             pierce: 2,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::IceShards),
                         });
@@ -399,26 +411,27 @@ pub fn update_skills(world: &mut World, dt: f32) {
                                 if mob.tier != 4 {
                                     mob.status.apply_freeze(2.0);
                                 }
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: mob.id,
-                                    amount: effective_damage,
-                                    damage_type: DamageType::Ice,
-                                    armor_penetration: armor_pen,
-                                });
+                                world.damage_queue.push(DamagePacket::mob(
+                                    Some(0),
+                                    idx,
+                                    mob.id,
+                                    effective_damage,
+                                    DamageType::Ice,
+                                    armor_pen,
+                                ).with_owner(owner_boss_id));
                             }
                         }
                     }
 
                     for st in &world.structures {
                         if st.pos.distance_squared(boss_pos) < (radius + st.radius).powi(2) {
-                            world.damage_queue.push(DamagePacket {
-                                source_id: Some(0),
-                                target_id: st.id,
-                                amount: effective_damage,
-                                damage_type: DamageType::Ice,
-                                armor_penetration: armor_pen,
-                            });
+                            world.damage_queue.push(DamagePacket::structure(
+                                Some(0),
+                                st.id,
+                                effective_damage,
+                                DamageType::Ice,
+                                armor_pen,
+                            ).with_owner(owner_boss_id));
                         }
                     }
 
@@ -439,6 +452,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         dps: effective_damage * 0.7,
                         corrosive: false,
                         is_director_source: false,
+                        owner_boss_id,
                     });
                 }
 
@@ -453,6 +467,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             dps: effective_damage,
                             corrosive: true,
                             is_director_source: false,
+                            owner_boss_id,
                         });
                     }
                 }
@@ -466,6 +481,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (310.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
@@ -474,6 +490,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 14.0,
                             pierce: 4,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::ExecutionerAxe),
                         });
@@ -489,6 +506,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (380.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
@@ -497,6 +515,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 18.0,
                             pierce: 8,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::WhirlwindCleaver),
                         });
@@ -521,6 +540,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (440.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Holy,
@@ -529,6 +549,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 10.0,
                             pierce: 3,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::CelestialBow),
                         });
@@ -553,6 +574,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (620.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Holy,
@@ -561,6 +583,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 13.0,
                             pierce: 6,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::StarfallBarrage),
                         });
@@ -577,6 +600,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (420.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::True,
@@ -585,6 +609,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 12.0,
                             pierce: 3,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::ThunderOrb),
                         });
@@ -605,13 +630,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             if let Some(mob) = world.mobs.get_mut(idx) {
                                 if mob.pos.distance_squared(strike_pos) < 120.0 * 120.0 {
                                     mob.status.apply_freeze(1.0); // шоковый стан
-                                    world.damage_queue.push(DamagePacket {
-                                        source_id: Some(0),
-                                        target_id: mob.id,
-                                        amount: effective_damage,
-                                        damage_type: DamageType::True,
-                                        armor_penetration: 1.0,
-                                    });
+                                    world.damage_queue.push(DamagePacket::mob(
+                                        Some(0),
+                                        idx,
+                                        mob.id,
+                                        effective_damage,
+                                        DamageType::True,
+                                        1.0,
+                                    ).with_owner(owner_boss_id));
                                 }
                             }
                         }
@@ -636,6 +662,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (380.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
@@ -644,6 +671,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 8.0,
                             pierce: 1,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::BloodDaggers),
                         });
@@ -659,6 +687,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (420.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
@@ -667,6 +696,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 10.0,
                             pierce: 4,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::BloodHarvest),
                         });
@@ -684,6 +714,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     new_projectiles.push(ProjectileEntity {
                         id: 0,
                         pos: boss_pos,
+                        prev_pos: boss_pos,
                         vel: base_dir * (220.0 * spd_mult),
                         damage: effective_damage,
                         damage_type: DamageType::True,
@@ -692,6 +723,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         radius: 18.0,
                         pierce: 10,
                         faction: Faction::Boss,
+                        owner_boss_id,
                         homing_strength: 0.0,
                         source_weapon: Some(WeaponType::SingularityOrb),
                     });
@@ -706,6 +738,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (220.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::True,
@@ -714,6 +747,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 28.0,
                             pierce: 20,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::EventHorizon),
                         });
@@ -737,6 +771,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (340.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Ice,
@@ -745,6 +780,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 12.0,
                             pierce: 6,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::ChainFrost),
                         });
@@ -760,6 +796,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (360.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Ice,
@@ -768,6 +805,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 16.0,
                             pierce: 12,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::AbsoluteZero),
                         });
@@ -784,6 +822,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     new_projectiles.push(ProjectileEntity {
                         id: 0,
                         pos: boss_pos,
+                        prev_pos: boss_pos,
                         vel: base_dir * (550.0 * spd_mult),
                         damage: effective_damage,
                         damage_type: DamageType::Fire,
@@ -792,6 +831,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         radius: 20.0,
                         pierce: 15,
                         faction: Faction::Boss,
+                        owner_boss_id,
                         homing_strength: 0.0,
                         source_weapon: Some(WeaponType::BrimstoneRay),
                     });
@@ -806,6 +846,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (650.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Fire,
@@ -814,6 +855,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 24.0,
                             pierce: 25,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::InfernalCataclysm),
                         });
@@ -836,6 +878,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (360.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
@@ -844,6 +887,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 11.0,
                             pierce: 2,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 7.5,
                             source_weapon: Some(WeaponType::MissileSwarm),
                         });
@@ -866,6 +910,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (420.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
@@ -874,6 +919,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 15.0,
                             pierce: 4,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 9.5,
                             source_weapon: Some(WeaponType::DoomsdayBarrage),
                         });
@@ -896,6 +942,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: base_dir * (500.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::True,
@@ -904,6 +951,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 12.0,
                             pierce: 4,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::ChainLightning),
                         });
@@ -919,6 +967,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (580.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::True,
@@ -927,6 +976,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 16.0,
                             pierce: 8,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::StormGodWrath),
                         });
@@ -946,13 +996,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                                 if !mob.knockback_immune {
                                     mob.knockback_vel += push_dir * 180.0;
                                 }
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: mob.id,
-                                    amount: effective_damage,
-                                    damage_type: DamageType::Holy,
-                                    armor_penetration: armor_pen + 0.35,
-                                });
+                                world.damage_queue.push(DamagePacket::mob(
+                                    Some(0),
+                                    idx,
+                                    mob.id,
+                                    effective_damage,
+                                    DamageType::Holy,
+                                    armor_pen + 0.35,
+                                ).with_owner(owner_boss_id));
                             }
                         }
                     }
@@ -966,13 +1017,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     for idx in mobs_in_range {
                         if let Some(mob) = world.mobs.get_mut(idx) {
                             if mob.pos.distance_squared(boss_pos) < radius * radius {
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: mob.id,
-                                    amount: effective_damage,
-                                    damage_type: DamageType::Holy,
-                                    armor_penetration: armor_pen + 0.60,
-                                });
+                                world.damage_queue.push(DamagePacket::mob(
+                                    Some(0),
+                                    idx,
+                                    mob.id,
+                                    effective_damage,
+                                    DamageType::Holy,
+                                    armor_pen + 0.60,
+                                ).with_owner(owner_boss_id));
                             }
                         }
                     }
@@ -988,6 +1040,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (320.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::True,
@@ -996,6 +1049,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 14.0,
                             pierce: 5,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::SoulPhantoms),
                         });
@@ -1011,6 +1065,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (360.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::True,
@@ -1019,6 +1074,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 18.0,
                             pierce: 12,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::BansheeWail),
                         });
@@ -1036,13 +1092,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     world.spawn_particles(boss_pos, 18, Color::new(0.35, 0.95, 1.0, 0.95), 130.0);
                 }
 
-                // 1.37 Хаотический Метеор: падающий метеорит с колоссальным взрывом
-                WeaponType::ChaosMeteor => {
+                // 1.37 Падающее Светило: падающий метеорит с колоссальным взрывом
+                WeaponType::FallingLuminary => {
                     let target = cluster_target_pos.unwrap_or(boss_pos + Vec2::new(rand::gen_range(-150.0, 150.0), rand::gen_range(-150.0, 150.0)));
                     let dir = (target - boss_pos).normalize_or_zero();
                     new_projectiles.push(ProjectileEntity {
                         id: 0,
                         pos: boss_pos,
+                        prev_pos: boss_pos,
                         vel: dir * (400.0 * spd_mult),
                         damage: effective_damage,
                         damage_type: DamageType::Fire,
@@ -1051,8 +1108,9 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         radius: 24.0,
                         pierce: 1,
                         faction: Faction::Boss,
+                        owner_boss_id,
                         homing_strength: 0.0,
-                        source_weapon: Some(WeaponType::ChaosMeteor),
+                        source_weapon: Some(WeaponType::FallingLuminary),
                     });
                 }
 
@@ -1066,6 +1124,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (450.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Fire,
@@ -1074,6 +1133,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 28.0,
                             pierce: 1,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::ArmageddonStorm),
                         });
@@ -1091,6 +1151,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     new_projectiles.push(ProjectileEntity {
                         id: 0,
                         pos: boss_pos,
+                        prev_pos: boss_pos,
                         vel: base_dir * (260.0 * spd_mult),
                         damage: effective_damage,
                         damage_type: DamageType::True,
@@ -1099,6 +1160,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         radius: 20.0,
                         pierce: 15,
                         faction: Faction::Boss,
+                        owner_boss_id,
                         homing_strength: 0.0,
                         source_weapon: Some(WeaponType::VoidRift),
                     });
@@ -1113,6 +1175,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos,
+                            prev_pos: boss_pos,
                             vel: dir * (280.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::True,
@@ -1121,6 +1184,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 26.0,
                             pierce: 25,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::SingularityCollapse),
                         });
@@ -1153,6 +1217,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos + dir * 25.0,
+                            prev_pos: boss_pos + dir * 25.0,
                             vel: dir * (360.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Physical,
@@ -1161,6 +1226,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 17.0 * aoe_mult,
                             pierce: 25,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::FaithBoomerang),
                         });
@@ -1176,6 +1242,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos + dir * 30.0,
+                            prev_pos: boss_pos + dir * 30.0,
                             vel: dir * (420.0 * spd_mult),
                             damage: effective_damage * 1.4,
                             damage_type: DamageType::Holy,
@@ -1184,6 +1251,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 24.0 * aoe_mult,
                             pierce: 99,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::HeavenlyJudgment),
                         });
@@ -1208,6 +1276,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             dps: effective_damage * 0.85,
                             corrosive: false,
                             is_director_source: false,
+                            owner_boss_id,
                         });
                     }
                 }
@@ -1229,6 +1298,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             dps: effective_damage * 1.25,
                             corrosive: true,
                             is_director_source: false,
+                            owner_boss_id,
                         });
                     }
                     world.boss_health.heal(effective_damage * 0.15);
@@ -1243,13 +1313,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     for idx in mobs_in_range {
                         if let Some(mob) = world.mobs.get_mut(idx) {
                             if mob.pos.distance_squared(boss_pos) < aura_radius * aura_radius {
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: mob.id,
-                                    amount: effective_damage,
-                                    damage_type: DamageType::True,
-                                    armor_penetration: 1.0,
-                                });
+                                world.damage_queue.push(DamagePacket::mob(
+                                    Some(0),
+                                    idx,
+                                    mob.id,
+                                    effective_damage,
+                                    DamageType::True,
+                                    1.0,
+                                ).with_owner(owner_boss_id));
                                 total_drain += effective_damage * 0.12;
                             }
                         }
@@ -1268,13 +1339,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                     for idx in mobs_in_range {
                         if let Some(mob) = world.mobs.get_mut(idx) {
                             if mob.pos.distance_squared(boss_pos) < aura_radius * aura_radius {
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: mob.id,
-                                    amount: effective_damage * 1.4,
-                                    damage_type: DamageType::True,
-                                    armor_penetration: 1.0,
-                                });
+                                world.damage_queue.push(DamagePacket::mob(
+                                    Some(0),
+                                    idx,
+                                    mob.id,
+                                    effective_damage * 1.4,
+                                    DamageType::True,
+                                    1.0,
+                                ).with_owner(owner_boss_id));
                                 total_drain += effective_damage * 0.25;
                             }
                         }
@@ -1295,6 +1367,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos + dir * 25.0,
+                            prev_pos: boss_pos + dir * 25.0,
                             vel: dir * (340.0 * spd_mult),
                             damage: effective_damage,
                             damage_type: DamageType::Holy,
@@ -1303,6 +1376,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 14.0 * aoe_mult,
                             pierce: 6,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::RunicPrism),
                         });
@@ -1319,6 +1393,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         new_projectiles.push(ProjectileEntity {
                             id: 0,
                             pos: boss_pos + dir * 30.0,
+                            prev_pos: boss_pos + dir * 30.0,
                             vel: dir * (380.0 * spd_mult),
                             damage: effective_damage * 1.35,
                             damage_type: DamageType::True,
@@ -1327,6 +1402,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             radius: 18.0 * aoe_mult,
                             pierce: 16,
                             faction: Faction::Boss,
+                            owner_boss_id,
                             homing_strength: 0.0,
                             source_weapon: Some(WeaponType::SpatialShatter),
                         });
@@ -1346,25 +1422,26 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         for idx in nearby {
                             if let Some(mob) = world.mobs.get_mut(idx) {
                                 if mob.pos.distance_squared(target) < beam_rad * beam_rad {
-                                    world.damage_queue.push(DamagePacket {
-                                        source_id: Some(0),
-                                        target_id: mob.id,
-                                        amount: effective_damage,
-                                        damage_type: DamageType::True,
-                                        armor_penetration: 1.0,
-                                    });
+                                    world.damage_queue.push(DamagePacket::mob(
+                                        Some(0),
+                                        idx,
+                                        mob.id,
+                                        effective_damage,
+                                        DamageType::True,
+                                        1.0,
+                                    ).with_owner(owner_boss_id));
                                 }
                             }
                         }
                         for st in &world.structures {
                             if st.pos.distance_squared(target) < (st.radius + beam_rad).powi(2) {
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: st.id,
-                                    amount: effective_damage * 1.5,
-                                    damage_type: DamageType::True,
-                                    armor_penetration: 1.0,
-                                });
+                                world.damage_queue.push(DamagePacket::structure(
+                                    Some(0),
+                                    st.id,
+                                    effective_damage * 1.5,
+                                    DamageType::True,
+                                    1.0,
+                                ).with_owner(owner_boss_id));
                             }
                         }
                         world.spawn_particles(target, 40, DARKPURPLE, beam_rad * 1.5);
@@ -1383,25 +1460,26 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         for idx in nearby {
                             if let Some(mob) = world.mobs.get_mut(idx) {
                                 if mob.pos.distance_squared(strike_pt) < beam_rad * beam_rad {
-                                    world.damage_queue.push(DamagePacket {
-                                        source_id: Some(0),
-                                        target_id: mob.id,
-                                        amount: effective_damage * 1.5,
-                                        damage_type: DamageType::True,
-                                        armor_penetration: 1.0,
-                                    });
+                                    world.damage_queue.push(DamagePacket::mob(
+                                        Some(0),
+                                        idx,
+                                        mob.id,
+                                        effective_damage * 1.5,
+                                        DamageType::True,
+                                        1.0,
+                                    ).with_owner(owner_boss_id));
                                 }
                             }
                         }
                         for st in &world.structures {
                             if st.pos.distance_squared(strike_pt) < (st.radius + beam_rad).powi(2) {
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: st.id,
-                                    amount: effective_damage * 2.0,
-                                    damage_type: DamageType::True,
-                                    armor_penetration: 1.0,
-                                });
+                                world.damage_queue.push(DamagePacket::structure(
+                                    Some(0),
+                                    st.id,
+                                    effective_damage * 2.0,
+                                    DamageType::True,
+                                    1.0,
+                                ).with_owner(owner_boss_id));
                             }
                         }
                         world.spawn_particles(strike_pt, 50, MAGENTA, beam_rad * 1.8);
@@ -1416,13 +1494,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                         if let Some(mob) = world.mobs.get_mut(idx) {
                             if mob.pos.distance_squared(boss_pos) < radius * radius {
                                 mob.status.apply_freeze(3.0);
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: mob.id,
-                                    amount: effective_damage,
-                                    damage_type: DamageType::Ice,
-                                    armor_penetration: armor_pen + 0.3,
-                                });
+                                world.damage_queue.push(DamagePacket::mob(
+                                    Some(0),
+                                    idx,
+                                    mob.id,
+                                    effective_damage,
+                                    DamageType::Ice,
+                                    armor_pen + 0.3,
+                                ).with_owner(owner_boss_id));
                             }
                         }
                     }
@@ -1438,13 +1517,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
                             if mob.health.is_alive() && mob.pos.distance_squared(boss_pos) < combat_radius * combat_radius {
                                 let cut_damage = (mob.health.current * 0.35).max(effective_damage);
                                 mob.status.apply_freeze(4.0);
-                                world.damage_queue.push(DamagePacket {
-                                    source_id: Some(0),
-                                    target_id: mob.id,
-                                    amount: cut_damage,
-                                    damage_type: DamageType::True,
-                                    armor_penetration: 1.0,
-                                });
+                                world.damage_queue.push(DamagePacket::mob(
+                                    Some(0),
+                                    idx,
+                                    mob.id,
+                                    cut_damage,
+                                    DamageType::True,
+                                    1.0,
+                                ).with_owner(owner_boss_id));
                             }
                         }
                     }
@@ -1472,7 +1552,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
     world.boss_inventory.weapons = weapons;
 
-    // Пассивная регенерация здоровья от BloodStone
+    // Пассивная регенерация здоровья от CrimsonHeartstone и др.
     let hp_regen = world.boss_inventory.get_hp_regen();
     if hp_regen > 0.0 {
         world.boss_health.heal(hp_regen * dt);
@@ -1492,19 +1572,51 @@ pub fn update_skills(world: &mut World, dt: f32) {
         world.death_ray_active = Some((boss_pos, beam_end, 0.28));
 
         let ray_norm = target_dir;
-        for mob in &mut world.mobs {
-            let to_mob = mob.pos - boss_pos;
-            let projection = to_mob.dot(ray_norm);
-            if projection > 0.0 && projection < beam_len {
-                let closest_pt = boss_pos + ray_norm * projection;
-                if mob.pos.distance_squared(closest_pt) < (mob.radius + 28.0).powi(2) {
-                    world.damage_queue.push(DamagePacket {
-                        source_id: Some(0),
-                        target_id: mob.id,
-                        amount: death_ray_damage,
-                        damage_type: DamageType::True,
-                        armor_penetration: 1.0,
-                    });
+        if !world.spatial_grid.is_empty() && world.spatial_grid.len() == world.mobs.len() {
+            let spatial_grid = &world.spatial_grid;
+            let mobs = &world.mobs;
+            let damage_queue = &mut world.damage_queue;
+            spatial_grid.query_segment_thick(boss_pos, beam_end, 188.0, |mob_idx| {
+                if let Some(mob) = mobs.get(mob_idx) {
+                    if !mob.health.is_alive() {
+                        return;
+                    }
+                    let to_mob = mob.pos - boss_pos;
+                    let projection = to_mob.dot(ray_norm);
+                    if projection > 0.0 && projection < beam_len {
+                        let closest_pt = boss_pos + ray_norm * projection;
+                        if mob.pos.distance_squared(closest_pt) < (mob.radius + 28.0).powi(2) {
+                            damage_queue.push(DamagePacket::mob(
+                                Some(0),
+                                mob_idx,
+                                mob.id,
+                                death_ray_damage,
+                                DamageType::True,
+                                1.0,
+                            ).with_owner(owner_boss_id));
+                        }
+                    }
+                }
+            });
+        } else {
+            for (mob_idx, mob) in world.mobs.iter().enumerate() {
+                if !mob.health.is_alive() {
+                    continue;
+                }
+                let to_mob = mob.pos - boss_pos;
+                let projection = to_mob.dot(ray_norm);
+                if projection > 0.0 && projection < beam_len {
+                    let closest_pt = boss_pos + ray_norm * projection;
+                    if mob.pos.distance_squared(closest_pt) < (mob.radius + 28.0).powi(2) {
+                        world.damage_queue.push(DamagePacket::mob(
+                            Some(0),
+                            mob_idx,
+                            mob.id,
+                            death_ray_damage,
+                            DamageType::True,
+                            1.0,
+                        ).with_owner(owner_boss_id));
+                    }
                 }
             }
         }
@@ -1516,13 +1628,13 @@ pub fn update_skills(world: &mut World, dt: f32) {
             if projection > 0.0 && projection < beam_len {
                 let closest_pt = boss_pos + ray_norm * projection;
                 if st.pos.distance_squared(closest_pt) < (st.radius + 30.0).powi(2) {
-                    world.damage_queue.push(DamagePacket {
-                        source_id: Some(0),
-                        target_id: st.id,
-                        amount: death_ray_damage * 1.5,
-                        damage_type: DamageType::True,
-                        armor_penetration: 1.0,
-                    });
+                    world.damage_queue.push(DamagePacket::structure(
+                        Some(0),
+                        st.id,
+                        death_ray_damage * 1.5,
+                        DamageType::True,
+                        1.0,
+                    ).with_owner(owner_boss_id));
                 }
             }
         }
@@ -1530,7 +1642,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
     // Модификаторы снарядов от пассивок и реликвий
     let has_colossal_eye = world.boss_inventory.has_passive(crate::ecs::components::inventory::PassiveType::ColossalEye);
-    let has_archmage_shard = world.boss_inventory.has_passive(crate::ecs::components::inventory::PassiveType::ArchmageShard);
+    let has_elder_mage_shard = world.boss_inventory.has_passive(crate::ecs::components::inventory::PassiveType::ElderMageShard);
     let has_solar_relic = world.boss_inventory.has_passive(crate::ecs::components::inventory::PassiveType::SolarRelic);
 
     // Аура Солнечного Венца (SolarRelic): наносит 40 святого урона/сек вокруг босса
@@ -1540,13 +1652,14 @@ pub fn update_skills(world: &mut World, dt: f32) {
         for idx in nearby {
             if let Some(mob) = world.mobs.get_mut(idx) {
                 if mob.pos.distance_squared(boss_pos) < solar_rad * solar_rad {
-                    world.damage_queue.push(DamagePacket {
-                        source_id: Some(0),
-                        target_id: mob.id,
-                        amount: 40.0 * dt,
-                        damage_type: DamageType::Holy,
-                        armor_penetration: 0.3,
-                    });
+                    world.damage_queue.push(DamagePacket::mob(
+                        Some(0),
+                        idx,
+                        mob.id,
+                        40.0 * dt,
+                        DamageType::Holy,
+                        0.3,
+                    ).with_owner(owner_boss_id));
                 }
             }
         }
@@ -1557,6 +1670,10 @@ pub fn update_skills(world: &mut World, dt: f32) {
 
     for proj in &mut new_projectiles {
         proj.id = world.alloc_id();
+        proj.prev_pos = proj.pos;
+        if proj.faction == Faction::Boss {
+            proj.owner_boss_id = owner_boss_id;
+        }
 
         // 1. Врождённое самонаведение специфических типов оружия
         match proj.source_weapon {
@@ -1564,7 +1681,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
             Some(WeaponType::DoomsdayBarrage) => proj.homing_strength = 9.5,
             Some(WeaponType::SoulPhantoms) => proj.homing_strength = 6.0,
             Some(WeaponType::BansheeWail) => proj.homing_strength = 8.0,
-            Some(WeaponType::MagicWand) => proj.homing_strength = 4.5,
+            Some(WeaponType::ArcaneScepter) => proj.homing_strength = 4.5,
             _ => {}
         }
 
@@ -1578,7 +1695,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
             proj.damage *= 2.0;
             proj.pierce += 99;
         }
-        if has_archmage_shard {
+        if has_elder_mage_shard {
             proj.pierce += 1;
         }
     }
@@ -1596,6 +1713,7 @@ pub fn update_skills(world: &mut World, dt: f32) {
 /// Altar-spawned units have no assigned player and choose the nearest living Boss.
 pub fn update_enemy_mob_attacks(world: &mut World, _dt: f32) {
     let primary_pos = world.boss_pos;
+    let primary_vel = world.boss_vel;
     let primary_alive = world.boss_health.is_alive();
     let coop_bosses = &world.coop_bosses;
     let mut enemy_shots = Vec::new();
@@ -1604,23 +1722,23 @@ pub fn update_enemy_mob_attacks(world: &mut World, _dt: f32) {
         if !mob.health.is_alive() { continue; }
         let assigned_target = mob.target_boss_id.and_then(|id| {
             if id == 1 && primary_alive {
-                Some(primary_pos)
+                Some((primary_pos, primary_vel))
             } else {
                 coop_bosses.iter()
                     .find(|player| player.id == id && player.boss_health.is_alive())
-                    .map(|player| player.boss_pos)
+                    .map(|player| (player.boss_pos, player.boss_vel))
             }
         });
         let mut nearest_target = if primary_alive {
-            Some((primary_pos.distance_squared(mob.pos), primary_pos))
+            Some((primary_pos.distance_squared(mob.pos), primary_pos, primary_vel))
         } else { None };
         for player in coop_bosses.iter().filter(|player| player.boss_health.is_alive()) {
             let distance = player.boss_pos.distance_squared(mob.pos);
-            if nearest_target.map_or(true, |(best, _)| distance < best) {
-                nearest_target = Some((distance, player.boss_pos));
+            if nearest_target.as_ref().map_or(true, |(best, _, _)| distance < *best) {
+                nearest_target = Some((distance, player.boss_pos, player.boss_vel));
             }
         }
-        let Some(target_pos) = assigned_target.or_else(|| nearest_target.map(|(_, pos)| pos)) else {
+        let Some((target_pos, target_vel)) = assigned_target.or_else(|| nearest_target.map(|(_, pos, vel)| (pos, vel))) else {
             continue;
         };
         let dist_sq = mob.pos.distance_squared(target_pos);
@@ -1633,33 +1751,35 @@ pub fn update_enemy_mob_attacks(world: &mut World, _dt: f32) {
                 } else {
                     (18.0, DamageType::Physical, 230.0)
                 };
-                Some((mob.pos, target_pos, damage, damage_type, speed, 9.0, None))
+                Some((mob.pos, target_pos, target_vel, damage, damage_type, speed, 9.0, None))
             } else { None }
         } else if mob.tier == 7 || mob.tier == 15 {
             let range = if mob.tier == 15 { 440.0 } else { 360.0 };
             if dist_sq < range * range && mob.attack_timer <= 0.0 {
                 mob.attack_timer = if mob.tier == 15 { 1.8 } else { 2.2 };
                 let (damage, speed) = if mob.tier == 15 { (110.0, 300.0) } else { (35.0, 260.0) };
-                Some((mob.pos, target_pos, damage, DamageType::Fire, speed, 14.0, None))
+                Some((mob.pos, target_pos, target_vel, damage, DamageType::Fire, speed, 14.0, None))
             } else { None }
         } else if mob.tier == 8 || mob.tier == 16 {
             let range = if mob.tier == 16 { 500.0 } else { 420.0 };
             if dist_sq < range * range && mob.attack_timer <= 0.0 {
                 mob.attack_timer = if mob.tier == 16 { 2.4 } else { 2.8 };
                 let (damage, speed) = if mob.tier == 16 { (160.0, 320.0) } else { (70.0, 280.0) };
-                Some((mob.pos, target_pos, damage, DamageType::True, speed, 20.0, Some(WeaponType::ExecutionerAxe)))
+                Some((mob.pos, target_pos, target_vel, damage, DamageType::True, speed, 20.0, Some(WeaponType::ExecutionerAxe)))
             } else { None }
         } else { None };
 
         if let Some(shot) = shot { enemy_shots.push(shot); }
     }
 
-    for (pos, target_pos, damage, damage_type, speed, radius, source_weapon) in enemy_shots {
+    for (pos, target_pos, target_vel, damage, damage_type, speed, radius, source_weapon) in enemy_shots {
         let id = world.alloc_id();
-        let direction = (target_pos - pos).normalize_or_zero();
+        let direction = crate::core::math::calculate_lead_direction(pos, target_pos, target_vel, speed)
+            .unwrap_or_else(|| (target_pos - pos).normalize_or_zero());
         world.projectiles.push(ProjectileEntity {
             id,
             pos,
+            prev_pos: pos,
             vel: direction * speed,
             damage,
             damage_type,
@@ -1668,6 +1788,7 @@ pub fn update_enemy_mob_attacks(world: &mut World, _dt: f32) {
             radius,
             pierce: 1,
             faction: Faction::Director,
+            owner_boss_id: None,
             homing_strength: 0.0,
             source_weapon,
         });
@@ -1745,37 +1866,39 @@ pub fn update_world_structures(world: &mut World, dt: f32) {
                     world.screen_shake = 22.0;
                     world.push_audio(crate::audio::AudioEvent::ObeliskActivate);
 
-                    // Плавающий текст на самом обелиске
-                    world.add_floating_text(
-                        pos,
-                        format!("ИНФЕРНАЛЬНЫЙ РАЗЛОМ [{}]! 3 МИНУТЫ ДО ПРОРЫВА!", corner_name),
-                        GOLD,
-                        4.0,
-                    );
+                    if !world.is_headless {
+                        // Плавающий текст на самом обелиске
+                        world.add_floating_text(
+                            pos,
+                            format!("ИНФЕРНАЛЬНЫЙ РАЗЛОМ [{}]! 3 МИНУТЫ ДО ПРОРЫВА!", corner_name),
+                            GOLD,
+                            4.0,
+                        );
 
-                    // Уведомление непосредственно над Боссом (и союзными боссами),
-                    // чтобы игрок сразу узнал об активации даже вдали от обелиска!
-                    if world.boss_health.is_alive() {
-                        world.add_floating_text(
-                            world.boss_pos,
-                            format!("⚠️ ТРЕЩИТ ЗЕМЛЯ! АКТИВИРОВАН РАЗЛОМ: [{}]!", corner_name),
-                            GOLD,
-                            4.5,
-                        );
-                    }
-                    let coop_notify_positions: Vec<Vec2> = world
-                        .coop_bosses
-                        .iter()
-                        .filter(|p| p.boss_health.is_alive())
-                        .map(|p| p.boss_pos)
-                        .collect();
-                    for player_pos in coop_notify_positions {
-                        world.add_floating_text(
-                            player_pos,
-                            format!("⚠️ ТРЕЩИТ ЗЕМЛЯ! АКТИВИРОВАН РАЗЛОМ: [{}]!", corner_name),
-                            GOLD,
-                            4.5,
-                        );
+                        // Уведомление непосредственно над Боссом (и союзными боссами),
+                        // чтобы игрок сразу узнал об активации даже вдали от обелиска!
+                        if world.boss_health.is_alive() {
+                            world.add_floating_text(
+                                world.boss_pos,
+                                format!("⚠️ ТРЕЩИТ ЗЕМЛЯ! АКТИВИРОВАН РАЗЛОМ: [{}]!", corner_name),
+                                GOLD,
+                                4.5,
+                            );
+                        }
+                        let coop_notify_positions: Vec<Vec2> = world
+                            .coop_bosses
+                            .iter()
+                            .filter(|p| p.boss_health.is_alive())
+                            .map(|p| p.boss_pos)
+                            .collect();
+                        for player_pos in coop_notify_positions {
+                            world.add_floating_text(
+                                player_pos,
+                                format!("⚠️ ТРЕЩИТ ЗЕМЛЯ! АКТИВИРОВАН РАЗЛОМ: [{}]!", corner_name),
+                                GOLD,
+                                4.5,
+                            );
+                        }
                     }
 
                     // Спавн элитных стражей Разлома вокруг активированного обелиска
@@ -2209,6 +2332,7 @@ pub fn update_heroes_and_clones(world: &mut World, dt: f32) {
         world.projectiles.push(ProjectileEntity {
             id,
             pos: p.pos,
+            prev_pos: p.pos,
             vel: p.vel,
             damage: p.damage,
             damage_type: p.damage_type,
@@ -2217,6 +2341,7 @@ pub fn update_heroes_and_clones(world: &mut World, dt: f32) {
             radius: p.radius,
             lifetime: p.lifetime,
             faction: Faction::Director,
+            owner_boss_id: None,
             source_weapon: None,
             homing_strength: 0.0,
         });
@@ -2251,6 +2376,7 @@ pub fn update_heroes_and_clones(world: &mut World, dt: f32) {
             attack_count: 0,
             has_duplicated: true, // новые дубликаты уже не дублируются снова
             owner_hero_id: Some(owner_id),
+            last_hit_boss_id: None,
         });
     }
 

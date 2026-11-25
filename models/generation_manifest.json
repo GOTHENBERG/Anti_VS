@@ -1,0 +1,14 @@
+{
+  "generation_id": 4,
+  "model_format_version": 11,
+  "sensor_schema_dim": 437,
+  "run_seed": 202,
+  "boss_model_hash": "0x1fd469c23bb9b3a7",
+  "director_model_hash": "0x772a0c60923d983d",
+  "control_league_digest": "0x5b2a0dbdd5a7e229",
+  "boss_control_fitness": -493.4262,
+  "boss_control_win_rate": 0.64285713,
+  "director_control_fitness": 753.23346,
+  "director_control_win_rate": 0.5714286,
+  "timestamp": "2026-11-25T08:03:03Z"
+}

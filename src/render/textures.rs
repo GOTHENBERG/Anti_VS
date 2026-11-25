@@ -81,7 +81,7 @@ pub struct GameTextures {
     pub icon_thunder: Option<Texture2D>,
     pub icon_blood_daggers: Option<Texture2D>,
     pub icon_giant_heart: Option<Texture2D>,
-    pub icon_blood_stone: Option<Texture2D>,
+    pub icon_crimson_heartstone: Option<Texture2D>,
     pub icon_eagle_scope: Option<Texture2D>,
     pub icon_magnet_sphere: Option<Texture2D>,
     pub icon_corrosive_flask: Option<Texture2D>,
@@ -90,24 +90,24 @@ pub struct GameTextures {
     pub icon_brimstone: Option<Texture2D>,
     pub icon_missiles: Option<Texture2D>,
     pub icon_tesla_coil: Option<Texture2D>,
-    pub icon_clover: Option<Texture2D>,
+    pub icon_fortune_coin: Option<Texture2D>,
     pub icon_prismatic: Option<Texture2D>,
     pub icon_aegis: Option<Texture2D>,
     // New Weapons & Legendary Relics Icons
     pub icon_aegis_orbiters: Option<Texture2D>,
-    pub icon_archmage_shard: Option<Texture2D>,
+    pub icon_elder_mage_shard: Option<Texture2D>,
     pub icon_blessed_core: Option<Texture2D>,
     pub icon_calamity_mortar: Option<Texture2D>,
     pub icon_chain_lightning: Option<Texture2D>,
-    pub icon_chaos_meteor: Option<Texture2D>,
+    pub icon_falling_luminary: Option<Texture2D>,
     pub icon_cinder_heart: Option<Texture2D>,
     pub icon_colossal_eye: Option<Texture2D>,
     pub icon_divine_bell: Option<Texture2D>,
-    pub icon_divine_rapier: Option<Texture2D>,
+    pub icon_doomed_blade: Option<Texture2D>,
     pub icon_fate_weaver: Option<Texture2D>,
     pub icon_halo_radiance: Option<Texture2D>,
-    pub icon_immortal_aegis: Option<Texture2D>,
-    pub icon_octarine_core: Option<Texture2D>,
+    pub icon_revival_phylactery: Option<Texture2D>,
+    pub icon_occult_prism: Option<Texture2D>,
     pub icon_resonant_strings: Option<Texture2D>,
     pub icon_solar_relic: Option<Texture2D>,
     pub icon_soul_phantoms: Option<Texture2D>,
@@ -119,7 +119,7 @@ pub struct GameTextures {
     pub icon_astral_cloak: Option<Texture2D>,
     // Новые яркие цельные иконки оружия и пассивок (взамен прозрачных)
     pub icon_wind_blade: Option<Texture2D>,
-    pub icon_magic_wand: Option<Texture2D>,
+    pub icon_arcane_scepter: Option<Texture2D>,
     pub icon_poison_orbs: Option<Texture2D>,
     pub icon_executioner_axe: Option<Texture2D>,
     pub icon_celestial_bow: Option<Texture2D>,
@@ -130,10 +130,10 @@ pub struct GameTextures {
     pub icon_chrono_hourglass: Option<Texture2D>,
     pub icon_spore_mushroom: Option<Texture2D>,
     // Уникальные иконки для всех первых 10 эволюций
-    pub icon_evo_blade_storm: Option<Texture2D>,
-    pub icon_evo_hellfire: Option<Texture2D>,
+    pub icon_evo_blade_squall: Option<Texture2D>,
+    pub icon_evo_nether_blaze: Option<Texture2D>,
     pub icon_evo_death_ray: Option<Texture2D>,
-    pub icon_evo_divine_shield: Option<Texture2D>,
+    pub icon_evo_light_bastion: Option<Texture2D>,
     pub icon_evo_blizzard_storm: Option<Texture2D>,
     pub icon_evo_toxic_pestilence: Option<Texture2D>,
     pub icon_evo_whirlwind_cleaver: Option<Texture2D>,
@@ -248,7 +248,7 @@ impl GameTextures {
         let icon_thunder = load_filtered("assets/icons/icon_thunder.png", ui_filter).await;
         let icon_blood_daggers = load_filtered("assets/icons/icon_blood_daggers.png", ui_filter).await;
         let icon_giant_heart = load_filtered("assets/icons/icon_giant_heart.png", ui_filter).await;
-        let icon_blood_stone = load_filtered("assets/icons/icon_blood_stone.png", ui_filter).await;
+        let icon_crimson_heartstone = load_filtered("assets/icons/icon_blood_stone.png", ui_filter).await;
         let icon_eagle_scope = load_filtered("assets/icons/icon_eagle_scope.png", ui_filter).await;
         let icon_magnet_sphere = load_filtered("assets/icons/icon_magnet_sphere.png", ui_filter).await;
         let icon_corrosive_flask = load_filtered("assets/icons/icon_corrosive_flask.png", ui_filter).await;
@@ -257,25 +257,25 @@ impl GameTextures {
         let icon_brimstone = load_filtered("assets/icons/icon_brimstone.png", ui_filter).await;
         let icon_missiles = load_filtered("assets/icons/icon_missiles.png", ui_filter).await;
         let icon_tesla_coil = load_filtered("assets/icons/icon_tesla_coil.png", ui_filter).await;
-        let icon_clover = load_filtered("assets/icons/icon_clover.png", ui_filter).await;
+        let icon_fortune_coin = load_filtered("assets/icons/icon_clover.png", ui_filter).await;
         let icon_prismatic = load_filtered("assets/icons/icon_prismatic.png", ui_filter).await;
         let icon_aegis = load_filtered("assets/icons/icon_aegis.png", ui_filter).await;
 
         // New active weapons and legendary relics icons
         let icon_aegis_orbiters = load_filtered("assets/icons/icon_aegis_orbiters.png", ui_filter).await;
-        let icon_archmage_shard = load_filtered("assets/icons/icon_archmage_shard.png", ui_filter).await;
+        let icon_elder_mage_shard = load_filtered("assets/icons/icon_archmage_shard.png", ui_filter).await;
         let icon_blessed_core = load_filtered("assets/icons/icon_blessed_core.png", ui_filter).await;
         let icon_calamity_mortar = load_filtered("assets/icons/icon_calamity_mortar.png", ui_filter).await;
         let icon_chain_lightning = load_filtered("assets/icons/icon_chain_lightning.png", ui_filter).await;
-        let icon_chaos_meteor = load_filtered("assets/icons/icon_chaos_meteor.png", ui_filter).await;
+        let icon_falling_luminary = load_filtered("assets/icons/icon_chaos_meteor.png", ui_filter).await;
         let icon_cinder_heart = load_filtered("assets/icons/icon_cinder_heart.png", ui_filter).await;
         let icon_colossal_eye = load_filtered("assets/icons/icon_colossal_eye.png", ui_filter).await;
         let icon_divine_bell = load_filtered("assets/icons/icon_divine_bell.png", ui_filter).await;
-        let icon_divine_rapier = load_filtered("assets/icons/icon_divine_rapier.png", ui_filter).await;
+        let icon_doomed_blade = load_filtered("assets/icons/icon_divine_rapier.png", ui_filter).await;
         let icon_fate_weaver = load_filtered("assets/icons/icon_fate_weaver.png", ui_filter).await;
         let icon_halo_radiance = load_filtered("assets/icons/icon_halo_radiance.png", ui_filter).await;
-        let icon_immortal_aegis = load_filtered("assets/icons/icon_immortal_aegis.png", ui_filter).await;
-        let icon_octarine_core = load_filtered("assets/icons/icon_octarine_core.png", ui_filter).await;
+        let icon_revival_phylactery = load_filtered("assets/icons/icon_immortal_aegis.png", ui_filter).await;
+        let icon_occult_prism = load_filtered("assets/icons/icon_octarine_core.png", ui_filter).await;
         let icon_resonant_strings = load_filtered("assets/icons/icon_resonant_strings.png", ui_filter).await;
         let icon_solar_relic = load_filtered("assets/icons/icon_solar_relic.png", ui_filter).await;
         let icon_soul_phantoms = load_filtered("assets/icons/icon_soul_phantoms.png", ui_filter).await;
@@ -288,7 +288,7 @@ impl GameTextures {
 
         // Новые цельные иконки оружия и пассивок
         let icon_wind_blade = load_filtered("assets/icons/icon_wind_blade.png", ui_filter).await;
-        let icon_magic_wand = load_filtered("assets/icons/icon_magic_wand.png", ui_filter).await;
+        let icon_arcane_scepter = load_filtered("assets/icons/icon_magic_wand.png", ui_filter).await;
         let icon_poison_orbs = load_filtered("assets/icons/icon_poison_orbs.png", ui_filter).await;
         let icon_executioner_axe = load_filtered("assets/icons/icon_executioner_axe.png", ui_filter).await;
         let icon_celestial_bow = load_filtered("assets/icons/icon_celestial_bow.png", ui_filter).await;
@@ -300,10 +300,10 @@ impl GameTextures {
         let icon_spore_mushroom = load_filtered("assets/icons/icon_spore_mushroom.png", ui_filter).await;
 
         // Иконки эволюций (1..10)
-        let icon_evo_blade_storm = load_filtered("assets/icons/icon_evo_blade_storm.png", ui_filter).await;
-        let icon_evo_hellfire = load_filtered("assets/icons/icon_evo_hellfire.png", ui_filter).await;
+        let icon_evo_blade_squall = load_filtered("assets/icons/icon_evo_blade_storm.png", ui_filter).await;
+        let icon_evo_nether_blaze = load_filtered("assets/icons/icon_evo_hellfire.png", ui_filter).await;
         let icon_evo_death_ray = load_filtered("assets/icons/icon_evo_death_ray.png", ui_filter).await;
-        let icon_evo_divine_shield = load_filtered("assets/icons/icon_evo_divine_shield.png", ui_filter).await;
+        let icon_evo_light_bastion = load_filtered("assets/icons/icon_evo_divine_shield.png", ui_filter).await;
         let icon_evo_blizzard_storm = load_filtered("assets/icons/icon_evo_blizzard_storm.png", ui_filter).await;
         let icon_evo_toxic_pestilence = load_filtered("assets/icons/icon_evo_toxic_pestilence.png", ui_filter).await;
         let icon_evo_whirlwind_cleaver = load_filtered("assets/icons/icon_evo_whirlwind_cleaver.png", ui_filter).await;
@@ -377,7 +377,7 @@ impl GameTextures {
             icon_thunder,
             icon_blood_daggers,
             icon_giant_heart,
-            icon_blood_stone,
+            icon_crimson_heartstone,
             icon_eagle_scope,
             icon_magnet_sphere,
             icon_corrosive_flask,
@@ -386,23 +386,23 @@ impl GameTextures {
             icon_brimstone,
             icon_missiles,
             icon_tesla_coil,
-            icon_clover,
+            icon_fortune_coin,
             icon_prismatic,
             icon_aegis,
             icon_aegis_orbiters,
-            icon_archmage_shard,
+            icon_elder_mage_shard,
             icon_blessed_core,
             icon_calamity_mortar,
             icon_chain_lightning,
-            icon_chaos_meteor,
+            icon_falling_luminary,
             icon_cinder_heart,
             icon_colossal_eye,
             icon_divine_bell,
-            icon_divine_rapier,
+            icon_doomed_blade,
             icon_fate_weaver,
             icon_halo_radiance,
-            icon_immortal_aegis,
-            icon_octarine_core,
+            icon_revival_phylactery,
+            icon_occult_prism,
             icon_resonant_strings,
             icon_solar_relic,
             icon_soul_phantoms,
@@ -413,7 +413,7 @@ impl GameTextures {
             icon_cursed_chalice,
             icon_astral_cloak,
             icon_wind_blade,
-            icon_magic_wand,
+            icon_arcane_scepter,
             icon_poison_orbs,
             icon_executioner_axe,
             icon_celestial_bow,
@@ -423,10 +423,10 @@ impl GameTextures {
             icon_frost_ring,
             icon_chrono_hourglass,
             icon_spore_mushroom,
-            icon_evo_blade_storm,
-            icon_evo_hellfire,
+            icon_evo_blade_squall,
+            icon_evo_nether_blaze,
             icon_evo_death_ray,
-            icon_evo_divine_shield,
+            icon_evo_light_bastion,
             icon_evo_blizzard_storm,
             icon_evo_toxic_pestilence,
             icon_evo_whirlwind_cleaver,
@@ -439,13 +439,13 @@ impl GameTextures {
     pub fn get_weapon_icon(&self, weapon_type: WeaponType) -> Option<&Texture2D> {
         match weapon_type {
             WeaponType::WindBlade => self.icon_wind_blade.as_ref().or(self.icon_sword.as_ref()),
-            WeaponType::BladeStorm => self.icon_evo_blade_storm.as_ref().or(self.icon_wind_blade.as_ref()),
+            WeaponType::BladeSquall => self.icon_evo_blade_squall.as_ref().or(self.icon_wind_blade.as_ref()),
             WeaponType::FireAura => self.icon_fire_aura.as_ref().or(self.icon_elixir.as_ref()),
-            WeaponType::Hellfire => self.icon_evo_hellfire.as_ref().or(self.icon_fire_aura.as_ref()),
-            WeaponType::MagicWand => self.icon_magic_wand.as_ref().or(self.icon_wand.as_ref()),
-            WeaponType::DeathRay => self.icon_evo_death_ray.as_ref().or(self.icon_magic_wand.as_ref()),
+            WeaponType::NetherBlaze => self.icon_evo_nether_blaze.as_ref().or(self.icon_fire_aura.as_ref()),
+            WeaponType::ArcaneScepter => self.icon_arcane_scepter.as_ref().or(self.icon_wand.as_ref()),
+            WeaponType::DeathRay => self.icon_evo_death_ray.as_ref().or(self.icon_arcane_scepter.as_ref()),
             WeaponType::HolyHammer => self.icon_holy_hammer.as_ref().or(self.icon_shield.as_ref()),
-            WeaponType::DivineShield => self.icon_evo_divine_shield.as_ref().or(self.icon_holy_hammer.as_ref()),
+            WeaponType::LightBastion => self.icon_evo_light_bastion.as_ref().or(self.icon_holy_hammer.as_ref()),
             WeaponType::IceShards => self.icon_ice_shards.as_ref().or(self.icon_ring.as_ref()),
             WeaponType::BlizzardStorm => self.icon_evo_blizzard_storm.as_ref().or(self.icon_ice_shards.as_ref()),
             WeaponType::PoisonOrbs => self.icon_poison_orbs.as_ref().or(self.icon_corrosive_flask.as_ref()),
@@ -461,9 +461,9 @@ impl GameTextures {
             WeaponType::SingularityOrb => self.icon_singularity.as_ref().or(self.icon_jewel.as_ref()),
             WeaponType::EventHorizon => self.icon_void_rift.as_ref().or(self.icon_singularity.as_ref()),
             WeaponType::ChainFrost => self.icon_chain_frost.as_ref().or(self.icon_ring.as_ref()),
-            WeaponType::AbsoluteZero => self.icon_octarine_core.as_ref().or(self.icon_chain_frost.as_ref()),
+            WeaponType::AbsoluteZero => self.icon_occult_prism.as_ref().or(self.icon_chain_frost.as_ref()),
             WeaponType::BrimstoneRay => self.icon_brimstone.as_ref().or(self.icon_fire_aura.as_ref()),
-            WeaponType::InfernalCataclysm => self.icon_chaos_meteor.as_ref().or(self.icon_brimstone.as_ref()),
+            WeaponType::InfernalCataclysm => self.icon_falling_luminary.as_ref().or(self.icon_brimstone.as_ref()),
             WeaponType::MissileSwarm => self.icon_missiles.as_ref().or(self.icon_bow.as_ref()),
             WeaponType::DoomsdayBarrage => self.icon_calamity_mortar.as_ref().or(self.icon_missiles.as_ref()),
             WeaponType::ChainLightning => self.icon_chain_lightning.as_ref().or(self.icon_thunder.as_ref()),
@@ -473,27 +473,27 @@ impl GameTextures {
             WeaponType::SoulPhantoms => self.icon_soul_phantoms.as_ref().or(self.icon_wand.as_ref()),
             WeaponType::BansheeWail => self.icon_spectral_jar.as_ref().or(self.icon_soul_phantoms.as_ref()),
             WeaponType::AegisOrbiters => self.icon_aegis_orbiters.as_ref().or(self.icon_shield.as_ref()),
-            WeaponType::InvincibleBastion => self.icon_immortal_aegis.as_ref().or(self.icon_aegis_orbiters.as_ref()),
-            WeaponType::ChaosMeteor => self.icon_chaos_meteor.as_ref().or(self.icon_fire_aura.as_ref()),
-            WeaponType::ArmageddonStorm => self.icon_cinder_heart.as_ref().or(self.icon_chaos_meteor.as_ref()),
+            WeaponType::InvincibleBastion => self.icon_revival_phylactery.as_ref().or(self.icon_aegis_orbiters.as_ref()),
+            WeaponType::FallingLuminary => self.icon_falling_luminary.as_ref().or(self.icon_fire_aura.as_ref()),
+            WeaponType::ArmageddonStorm => self.icon_cinder_heart.as_ref().or(self.icon_falling_luminary.as_ref()),
             WeaponType::VoidRift => self.icon_void_rift.as_ref().or(self.icon_singularity.as_ref()),
-            WeaponType::SingularityCollapse => self.icon_octarine_core.as_ref().or(self.icon_void_rift.as_ref()),
+            WeaponType::SingularityCollapse => self.icon_occult_prism.as_ref().or(self.icon_void_rift.as_ref()),
             WeaponType::SacredScriptures => self.icon_cooldown_tome.as_ref().or(self.icon_book.as_ref()),
             WeaponType::InfernalLiturgy => self.icon_cinder_heart.as_ref().or(self.icon_cooldown_tome.as_ref()),
             WeaponType::FaithBoomerang => self.icon_faith_boomerang.as_ref().or(self.icon_wind_blade.as_ref()).or(self.icon_sword.as_ref()),
-            WeaponType::HeavenlyJudgment => self.icon_evo_blade_storm.as_ref().or(self.icon_clover.as_ref()),
+            WeaponType::HeavenlyJudgment => self.icon_evo_blade_squall.as_ref().or(self.icon_fortune_coin.as_ref()),
             WeaponType::CursedChalice => self.icon_cursed_chalice.as_ref().or(self.icon_corrosive_flask.as_ref()).or(self.icon_bottle.as_ref()),
-            WeaponType::BloodDeluge => self.icon_blood_stone.as_ref().or(self.icon_corrosive_flask.as_ref()),
+            WeaponType::BloodDeluge => self.icon_crimson_heartstone.as_ref().or(self.icon_corrosive_flask.as_ref()),
             WeaponType::VampiricAura => self.icon_fire_aura.as_ref().or(self.icon_ring.as_ref()),
             WeaponType::SoulFeast => self.icon_spectral_jar.as_ref().or(self.icon_fire_aura.as_ref()),
             WeaponType::RunicPrism => self.icon_prismatic.as_ref().or(self.icon_jewel.as_ref()),
-            WeaponType::SpatialShatter => self.icon_octarine_core.as_ref().or(self.icon_prismatic.as_ref()),
-            WeaponType::AbyssalBeam => self.icon_void_rift.as_ref().or(self.icon_magic_wand.as_ref()),
-            WeaponType::ApocalypseCascade => self.icon_chaos_meteor.as_ref().or(self.icon_void_rift.as_ref()),
+            WeaponType::SpatialShatter => self.icon_occult_prism.as_ref().or(self.icon_prismatic.as_ref()),
+            WeaponType::AbyssalBeam => self.icon_void_rift.as_ref().or(self.icon_arcane_scepter.as_ref()),
+            WeaponType::ApocalypseCascade => self.icon_falling_luminary.as_ref().or(self.icon_void_rift.as_ref()),
             WeaponType::ChronoStasis => self.icon_chrono_hourglass.as_ref().or(self.icon_hourglass.as_ref()),
             WeaponType::InfiniteDilation => self.icon_singularity.as_ref().or(self.icon_chrono_hourglass.as_ref()),
             WeaponType::AstralCloak => self.icon_astral_cloak.as_ref().or(self.icon_aegis.as_ref()).or(self.icon_shield.as_ref()),
-            WeaponType::BloodEmperorShroud => self.icon_immortal_aegis.as_ref().or(self.icon_aegis.as_ref()),
+            WeaponType::BloodEmperorShroud => self.icon_revival_phylactery.as_ref().or(self.icon_aegis.as_ref()),
         }
     }
 
@@ -505,19 +505,19 @@ impl GameTextures {
             PassiveType::LightArmor => self.icon_light_armor.as_ref().or(self.icon_armor.as_ref()),
             PassiveType::FrostRing => self.icon_frost_ring.as_ref().or(self.icon_ring.as_ref()),
             PassiveType::CorrosiveFlask => self.icon_corrosive_flask.as_ref().or(self.icon_bottle.as_ref()),
-            PassiveType::BloodStone => self.icon_blood_stone.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::CrimsonHeartstone => self.icon_crimson_heartstone.as_ref().or(self.icon_jewel.as_ref()),
             PassiveType::EagleScope => self.icon_eagle_scope.as_ref().or(self.icon_ring.as_ref()),
             PassiveType::ChronoHourglass => self.icon_chrono_hourglass.as_ref().or(self.icon_hourglass.as_ref()),
             PassiveType::SporeMushroom => self.icon_spore_mushroom.as_ref(),
             PassiveType::MagnetSphere => self.icon_magnet_sphere.as_ref().or(self.icon_jewel.as_ref()),
             PassiveType::TeslaCoil => self.icon_tesla_coil.as_ref().or(self.icon_jewel.as_ref()),
-            PassiveType::CloverOfFate => self.icon_clover.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::FortuneCoin => self.icon_fortune_coin.as_ref().or(self.icon_jewel.as_ref()),
             PassiveType::PrismaticFocus => self.icon_prismatic.as_ref().or(self.icon_ring.as_ref()),
             PassiveType::TitanAegis => self.icon_aegis.as_ref().or(self.icon_armor.as_ref()),
-            PassiveType::ImmortalAegis => self.icon_immortal_aegis.as_ref().or(self.icon_shield.as_ref()),
-            PassiveType::ArchmageShard => self.icon_archmage_shard.as_ref().or(self.icon_wand.as_ref()),
-            PassiveType::DivineRapier => self.icon_divine_rapier.as_ref().or(self.icon_sword.as_ref()),
-            PassiveType::OctarineCore => self.icon_octarine_core.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::RevivalPhylactery => self.icon_revival_phylactery.as_ref().or(self.icon_shield.as_ref()),
+            PassiveType::ElderMageShard => self.icon_elder_mage_shard.as_ref().or(self.icon_wand.as_ref()),
+            PassiveType::DoomedBlade => self.icon_doomed_blade.as_ref().or(self.icon_sword.as_ref()),
+            PassiveType::OccultPrism => self.icon_occult_prism.as_ref().or(self.icon_jewel.as_ref()),
             PassiveType::SolarRelic => self.icon_solar_relic.as_ref().or(self.icon_ring.as_ref()),
             PassiveType::StaticCore => self.icon_stormhammer_core.as_ref().or(self.icon_thunder.as_ref()),
             PassiveType::ColossalEye => self.icon_colossal_eye.as_ref().or(self.icon_jewel.as_ref()),
@@ -526,15 +526,15 @@ impl GameTextures {
             PassiveType::SoulHarvester => self.icon_spectral_jar.as_ref().or(self.icon_bottle.as_ref()),
             PassiveType::DivinityAura => self.icon_halo_radiance.as_ref().or(self.icon_holy_hammer.as_ref()),
             PassiveType::UkuleleResonance => self.icon_resonant_strings.as_ref().or(self.icon_bow.as_ref()),
-            PassiveType::FateWeaver => self.icon_fate_weaver.as_ref().or(self.icon_clover.as_ref()),
-            PassiveType::SiegeMortar => self.icon_calamity_mortar.as_ref().or(self.icon_missiles.as_ref()),
-            PassiveType::DuplicatorRelic => self.icon_prismatic.as_ref().or(self.icon_jewel.as_ref()),
-            PassiveType::CandelabraOfFury => self.icon_cinder_heart.as_ref().or(self.icon_fire_aura.as_ref()),
-            PassiveType::AbyssalCurseStone => self.icon_blood_stone.as_ref().or(self.icon_jewel.as_ref()),
-            PassiveType::SilverTears => self.icon_frost_ring.as_ref().or(self.icon_ring.as_ref()),
+            PassiveType::FateWeaver => self.icon_fate_weaver.as_ref().or(self.icon_fortune_coin.as_ref()),
+            PassiveType::CalamityMortar => self.icon_calamity_mortar.as_ref().or(self.icon_missiles.as_ref()),
+            PassiveType::TwinPrism => self.icon_prismatic.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::AbyssalBrazier => self.icon_cinder_heart.as_ref().or(self.icon_fire_aura.as_ref()),
+            PassiveType::AbyssalCurseStone => self.icon_crimson_heartstone.as_ref().or(self.icon_jewel.as_ref()),
+            PassiveType::MoonDew => self.icon_frost_ring.as_ref().or(self.icon_ring.as_ref()),
             PassiveType::GoldenSeal => self.icon_solar_relic.as_ref().or(self.icon_jewel.as_ref()),
             PassiveType::TitanBloodArmor => self.icon_aegis.as_ref().or(self.icon_armor.as_ref()),
-            PassiveType::BerserkerBlood => self.icon_blood_stone.as_ref().or(self.icon_sword.as_ref()),
+            PassiveType::FrenzyIchor => self.icon_crimson_heartstone.as_ref().or(self.icon_sword.as_ref()),
             PassiveType::MartyrVanguard => self.icon_speed_gloves.as_ref().or(self.icon_aegis.as_ref()),
         }
     }
@@ -590,7 +590,7 @@ impl GameTextures {
                 WeaponType::BloodDaggers | WeaponType::BloodHarvest => return self.proj_dagger.as_ref(),
                 WeaponType::FaithBoomerang | WeaponType::HeavenlyJudgment => return self.proj_wind.as_ref(),
                 WeaponType::SoulPhantoms | WeaponType::BansheeWail => return self.soul_ethereal.as_ref().or(self.proj_magic.as_ref()),
-                WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => return self.proj_fire.as_ref(),
+                WeaponType::FallingLuminary | WeaponType::ArmageddonStorm => return self.proj_fire.as_ref(),
                 WeaponType::RunicPrism | WeaponType::SpatialShatter => return self.proj_holy.as_ref(),
                 _ => {}
             }

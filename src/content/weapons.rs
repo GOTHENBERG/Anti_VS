@@ -42,9 +42,9 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             is_evolution: false,
             delivery: SkillDelivery::TargetedEntity,
         },
-        WeaponType::BladeStorm => WeaponDefinition {
+        WeaponType::BladeSquall => WeaponDefinition {
             kind,
-            name: "Буря Клинков (ЭВОЛЮЦИЯ)",
+            name: "Шквал Лезвий (ЭВОЛЮЦИЯ)",
             description: "Непрерывный вихрь лезвий, вращающийся вокруг босса",
             base_damage: 60.0,
             base_cooldown: 0.35,
@@ -62,9 +62,9 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             is_evolution: false,
             delivery: SkillDelivery::NonDirectional,
         },
-        WeaponType::Hellfire => WeaponDefinition {
+        WeaponType::NetherBlaze => WeaponDefinition {
             kind,
-            name: "Адское Пекло (ЭВОЛЮЦИЯ)",
+            name: "Пекло Преисподней (ЭВОЛЮЦИЯ)",
             description: "Процентный урон по площади + взрыв трупов при гибели",
             base_damage: 48.0,
             base_cooldown: 0.5,
@@ -72,9 +72,9 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             is_evolution: true,
             delivery: SkillDelivery::NonDirectional,
         },
-        WeaponType::MagicWand => WeaponDefinition {
+        WeaponType::ArcaneScepter => WeaponDefinition {
             kind,
-            name: "Магический Жезл",
+            name: "Скипетр Арканы",
             description: "Быстрые стрелы тайной магии в ближайших противников",
             base_damage: 32.0,
             base_cooldown: 0.7,
@@ -102,9 +102,9 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             is_evolution: false,
             delivery: SkillDelivery::NonDirectional,
         },
-        WeaponType::DivineShield => WeaponDefinition {
+        WeaponType::LightBastion => WeaponDefinition {
             kind,
-            name: "Праведный Щит (ЭВОЛЮЦИЯ)",
+            name: "Бастион Света (ЭВОЛЮЦИЯ)",
             description: "Кружащийся священный щит с вампиризмом здоровья",
             base_damage: 70.0,
             base_cooldown: 0.6,
@@ -392,9 +392,9 @@ pub fn get_weapon_def(kind: WeaponType) -> WeaponDefinition {
             is_evolution: true,
             delivery: SkillDelivery::NonDirectional,
         },
-        WeaponType::ChaosMeteor => WeaponDefinition {
+        WeaponType::FallingLuminary => WeaponDefinition {
             kind,
-            name: "Хаотический Метеор",
+            name: "Падающее Светило",
             description: "Обрушивает пылающие метеоры с неба на дальние скопления врагов",
             base_damage: 54.0,
             base_cooldown: 1.5,

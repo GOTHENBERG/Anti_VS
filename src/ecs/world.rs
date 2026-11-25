@@ -1,6 +1,5 @@
 use macroquad::prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
-use crate::core::rand;
 use crate::core::spatial_grid::SpatialGrid;
 use crate::ecs::components::combat::{DamagePacket, DamageType, Faction, Health, Resistances, StatusEffects};
 use crate::ecs::components::inventory::{BossInventory, WeaponType};
@@ -30,6 +29,7 @@ pub struct MobEntity {
     pub attack_count: u32,
     pub has_duplicated: bool,
     pub owner_hero_id: Option<usize>,
+    pub last_hit_boss_id: Option<u8>,
 }
 
 #[derive(Clone, Debug)]
@@ -77,6 +77,7 @@ impl MobEntity {
             attack_count: 0,
             has_duplicated: false,
             owner_hero_id: None,
+            last_hit_boss_id: None,
         }
     }
 }
@@ -87,6 +88,7 @@ pub const MAX_DIRECTOR_GRADE: u32 = 30;
 pub struct ProjectileEntity {
     pub id: usize,
     pub pos: Vec2,
+    pub prev_pos: Vec2,
     pub vel: Vec2,
     pub damage: f32,
     pub damage_type: DamageType,
@@ -95,6 +97,7 @@ pub struct ProjectileEntity {
     pub radius: f32,
     pub pierce: u8,
     pub faction: Faction,
+    pub owner_boss_id: Option<u8>,
     pub source_weapon: Option<WeaponType>,
     pub homing_strength: f32,
 }
@@ -132,6 +135,7 @@ pub struct AcidPoolEntity {
     pub dps: f32,
     pub corrosive: bool, // Снимает ли броню
     pub is_director_source: bool, // Принадлежит ли Директору (дамажит босса, а не мобов игрока!)
+    pub owner_boss_id: Option<u8>,
 }
 
 #[derive(Clone, Debug)]
@@ -273,8 +277,8 @@ pub struct BossPlayerState {
     pub boss_mushroom_still_time: f32,
     pub boss_poison_timer: f32,
     pub boss_poison_dps: f32,
-    pub blade_storm_angle: f32,
-    pub divine_shield_angle: f32,
+    pub blade_squall_angle: f32,
+    pub light_bastion_angle: f32,
     pub death_ray_active: Option<(Vec2, Vec2, f32)>,
     pub revive_progress: f32,
     pub revive_target_id: Option<u8>,
@@ -320,8 +324,8 @@ impl BossPlayerState {
             boss_mushroom_still_time: 0.0,
             boss_poison_timer: 0.0,
             boss_poison_dps: 0.0,
-            blade_storm_angle: 0.0,
-            divine_shield_angle: 0.0,
+            blade_squall_angle: 0.0,
+            light_bastion_angle: 0.0,
             death_ray_active: None,
             revive_progress: 0.0,
             revive_target_id: None,
@@ -370,8 +374,8 @@ pub struct World {
     pub boss_level_up_options: Option<Vec<crate::ecs::components::inventory::PerkChoice>>,
     /// ID of the Boss state temporarily loaded into the legacy `boss_*` fields.
     pub active_boss_id: u8,
-    pub blade_storm_angle: f32,
-    pub divine_shield_angle: f32,
+    pub blade_squall_angle: f32,
+    pub light_bastion_angle: f32,
     pub death_ray_active: Option<(Vec2, Vec2, f32)>,
     pub coop_bosses: Vec<BossPlayerState>,
     pub obelisk_contributors: HashMap<usize, HashSet<u8>>,
@@ -381,6 +385,10 @@ pub struct World {
 
     // Пространственная сетка для O(1) поиска
     pub spatial_grid: SpatialGrid,
+
+    // Сетка сплошной среды для гидродинамики толпы (Continuum Crowds)
+    pub crowd_grid: crate::core::crowd::CrowdDensityGrid,
+    pub mob_positions_scratch: Vec<Vec2>,
 
     // Векторное поле обтекания препятствий (Flow Field)
     pub flow_field: crate::ai::flow_field::FlowField,
@@ -409,6 +417,7 @@ pub struct World {
     pub boss_altars_destroyed_total: usize,
     pub boss_obelisks_deactivated_total: usize,
     pub screen_shake: f32,
+    pub soul_link_tension: f32,
     pub obelisk_cycle_timer: f32,
     pub boss_model: Option<crate::ai::models::BossModel>,
     pub audio_events: Vec<crate::audio::AudioEvent>,
@@ -454,8 +463,8 @@ impl World {
         std::mem::swap(&mut self.boss_pending_relic_choices, &mut player.pending_relic_choices);
         std::mem::swap(&mut self.boss_level_up_options, &mut player.level_up_options);
         std::mem::swap(&mut self.boss_human_controlled, &mut player.human_controlled);
-        swap_field!(blade_storm_angle);
-        swap_field!(divine_shield_angle);
+        swap_field!(blade_squall_angle);
+        swap_field!(light_bastion_angle);
         swap_field!(death_ray_active);
         true
     }
@@ -506,19 +515,63 @@ impl World {
         target
     }
 
-    pub fn record_structure_contribution(&mut self, structure_id: usize) {
+    pub fn record_structure_contribution_for(&mut self, boss_id: u8, structure_id: usize) {
         self.structure_contributors
             .entry(structure_id)
             .or_default()
-            .insert(self.active_boss_id);
+            .insert(boss_id);
     }
 
-    pub fn record_obelisk_contribution(&mut self, structure_id: usize) {
-        self.record_structure_contribution(structure_id);
+    pub fn record_structure_contribution(&mut self, structure_id: usize) {
+        self.record_structure_contribution_for(self.active_boss_id, structure_id);
+    }
+
+    pub fn record_obelisk_contribution_for(&mut self, boss_id: u8, structure_id: usize) {
+        self.record_structure_contribution_for(boss_id, structure_id);
         self.obelisk_contributors
             .entry(structure_id)
             .or_default()
-            .insert(self.active_boss_id);
+            .insert(boss_id);
+    }
+
+    pub fn record_obelisk_contribution(&mut self, structure_id: usize) {
+        self.record_obelisk_contribution_for(self.active_boss_id, structure_id);
+    }
+
+    #[inline]
+    pub fn boss_pos_by_id(&self, boss_id: u8) -> Option<Vec2> {
+        if self.active_boss_id == boss_id {
+            Some(self.boss_pos)
+        } else {
+            self.coop_bosses
+                .iter()
+                .find(|player| player.id == boss_id)
+                .map(|player| player.boss_pos)
+        }
+    }
+
+    #[inline]
+    pub fn boss_inventory_by_id(&self, boss_id: u8) -> Option<&BossInventory> {
+        if self.active_boss_id == boss_id {
+            Some(&self.boss_inventory)
+        } else {
+            self.coop_bosses
+                .iter()
+                .find(|player| player.id == boss_id)
+                .map(|player| &player.boss_inventory)
+        }
+    }
+
+    #[inline]
+    pub fn heal_boss_by_id(&mut self, boss_id: u8, amount: f32) {
+        if amount <= 0.0 {
+            return;
+        }
+        if self.active_boss_id == boss_id {
+            self.boss_health.heal(amount);
+        } else if let Some(player) = self.coop_bosses.iter_mut().find(|p| p.id == boss_id) {
+            player.boss_health.heal(amount);
+        }
     }
 
     pub fn grant_boss_player_xp(&mut self, player_id: u8, amount: f32) {
@@ -600,8 +653,8 @@ impl World {
             boss_pending_relic_choices: 0,
             boss_level_up_options: None,
             active_boss_id: 1,
-            blade_storm_angle: 0.0,
-            divine_shield_angle: 0.0,
+            blade_squall_angle: 0.0,
+            light_bastion_angle: 0.0,
             death_ray_active: None,
             coop_bosses: Vec::new(),
             obelisk_contributors: HashMap::new(),
@@ -609,6 +662,8 @@ impl World {
             game_time: 0.0,
             match_duration_secs: crate::core::time::GAME_DURATION_SECS,
             spatial_grid: SpatialGrid::new(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT),
+            crowd_grid: crate::core::crowd::CrowdDensityGrid::new(crate::core::MAP_WIDTH, crate::core::MAP_HEIGHT),
+            mob_positions_scratch: Vec::with_capacity(4096),
             flow_field: crate::ai::flow_field::FlowField::load_prebaked(),
             mobs: Vec::with_capacity(3000),
             projectiles: Vec::with_capacity(1500),
@@ -628,6 +683,7 @@ impl World {
             boss_altars_destroyed_total: 0,
             boss_obelisks_deactivated_total: 0,
             screen_shake: 0.0,
+            soul_link_tension: 0.0,
             obelisk_cycle_timer: 60.0,
             // Модель загружается один раз в main.rs / симуляции, а не на каждом World::new().
             boss_model: None,
@@ -655,10 +711,7 @@ impl World {
     /// Перестраивает пространственную сетку по текущему списку мобов.
     /// Индексы в сетке валидны только до следующего удаления мобов.
     pub fn rebuild_spatial_grid(&mut self) {
-        self.spatial_grid.clear();
-        for (idx, mob) in self.mobs.iter().enumerate() {
-            self.spatial_grid.insert(idx, mob.pos);
-        }
+        self.spatial_grid.rebuild_from_slice(&self.mobs, |mob| mob.pos);
     }
 
     pub fn add_floating_text(&mut self, pos: Vec2, text: String, color: Color, scale: f32) {
@@ -667,8 +720,8 @@ impl World {
         }
         if self.floating_texts.len() < 300 {
             self.floating_texts.push(FloatingTextEntity {
-                pos: pos + Vec2::new(rand::gen_range(-10.0, 10.0), rand::gen_range(-10.0, 5.0)),
-                vel: Vec2::new(rand::gen_range(-15.0, 15.0), -45.0),
+                pos: pos + Vec2::new(crate::core::visual_rand::gen_range(-10.0, 10.0), crate::core::visual_rand::gen_range(-10.0, 5.0)),
+                vel: Vec2::new(crate::core::visual_rand::gen_range(-15.0, 15.0), -45.0),
                 text,
                 color,
                 lifetime: 0.8,
@@ -683,15 +736,15 @@ impl World {
         }
         if self.particles.len() + count < 1500 {
             for _ in 0..count {
-                let angle = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
-                let speed = rand::gen_range(20.0, speed_range);
+                let angle = crate::core::visual_rand::gen_range(0.0, std::f32::consts::PI * 2.0);
+                let speed = crate::core::visual_rand::gen_range(20.0, speed_range);
                 let vel = Vec2::new(angle.cos(), angle.sin()) * speed;
-                let lifetime = rand::gen_range(0.2, 0.5);
+                let lifetime = crate::core::visual_rand::gen_range(0.2, 0.5);
                 self.particles.push(ParticleEntity {
                     pos,
                     vel,
                     color,
-                    radius: rand::gen_range(1.5, 3.5),
+                    radius: crate::core::visual_rand::gen_range(1.5, 3.5),
                     lifetime,
                     max_lifetime: lifetime,
                 });

@@ -12,11 +12,11 @@ use crate::ecs::components::inventory::{
 use crate::ecs::world::World;
 
 pub fn update_boss_ai(world: &mut World, dt: f32) {
+    update_boss_timers(world, dt);
     if !world.boss_health.is_alive() {
         world.boss_vel = Vec2::ZERO;
         return;
     }
-    update_boss_timers(world, dt);
 
     let boss_pos = world.boss_pos;
     let map_w = crate::core::MAP_WIDTH;
@@ -174,6 +174,7 @@ pub fn resolve_boss_dash(world: &mut World, dash_dir: Vec2) {
             && proj.pos.distance_squared(dash_target) < 130.0 * 130.0
         {
             proj.lifetime = 0.0;
+            proj.pierce = 0;
         }
     }
     let mut dash_hits: Vec<usize> = Vec::with_capacity(64);
@@ -182,6 +183,7 @@ pub fn resolve_boss_dash(world: &mut World, dash_dir: Vec2) {
         if let Some(mob) = world.mobs.get_mut(idx) {
             if mob.health.is_alive() && mob.pos.distance_squared(dash_target) < 90.0 * 90.0 {
                 mob.health.take_damage(80.0);
+                mob.last_hit_boss_id = Some(world.active_boss_id);
                 if !mob.knockback_immune {
                     mob.knockback_vel += dir * 240.0;
                 }
@@ -235,7 +237,7 @@ fn compute_heuristic_movement(
 
     // 1. Отталкивание от мобов
     let nearby = world.spatial_grid.query_nearby(boss_pos, 180.0);
-    for idx in nearby {
+    for &idx in &nearby {
         if let Some(mob) = world.mobs.get(idx) {
             let repel = calculate_repel_force(boss_pos, mob.pos, 180.0, model.mob_repulsion_weight);
             total_force += repel;
@@ -305,10 +307,10 @@ fn compute_heuristic_movement(
 
 fn get_weapon_index(kind: WeaponType) -> usize {
     match kind {
-        WeaponType::WindBlade | WeaponType::BladeStorm => 0,
-        WeaponType::FireAura | WeaponType::Hellfire => 1,
-        WeaponType::MagicWand | WeaponType::DeathRay => 2,
-        WeaponType::HolyHammer | WeaponType::DivineShield => 3,
+        WeaponType::WindBlade | WeaponType::BladeSquall => 0,
+        WeaponType::FireAura | WeaponType::NetherBlaze => 1,
+        WeaponType::ArcaneScepter | WeaponType::DeathRay => 2,
+        WeaponType::HolyHammer | WeaponType::LightBastion => 3,
         WeaponType::IceShards | WeaponType::BlizzardStorm => 4,
         WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => 5,
         WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver => 6,
@@ -321,7 +323,7 @@ fn get_weapon_index(kind: WeaponType) -> usize {
         WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage => 13,
         WeaponType::ChainLightning | WeaponType::StormGodWrath => 14,
         WeaponType::AegisOrbiters | WeaponType::InvincibleBastion => 15,
-        WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => 16,
+        WeaponType::FallingLuminary | WeaponType::ArmageddonStorm => 16,
         WeaponType::VoidRift | WeaponType::SingularityCollapse => 17,
         WeaponType::SoulPhantoms | WeaponType::BansheeWail => 18,
         WeaponType::DivineBell | WeaponType::CathedralAura => 19,
@@ -344,18 +346,18 @@ fn get_passive_index(kind: PassiveType) -> usize {
         PassiveType::LightArmor => 3,
         PassiveType::FrostRing => 4,
         PassiveType::CorrosiveFlask => 5,
-        PassiveType::BloodStone => 6,
+        PassiveType::CrimsonHeartstone => 6,
         PassiveType::EagleScope => 7,
         PassiveType::ChronoHourglass => 8,
         PassiveType::MagnetSphere => 9,
         PassiveType::TeslaCoil => 10,
-        PassiveType::CloverOfFate => 11,
+        PassiveType::FortuneCoin => 11,
         PassiveType::PrismaticFocus => 12,
         PassiveType::TitanAegis => 13,
-        PassiveType::ImmortalAegis => 14,
-        PassiveType::ArchmageShard => 15,
-        PassiveType::DivineRapier => 16,
-        PassiveType::OctarineCore => 17,
+        PassiveType::RevivalPhylactery => 14,
+        PassiveType::ElderMageShard => 15,
+        PassiveType::DoomedBlade => 16,
+        PassiveType::OccultPrism => 17,
         PassiveType::SolarRelic => 18,
         PassiveType::StaticCore => 19,
         PassiveType::ColossalEye => 20,
@@ -365,15 +367,15 @@ fn get_passive_index(kind: PassiveType) -> usize {
         PassiveType::DivinityAura => 24,
         PassiveType::UkuleleResonance => 25,
         PassiveType::FateWeaver => 26,
-        PassiveType::SiegeMortar => 27,
+        PassiveType::CalamityMortar => 27,
         PassiveType::SporeMushroom => 28,
-        PassiveType::DuplicatorRelic => 29,
-        PassiveType::CandelabraOfFury => 30,
+        PassiveType::TwinPrism => 29,
+        PassiveType::AbyssalBrazier => 30,
         PassiveType::AbyssalCurseStone => 31,
-        PassiveType::SilverTears => 32,
+        PassiveType::MoonDew => 32,
         PassiveType::GoldenSeal => 33,
         PassiveType::TitanBloodArmor => 34,
-        PassiveType::BerserkerBlood => 35,
+        PassiveType::FrenzyIchor => 35,
         PassiveType::MartyrVanguard => 36,
     }
 }
@@ -522,7 +524,7 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
         let base_weapons = [
             WeaponType::WindBlade,
             WeaponType::FireAura,
-            WeaponType::MagicWand,
+            WeaponType::ArcaneScepter,
             WeaponType::HolyHammer,
             WeaponType::IceShards,
             WeaponType::PoisonOrbs,
@@ -538,7 +540,7 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             WeaponType::DivineBell,
             WeaponType::SoulPhantoms,
             WeaponType::AegisOrbiters,
-            WeaponType::ChaosMeteor,
+            WeaponType::FallingLuminary,
             WeaponType::VoidRift,
             WeaponType::SacredScriptures,
             WeaponType::FaithBoomerang,
@@ -554,31 +556,31 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
                 let has_pair = match bw {
                     WeaponType::WindBlade => inventory.has_passive(PassiveType::SpeedGloves),
                     WeaponType::FireAura => inventory.has_passive(PassiveType::GiantHeart),
-                    WeaponType::MagicWand => inventory.has_passive(PassiveType::CooldownTome),
+                    WeaponType::ArcaneScepter => inventory.has_passive(PassiveType::CooldownTome),
                     WeaponType::HolyHammer => inventory.has_passive(PassiveType::LightArmor),
                     WeaponType::IceShards => inventory.has_passive(PassiveType::FrostRing),
                     WeaponType::PoisonOrbs => inventory.has_passive(PassiveType::CorrosiveFlask),
-                    WeaponType::ExecutionerAxe => inventory.has_passive(PassiveType::BloodStone),
+                    WeaponType::ExecutionerAxe => inventory.has_passive(PassiveType::CrimsonHeartstone),
                     WeaponType::CelestialBow => inventory.has_passive(PassiveType::EagleScope),
                     WeaponType::ThunderOrb => inventory.has_passive(PassiveType::ChronoHourglass),
                     WeaponType::BloodDaggers => inventory.has_passive(PassiveType::MagnetSphere),
                     WeaponType::SingularityOrb => inventory.has_passive(PassiveType::TeslaCoil),
-                    WeaponType::ChainFrost => inventory.has_passive(PassiveType::CloverOfFate),
+                    WeaponType::ChainFrost => inventory.has_passive(PassiveType::FortuneCoin),
                     WeaponType::BrimstoneRay => inventory.has_passive(PassiveType::PrismaticFocus),
                     WeaponType::MissileSwarm => inventory.has_passive(PassiveType::TitanAegis),
                     WeaponType::ChainLightning => inventory.has_passive(PassiveType::StaticCore),
                     WeaponType::DivineBell => inventory.has_passive(PassiveType::DivinityAura),
                     WeaponType::SoulPhantoms => inventory.has_passive(PassiveType::SoulHarvester),
-                    WeaponType::AegisOrbiters => inventory.has_passive(PassiveType::ImmortalAegis),
-                    WeaponType::ChaosMeteor => inventory.has_passive(PassiveType::Pyromaniac),
-                    WeaponType::VoidRift => inventory.has_passive(PassiveType::OctarineCore),
+                    WeaponType::AegisOrbiters => inventory.has_passive(PassiveType::RevivalPhylactery),
+                    WeaponType::FallingLuminary => inventory.has_passive(PassiveType::Pyromaniac),
+                    WeaponType::VoidRift => inventory.has_passive(PassiveType::OccultPrism),
                     WeaponType::SacredScriptures => inventory.has_passive(PassiveType::ChronoHourglass),
-                    WeaponType::FaithBoomerang => inventory.has_passive(PassiveType::CloverOfFate),
+                    WeaponType::FaithBoomerang => inventory.has_passive(PassiveType::FortuneCoin),
                     WeaponType::CursedChalice => inventory.has_passive(PassiveType::PrismaticFocus),
-                    WeaponType::VampiricAura => inventory.has_passive(PassiveType::BloodStone),
-                    WeaponType::RunicPrism => inventory.has_passive(PassiveType::DuplicatorRelic),
+                    WeaponType::VampiricAura => inventory.has_passive(PassiveType::CrimsonHeartstone),
+                    WeaponType::RunicPrism => inventory.has_passive(PassiveType::TwinPrism),
                     WeaponType::AbyssalBeam => inventory.has_passive(PassiveType::CooldownTome),
-                    WeaponType::ChronoStasis => inventory.has_passive(PassiveType::SilverTears),
+                    WeaponType::ChronoStasis => inventory.has_passive(PassiveType::MoonDew),
                     WeaponType::AstralCloak => inventory.has_passive(PassiveType::TitanAegis),
                     _ => false,
                 };
@@ -605,18 +607,18 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             PassiveType::LightArmor,
             PassiveType::FrostRing,
             PassiveType::CorrosiveFlask,
-            PassiveType::BloodStone,
+            PassiveType::CrimsonHeartstone,
             PassiveType::EagleScope,
             PassiveType::ChronoHourglass,
             PassiveType::MagnetSphere,
             PassiveType::TeslaCoil,
-            PassiveType::CloverOfFate,
+            PassiveType::FortuneCoin,
             PassiveType::PrismaticFocus,
             PassiveType::TitanAegis,
-            PassiveType::ImmortalAegis,
-            PassiveType::ArchmageShard,
-            PassiveType::DivineRapier,
-            PassiveType::OctarineCore,
+            PassiveType::RevivalPhylactery,
+            PassiveType::ElderMageShard,
+            PassiveType::DoomedBlade,
+            PassiveType::OccultPrism,
             PassiveType::SolarRelic,
             PassiveType::StaticCore,
             PassiveType::ColossalEye,
@@ -626,15 +628,15 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
             PassiveType::DivinityAura,
             PassiveType::UkuleleResonance,
             PassiveType::FateWeaver,
-            PassiveType::SiegeMortar,
+            PassiveType::CalamityMortar,
             PassiveType::SporeMushroom,
-            PassiveType::DuplicatorRelic,
-            PassiveType::CandelabraOfFury,
+            PassiveType::TwinPrism,
+            PassiveType::AbyssalBrazier,
             PassiveType::AbyssalCurseStone,
-            PassiveType::SilverTears,
+            PassiveType::MoonDew,
             PassiveType::GoldenSeal,
             PassiveType::TitanBloodArmor,
-            PassiveType::BerserkerBlood,
+            PassiveType::FrenzyIchor,
             PassiveType::MartyrVanguard,
         ];
         for ap in all_passives {
@@ -646,40 +648,40 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
                 let has_pair = match ap {
                     PassiveType::SpeedGloves => inventory.has_weapon(WeaponType::WindBlade),
                     PassiveType::GiantHeart => inventory.has_weapon(WeaponType::FireAura),
-                    PassiveType::CooldownTome => inventory.has_weapon(WeaponType::MagicWand) || inventory.has_weapon(WeaponType::AbyssalBeam),
+                    PassiveType::CooldownTome => inventory.has_weapon(WeaponType::ArcaneScepter) || inventory.has_weapon(WeaponType::AbyssalBeam),
                     PassiveType::LightArmor => inventory.has_weapon(WeaponType::HolyHammer),
                     PassiveType::FrostRing => inventory.has_weapon(WeaponType::IceShards),
                     PassiveType::CorrosiveFlask => inventory.has_weapon(WeaponType::PoisonOrbs),
-                    PassiveType::BloodStone => inventory.has_weapon(WeaponType::ExecutionerAxe) || inventory.has_weapon(WeaponType::VampiricAura),
+                    PassiveType::CrimsonHeartstone => inventory.has_weapon(WeaponType::ExecutionerAxe) || inventory.has_weapon(WeaponType::VampiricAura),
                     PassiveType::EagleScope => inventory.has_weapon(WeaponType::CelestialBow),
                     PassiveType::ChronoHourglass => inventory.has_weapon(WeaponType::ThunderOrb) || inventory.has_weapon(WeaponType::SacredScriptures),
                     PassiveType::MagnetSphere => inventory.has_weapon(WeaponType::BloodDaggers),
                     PassiveType::TeslaCoil => inventory.has_weapon(WeaponType::SingularityOrb),
-                    PassiveType::CloverOfFate => inventory.has_weapon(WeaponType::ChainFrost) || inventory.has_weapon(WeaponType::FaithBoomerang),
+                    PassiveType::FortuneCoin => inventory.has_weapon(WeaponType::ChainFrost) || inventory.has_weapon(WeaponType::FaithBoomerang),
                     PassiveType::PrismaticFocus => inventory.has_weapon(WeaponType::BrimstoneRay) || inventory.has_weapon(WeaponType::CursedChalice),
                     PassiveType::TitanAegis => inventory.has_weapon(WeaponType::MissileSwarm) || inventory.has_weapon(WeaponType::AstralCloak),
-                    PassiveType::ImmortalAegis => inventory.has_weapon(WeaponType::AegisOrbiters),
-                    PassiveType::ArchmageShard => inventory.has_weapon(WeaponType::MagicWand) || inventory.has_weapon(WeaponType::ChainLightning),
-                    PassiveType::DivineRapier => inventory.has_weapon(WeaponType::WindBlade) || inventory.has_weapon(WeaponType::ExecutionerAxe),
-                    PassiveType::OctarineCore => inventory.has_weapon(WeaponType::VoidRift),
+                    PassiveType::RevivalPhylactery => inventory.has_weapon(WeaponType::AegisOrbiters),
+                    PassiveType::ElderMageShard => inventory.has_weapon(WeaponType::ArcaneScepter) || inventory.has_weapon(WeaponType::ChainLightning),
+                    PassiveType::DoomedBlade => inventory.has_weapon(WeaponType::WindBlade) || inventory.has_weapon(WeaponType::ExecutionerAxe),
+                    PassiveType::OccultPrism => inventory.has_weapon(WeaponType::VoidRift),
                     PassiveType::SolarRelic => inventory.has_weapon(WeaponType::HolyHammer) || inventory.has_weapon(WeaponType::CelestialBow),
                     PassiveType::StaticCore => inventory.has_weapon(WeaponType::ChainLightning),
                     PassiveType::ColossalEye => inventory.has_weapon(WeaponType::IceShards) || inventory.has_weapon(WeaponType::MissileSwarm),
                     PassiveType::BlessedHeart => inventory.has_weapon(WeaponType::CelestialBow) || inventory.has_weapon(WeaponType::DivineBell),
-                    PassiveType::Pyromaniac => inventory.has_weapon(WeaponType::ChaosMeteor) || inventory.has_weapon(WeaponType::FireAura),
+                    PassiveType::Pyromaniac => inventory.has_weapon(WeaponType::FallingLuminary) || inventory.has_weapon(WeaponType::FireAura),
                     PassiveType::SoulHarvester => inventory.has_weapon(WeaponType::SoulPhantoms) || inventory.has_weapon(WeaponType::BloodDaggers),
                     PassiveType::DivinityAura => inventory.has_weapon(WeaponType::DivineBell),
                     PassiveType::UkuleleResonance => inventory.has_weapon(WeaponType::ChainLightning) || inventory.has_weapon(WeaponType::ThunderOrb),
-                    PassiveType::FateWeaver => inventory.has_passive(PassiveType::CloverOfFate),
-                    PassiveType::SiegeMortar => inventory.has_weapon(WeaponType::MissileSwarm) || inventory.has_weapon(WeaponType::ChaosMeteor),
+                    PassiveType::FateWeaver => inventory.has_passive(PassiveType::FortuneCoin),
+                    PassiveType::CalamityMortar => inventory.has_weapon(WeaponType::MissileSwarm) || inventory.has_weapon(WeaponType::FallingLuminary),
                     PassiveType::SporeMushroom => true,
-                    PassiveType::DuplicatorRelic => inventory.has_weapon(WeaponType::RunicPrism) || inventory.weapons.len() >= 2,
-                    PassiveType::CandelabraOfFury => inventory.has_weapon(WeaponType::CursedChalice) || inventory.has_weapon(WeaponType::FireAura),
+                    PassiveType::TwinPrism => inventory.has_weapon(WeaponType::RunicPrism) || inventory.weapons.len() >= 2,
+                    PassiveType::AbyssalBrazier => inventory.has_weapon(WeaponType::CursedChalice) || inventory.has_weapon(WeaponType::FireAura),
                     PassiveType::AbyssalCurseStone => true,
-                    PassiveType::SilverTears => inventory.has_weapon(WeaponType::ChronoStasis),
+                    PassiveType::MoonDew => inventory.has_weapon(WeaponType::ChronoStasis),
                     PassiveType::GoldenSeal => true,
-                    PassiveType::TitanBloodArmor => inventory.has_weapon(WeaponType::VampiricAura) || inventory.has_passive(PassiveType::BloodStone),
-                    PassiveType::BerserkerBlood => inventory.has_weapon(WeaponType::ExecutionerAxe) || inventory.has_weapon(WeaponType::VampiricAura),
+                    PassiveType::TitanBloodArmor => inventory.has_weapon(WeaponType::VampiricAura) || inventory.has_passive(PassiveType::CrimsonHeartstone),
+                    PassiveType::FrenzyIchor => inventory.has_weapon(WeaponType::ExecutionerAxe) || inventory.has_weapon(WeaponType::VampiricAura),
                     PassiveType::MartyrVanguard => inventory.has_passive(PassiveType::SpeedGloves) || inventory.has_weapon(WeaponType::WindBlade),
                 };
                 let weight = if has_pair { 180.0 } else { 40.0 };
@@ -701,27 +703,8 @@ pub fn generate_perk_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
         available.push((PerkChoice::LimitBreakPredatorSpeed, 60.0));
     }
 
-    // Взвешенный выбор 3 уникальных карт (Рулетка)
-    let mut selected = Vec::new();
-    while selected.len() < 3 && !available.is_empty() {
-        let total_w: f32 = available.iter().map(|(_, w)| *w).sum();
-        if total_w <= 0.0 {
-            break;
-        }
-        let mut pick_val = rand::gen_range(0.0, total_w);
-        let mut chosen_idx = 0;
-        for (idx, (_, w)) in available.iter().enumerate() {
-            if pick_val <= *w {
-                chosen_idx = idx;
-                break;
-            }
-            pick_val -= *w;
-        }
-        let (choice, _) = available.remove(chosen_idx);
-        selected.push(choice);
-    }
-
-    selected
+    // Взвешенный выбор 3 уникальных карт без возвращения (Exponential Race: -ln(u) / w)
+    crate::core::math::sample_weighted_without_replacement(&available, 3)
 }
 
 /// Генерирует до 3 карт на выбор при разрушении Инфернального Обелиска.
@@ -773,27 +756,25 @@ pub fn generate_relic_choices(inventory: &BossInventory) -> Vec<PerkChoice> {
         available.push((PerkChoice::LimitBreakPredatorSpeed, 60.0));
     }
 
-    // Взвешенный выбор 3 уникальных карт (Рулетка)
-    let mut selected = Vec::new();
-    while selected.len() < 3 && !available.is_empty() {
-        let total_w: f32 = available.iter().map(|(_, w)| *w).sum();
-        if total_w <= 0.0 {
-            break;
-        }
-        let mut pick_val = rand::gen_range(0.0, total_w);
-        let mut chosen_idx = 0;
-        for (idx, (_, w)) in available.iter().enumerate() {
-            if pick_val <= *w {
-                chosen_idx = idx;
-                break;
-            }
-            pick_val -= *w;
-        }
-        let (choice, _) = available.remove(chosen_idx);
-        selected.push(choice);
-    }
+    // Взвешенный выбор 3 уникальных карт без возвращения (Exponential Race: -ln(u) / w)
+    crate::core::math::sample_weighted_without_replacement(&available, 3)
+}
 
-    selected
+fn record_perk_announcement(
+    world: &mut World,
+    pos: Vec2,
+    text: String,
+    color: Color,
+    scale: f32,
+    duration: f32,
+    particles: Option<(usize, f32)>,
+) {
+    world.boss_inventory.last_chosen_perk = Some(text.clone());
+    world.boss_inventory.perk_announcement_timer = duration;
+    world.add_floating_text(pos, text, color, scale);
+    if let Some((count, speed)) = particles {
+        world.spawn_particles(pos, count, color, speed);
+    }
 }
 
 pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
@@ -807,34 +788,40 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                 w.damage *= 1.8;
                 w.base_cooldown *= 0.7;
 
-                let name = match to {
-                    WeaponType::BladeStorm => "БУРЯ КЛИНКОВ",
-                    WeaponType::Hellfire => "АДСКОЕ ПЕКЛО",
-                    WeaponType::DeathRay => "ЛУЧ СМЕРТИ",
-                    WeaponType::DivineShield => "ПРАВЕДНЫЙ ЩИТ",
-                    WeaponType::BlizzardStorm => "ЛЕДНИКОВАЯ БУРЯ",
-                    WeaponType::ToxicPestilence => "ТОКСИЧНЫЙ МОР",
-                    WeaponType::WhirlwindCleaver => "ВИХРЕВОЙ СЕКАЧ",
-                    WeaponType::StarfallBarrage => "ЗВЕЗДОПАДНЫЙ ЗАЛП",
-                    WeaponType::ThunderstormWrath => "ГНЕВ ГРОЗЫ",
-                    WeaponType::BloodHarvest => "КРОВАВАЯ ЖАТВА",
-                    WeaponType::EventHorizon => "ГОРИЗОНТ СОБЫТИЙ",
-                    WeaponType::AbsoluteZero => "АБСОЛЮТНЫЙ НОЛЬ",
-                    WeaponType::InfernalCataclysm => "ИНФЕРНАЛЬНЫЙ КАТАКЛИЗМ",
-                    WeaponType::DoomsdayBarrage => "ОСАДА СУДНОГО ДНЯ",
-                    WeaponType::StormGodWrath => "ГНЕВ БУРИ",
-                    WeaponType::CathedralAura => "АУРА СОБОРА",
-                    WeaponType::BansheeWail => "ВОПЛЬ БАНШИ",
-                    WeaponType::InvincibleBastion => "НЕСОКРУШИМАЯ КРЕПОСТЬ",
-                    WeaponType::ArmageddonStorm => "ШТОРМ АРМАГЕДДОНА",
-                    WeaponType::SingularityCollapse => "КОЛЛАПС СВЕРХНОВОЙ",
-                    _ => "ЭВОЛЮЦИЯ ОРУЖИЯ",
-                };
-                let text = format!("ЭВОЛЮЦИЯ: {}!", name);
-                world.boss_inventory.last_chosen_perk = Some(text.clone());
-                world.boss_inventory.perk_announcement_timer = 3.5;
-                world.add_floating_text(boss_pos, text, GOLD, 1.6);
-                world.spawn_particles(boss_pos, 40, GOLD, 160.0);
+                if !world.is_headless {
+                    let name = match to {
+                        WeaponType::BladeSquall => "ШКВАЛ ЛЕЗВИЙ",
+                        WeaponType::NetherBlaze => "ПЕКЛО ПРЕИСПОДНЕЙ",
+                        WeaponType::DeathRay => "ЛУЧ СМЕРТИ",
+                        WeaponType::LightBastion => "БАСТИОН СВЕТА",
+                        WeaponType::BlizzardStorm => "ЛЕДНИКОВАЯ БУРЯ",
+                        WeaponType::ToxicPestilence => "ТОКСИЧНЫЙ МОР",
+                        WeaponType::WhirlwindCleaver => "ВИХРЕВОЙ СЕКАЧ",
+                        WeaponType::StarfallBarrage => "ЗВЕЗДОПАДНЫЙ ЗАЛП",
+                        WeaponType::ThunderstormWrath => "ГНЕВ ГРОЗЫ",
+                        WeaponType::BloodHarvest => "КРОВАВАЯ ЖАТВА",
+                        WeaponType::EventHorizon => "ГОРИЗОНТ СОБЫТИЙ",
+                        WeaponType::AbsoluteZero => "АБСОЛЮТНЫЙ НОЛЬ",
+                        WeaponType::InfernalCataclysm => "ИНФЕРНАЛЬНЫЙ КАТАКЛИЗМ",
+                        WeaponType::DoomsdayBarrage => "ОСАДА СУДНОГО ДНЯ",
+                        WeaponType::StormGodWrath => "ГНЕВ БУРИ",
+                        WeaponType::CathedralAura => "АУРА СОБОРА",
+                        WeaponType::BansheeWail => "ВОПЛЬ БАНШИ",
+                        WeaponType::InvincibleBastion => "НЕСОКРУШИМАЯ КРЕПОСТЬ",
+                        WeaponType::ArmageddonStorm => "ШТОРМ АРМАГЕДДОНА",
+                        WeaponType::SingularityCollapse => "КОЛЛАПС СВЕРХНОВОЙ",
+                        _ => "ЭВОЛЮЦИЯ ОРУЖИЯ",
+                    };
+                    record_perk_announcement(
+                        world,
+                        boss_pos,
+                        format!("ЭВОЛЮЦИЯ: {}!", name),
+                        GOLD,
+                        1.6,
+                        3.5,
+                        Some((40, 160.0)),
+                    );
+                }
             }
         }
         PerkChoice::UpgradeWeapon(kind) => {
@@ -842,15 +829,23 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                 w.level += 1;
                 w.damage += 8.0;
                 w.base_cooldown = (w.base_cooldown * 0.94).max(0.3);
+                let new_level = w.level;
 
-                let text = format!("ОРУЖИЕ +1: {:?} (Lvl {})", kind, w.level);
-                world.boss_inventory.last_chosen_perk = Some(text.clone());
-                world.boss_inventory.perk_announcement_timer = 2.0;
-                world.add_floating_text(boss_pos, text, SKYBLUE, 1.2);
+                if !world.is_headless {
+                    record_perk_announcement(
+                        world,
+                        boss_pos,
+                        format!("ОРУЖИЕ +1: {:?} (Lvl {})", kind, new_level),
+                        SKYBLUE,
+                        1.2,
+                        2.0,
+                        None,
+                    );
+                }
             } else if world.boss_inventory.weapons.len() < MAX_WEAPON_SLOTS {
                 let base_cd = match kind {
                     WeaponType::FireAura => 0.8,
-                    WeaponType::MagicWand => 0.7,
+                    WeaponType::ArcaneScepter => 0.7,
                     WeaponType::HolyHammer => 1.4,
                     WeaponType::IceShards => 1.0,
                     WeaponType::PoisonOrbs => 1.2,
@@ -866,13 +861,13 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     WeaponType::DivineBell => 1.8,
                     WeaponType::SoulPhantoms => 1.2,
                     WeaponType::AegisOrbiters => 2.5,
-                    WeaponType::ChaosMeteor => 2.2,
+                    WeaponType::FallingLuminary => 2.2,
                     WeaponType::VoidRift => 2.0,
                     _ => 1.1,
                 };
                 let base_dmg = match kind {
                     WeaponType::HolyHammer => 45.0,
-                    WeaponType::MagicWand => 32.0,
+                    WeaponType::ArcaneScepter => 32.0,
                     WeaponType::FireAura => 18.0,
                     WeaponType::ExecutionerAxe => 42.0,
                     WeaponType::CelestialBow => 32.0,
@@ -886,7 +881,7 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     WeaponType::DivineBell => 55.0,
                     WeaponType::SoulPhantoms => 28.0,
                     WeaponType::AegisOrbiters => 35.0,
-                    WeaponType::ChaosMeteor => 75.0,
+                    WeaponType::FallingLuminary => 75.0,
                     WeaponType::VoidRift => 48.0,
                     _ => 25.0,
                 };
@@ -900,10 +895,17 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     limit_break_level: 0,
                     bonus_projectiles: 0,
                 });
-                let text = format!("НОВОЕ ОРУЖИЕ: {:?}", kind);
-                world.boss_inventory.last_chosen_perk = Some(text.clone());
-                world.boss_inventory.perk_announcement_timer = 2.5;
-                world.add_floating_text(boss_pos, text, GREEN, 1.3);
+                if !world.is_headless {
+                    record_perk_announcement(
+                        world,
+                        boss_pos,
+                        format!("НОВОЕ ОРУЖИЕ: {:?}", kind),
+                        GREEN,
+                        1.3,
+                        2.5,
+                        None,
+                    );
+                }
             }
         }
         PerkChoice::UpgradePassive(kind) => {
@@ -926,7 +928,7 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     world.boss_resistances.flat_armor += 4.0;
                     world.boss_resistances.physical_res = (world.boss_resistances.physical_res + 0.06).min(0.60);
                 }
-                PassiveType::BloodStone => {
+                PassiveType::CrimsonHeartstone => {
                     world.boss_health.max += 150.0;
                     world.boss_health.heal(150.0);
                 }
@@ -942,19 +944,19 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                     world.boss_resistances.fire_res = (world.boss_resistances.fire_res + 0.15).min(0.85);
                     world.boss_resistances.holy_res = (world.boss_resistances.holy_res + 0.15).min(0.85);
                 }
-                PassiveType::ImmortalAegis => {
+                PassiveType::RevivalPhylactery => {
                     world.boss_resistances.flat_armor += 5.0;
                 }
                 PassiveType::SporeMushroom => {
                     world.boss_health.max += 30.0;
                     world.boss_health.heal(50.0);
                 }
-                PassiveType::DuplicatorRelic => {
+                PassiveType::TwinPrism => {
                     for w in &mut world.boss_inventory.weapons {
                         w.bonus_projectiles += 1;
                     }
                 }
-                PassiveType::SilverTears => {
+                PassiveType::MoonDew => {
                     world.boss_resistances.poison_res = (world.boss_resistances.poison_res + 0.12).min(0.85);
                     world.boss_resistances.ice_res = (world.boss_resistances.ice_res + 0.12).min(0.85);
                     world.boss_health.heal(60.0);
@@ -974,70 +976,159 @@ pub fn apply_perk_choice(world: &mut World, choice: PerkChoice) {
                 _ => {}
             }
 
-            let text = format!("ПАССИВКА: {:?}", kind);
-            world.boss_inventory.last_chosen_perk = Some(text.clone());
-            world.boss_inventory.perk_announcement_timer = 2.0;
-            world.add_floating_text(boss_pos, text, VIOLET, 1.2);
+            if !world.is_headless {
+                record_perk_announcement(
+                    world,
+                    boss_pos,
+                    format!("ПАССИВКА: {:?}", kind),
+                    VIOLET,
+                    1.2,
+                    2.0,
+                    None,
+                );
+            }
         }
         PerkChoice::LimitBreakDamage { weapon_idx, name } => {
             if let Some(w) = world.boss_inventory.weapons.get_mut(weapon_idx) {
                 w.limit_break_level += 1;
                 w.damage *= 1.12;
-                let text = format!("ВОЗВЫШЕНИЕ: {} (+12% Урона)", name);
-                world.boss_inventory.last_chosen_perk = Some(text.clone());
-                world.boss_inventory.perk_announcement_timer = 2.5;
-                world.add_floating_text(boss_pos, text, GOLD, 1.4);
-                world.spawn_particles(boss_pos, 25, GOLD, 150.0);
+                if !world.is_headless {
+                    record_perk_announcement(
+                        world,
+                        boss_pos,
+                        format!("ВОЗВЫШЕНИЕ: {} (+12% Урона)", name),
+                        GOLD,
+                        1.4,
+                        2.5,
+                        Some((25, 150.0)),
+                    );
+                }
             }
         }
         PerkChoice::LimitBreakCooldown { weapon_idx, name } => {
             if let Some(w) = world.boss_inventory.weapons.get_mut(weapon_idx) {
                 w.limit_break_level += 1;
                 w.base_cooldown = (w.base_cooldown * 0.94).max(0.12);
-                let text = format!("ВОЗВЫШЕНИЕ: {} (-6% КД)", name);
-                world.boss_inventory.last_chosen_perk = Some(text.clone());
-                world.boss_inventory.perk_announcement_timer = 2.5;
-                world.add_floating_text(boss_pos, text, SKYBLUE, 1.4);
-                world.spawn_particles(boss_pos, 20, SKYBLUE, 140.0);
+                if !world.is_headless {
+                    record_perk_announcement(
+                        world,
+                        boss_pos,
+                        format!("ВОЗВЫШЕНИЕ: {} (-6% КД)", name),
+                        SKYBLUE,
+                        1.4,
+                        2.5,
+                        Some((20, 140.0)),
+                    );
+                }
             }
         }
         PerkChoice::LimitBreakProjectiles { weapon_idx, name } => {
             if let Some(w) = world.boss_inventory.weapons.get_mut(weapon_idx) {
                 w.limit_break_level += 1;
                 w.bonus_projectiles += 1;
-                let text = format!("ВОЗВЫШЕНИЕ: {} (+1 Снаряд)", name);
-                world.boss_inventory.last_chosen_perk = Some(text.clone());
-                world.boss_inventory.perk_announcement_timer = 2.5;
-                world.add_floating_text(boss_pos, text, ORANGE, 1.4);
-                world.spawn_particles(boss_pos, 30, ORANGE, 160.0);
+                if !world.is_headless {
+                    record_perk_announcement(
+                        world,
+                        boss_pos,
+                        format!("ВОЗВЫШЕНИЕ: {} (+1 Снаряд)", name),
+                        ORANGE,
+                        1.4,
+                        2.5,
+                        Some((30, 160.0)),
+                    );
+                }
             }
         }
         PerkChoice::LimitBreakTitanVigor => {
             world.boss_health.max += 160.0;
             world.boss_health.heal(world.boss_health.max * 0.25);
-            let text = "ВОЗВЫШЕНИЕ: Закалка Титана (+160 HP, Лечение)".to_string();
-            world.boss_inventory.last_chosen_perk = Some(text.clone());
-            world.boss_inventory.perk_announcement_timer = 3.0;
-            world.add_floating_text(boss_pos, text, GREEN, 1.5);
-            world.spawn_particles(boss_pos, 35, GREEN, 180.0);
+            if !world.is_headless {
+                record_perk_announcement(
+                    world,
+                    boss_pos,
+                    "ВОЗВЫШЕНИЕ: Закалка Титана (+160 HP, Лечение)".to_string(),
+                    GREEN,
+                    1.5,
+                    3.0,
+                    Some((35, 180.0)),
+                );
+            }
         }
         PerkChoice::LimitBreakAdaptiveArmor => {
             world.boss_resistances.flat_armor += 2.0;
             world.boss_resistances.physical_res = (world.boss_resistances.physical_res + 0.03).min(0.75);
             world.boss_resistances.fire_res = (world.boss_resistances.fire_res + 0.03).min(0.75);
-            let text = "ВОЗВЫШЕНИЕ: Адаптивная Броня (+2 Брони, +3% Резисты)".to_string();
-            world.boss_inventory.last_chosen_perk = Some(text.clone());
-            world.boss_inventory.perk_announcement_timer = 3.0;
-            world.add_floating_text(boss_pos, text, PURPLE, 1.5);
-            world.spawn_particles(boss_pos, 25, PURPLE, 160.0);
+            if !world.is_headless {
+                record_perk_announcement(
+                    world,
+                    boss_pos,
+                    "ВОЗВЫШЕНИЕ: Адаптивная Броня (+2 Брони, +3% Резисты)".to_string(),
+                    PURPLE,
+                    1.5,
+                    3.0,
+                    Some((25, 160.0)),
+                );
+            }
         }
         PerkChoice::LimitBreakPredatorSpeed => {
             world.boss_inventory.bonus_move_speed_multiplier += 0.08;
-            let text = "ВОЗВЫШЕНИЕ: Скорость Хищника (+8% Скорости бега)".to_string();
-            world.boss_inventory.last_chosen_perk = Some(text.clone());
-            world.boss_inventory.perk_announcement_timer = 2.5;
-            world.add_floating_text(boss_pos, text, YELLOW, 1.3);
-            world.spawn_particles(boss_pos, 20, YELLOW, 140.0);
+            if !world.is_headless {
+                record_perk_announcement(
+                    world,
+                    boss_pos,
+                    "ВОЗВЫШЕНИЕ: Скорость Хищника (+8% Скорости бега)".to_string(),
+                    YELLOW,
+                    1.3,
+                    2.5,
+                    Some((20, 140.0)),
+                );
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mobs_pursue_boss_via_direct_shortest_path() {
+        let mut world = World::new();
+        world.boss_pos = Vec2::new(10000.0, 8000.0);
+        world.boss_vel = Vec2::new(150.0, -100.0); // босс активно бежит
+
+        // Спавним мобов разных тиров в разных направлениях
+        crate::content::mobs::spawn_single_mob_at_pos(&mut world, 1, Vec2::new(10500.0, 8000.0)); // Tier 1: справа
+        crate::content::mobs::spawn_single_mob_at_pos(&mut world, 2, Vec2::new(9500.0, 8000.0));  // Tier 2 (гончие): слева
+        crate::content::mobs::spawn_single_mob_at_pos(&mut world, 3, Vec2::new(10000.0, 8300.0)); // Tier 3 (стрелки): снизу
+        crate::content::mobs::spawn_single_mob_at_pos(&mut world, 7, Vec2::new(10000.0, 7700.0)); // Tier 7 (элементали): сверху
+
+        crate::ecs::systems::movement::update_movement(&mut world, 0.05);
+
+        for mob in &world.mobs {
+            let direct_to_boss = (world.boss_pos - mob.pos).normalize();
+            let mob_heading = mob.vel.normalize_or_zero();
+            let cosine = mob_heading.dot(direct_to_boss);
+            assert!(
+                cosine > 0.99,
+                "Моб тира {} должен бежать строго по кратчайшей прямой к боссу! Косинус: {:.4}, vel: {:?}",
+                mob.tier,
+                cosine,
+                mob.vel
+            );
+        }
+    }
+
+    #[test]
+    fn test_boss_ai_policy_fl_autonomy() {
+        let mut world = World::new();
+        world.boss_model = crate::ai::load_trained_boss_model();
+
+        let initial_pos = world.boss_pos;
+        update_boss_ai(&mut world, 0.05);
+
+        // Босс под управлением модели FL обновляет свое состояние и скорость в соответствии с политикой
+        assert!(world.boss_policy_has_cached_action);
+        assert_ne!(world.boss_pos, initial_pos);
     }
 }

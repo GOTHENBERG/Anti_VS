@@ -282,8 +282,10 @@ pub fn spawn_tier_altar(world: &mut World, pos: Vec2, tier: u8) {
         state_timer: 0.0,
     });
 
-    world.spawn_particles(pos, 35, Color::new(0.6, 0.0, 0.8, 1.0), 120.0);
-    world.add_floating_text(pos, format!("АЛТАРЬ ТИРА {}", tier), PURPLE, 1.2);
+    if !world.is_headless {
+        world.spawn_particles(pos, 35, Color::new(0.6, 0.0, 0.8, 1.0), 120.0);
+        world.add_floating_text(pos, format!("АЛТАРЬ ТИРА {}", tier), PURPLE, 1.2);
+    }
 }
 
 /// Проверяет, можно ли поставить Стену-Баррикаду (50x50 px)
@@ -645,5 +647,29 @@ mod tests {
         let h = &world.mobs[1];
         assert_eq!(h.resistances.flat_armor, 40.0, "Герой должен получить +5 брони");
         assert_eq!(h.resistances.physical_res, 0.60, "Герой должен получить +10% физ. реза");
+    }
+
+    #[test]
+    fn test_barricade_sliding_physics() {
+        let mut world = World::new();
+        world.is_headless = true;
+        spawn_wall(&mut world, Vec2::new(1000.0, 1000.0));
+        let wall_pos = world.structures[0].pos;
+
+        // Босс слева от баррикады на расстоянии касания (43px - min_dist)
+        // и движется по диагонали (вправо-вниз) прямо на баррикаду
+        world.boss_pos = Vec2::new(wall_pos.x - 40.0, wall_pos.y);
+        world.boss_vel = Vec2::new(150.0, 150.0);
+
+        crate::ecs::systems::movement::update_movement(&mut world, 0.016);
+
+        // Босс не должен провалиться сквозь стену
+        let dist = world.boss_pos.distance(wall_pos);
+        assert!(dist >= 42.9, "Босс не должен проваливаться внутрь баррикады! Dist: {:.2}", dist);
+
+        // Составляющая скорости, направленная внутрь стены (+X), должна быть погашена,
+        // а тангенциальная составляющая (+Y) сохранена для плавного скольжения вдоль стены
+        assert!(world.boss_vel.x <= 0.01, "Скорость в стену должна быть погашена: {:.2}", world.boss_vel.x);
+        assert!(world.boss_vel.y > 100.0, "Скольжение вдоль стены должно сохраниться: {:.2}", world.boss_vel.y);
     }
 }

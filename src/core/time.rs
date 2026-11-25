@@ -1,4 +1,6 @@
 pub const GAME_DURATION_SECS: f32 = 1020.0; // 17 минут
+pub const FIXED_SIM_DT: f32 = 0.05; // 20 Гц авторитетный шаг симуляции
+pub const DIRECTOR_PERIOD_TICKS: u32 = 8; // 8 * 0.05 = 0.40 сек между тактическими решениями Директора
 
 #[derive(Debug, Clone)]
 pub struct GameClock {

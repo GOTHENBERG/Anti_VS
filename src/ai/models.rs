@@ -43,10 +43,10 @@ pub struct BossModel {
 
     // Генетические веса 6 имба-архетипов билдостроения:
     // [0] Инфернальный Пиромант (Огонь, Пламя, Сердце Пироманта)
-    // [1] Сверхпроводящий Громовержец (Молния, Тесла, Лира, Клевер)
-    // [2] Несокрушимый Бастион (Орбиты, Молот, Щиты, Эгида)
+    // [1] Сверхпроводящий Громовержец (Молния, Тесла, Лира, Монета Удачи)
+    // [2] Несокрушимый Бастион (Орбиты, Молот, Щиты, Филактерия)
     // [3] Аннигилятор Бездны (Луч Смерти, Сингулярность, Око Колосса)
-    // [4] Кровавый Жнец (Топор, Кинжалы, Вампиризм, Клевер)
+    // [4] Кровавый Жнец (Топор, Кинжалы, Вампиризм, Монета Удачи)
     // [5] Звёздный Охотник (Лук, Ракеты, Самонаведение, Орлиный Глаз)
     #[serde(default = "default_combo_archetype_weights")]
     pub combo_archetype_weights: Vec<f32>,
@@ -64,11 +64,11 @@ pub fn default_combo_archetype_weights() -> Vec<f32> {
 /// Общая таблица не даёт сенсорам и политике выбора перков разойтись.
 pub fn weapon_archetypes(kind: WeaponType) -> &'static [usize] {
     match kind {
-        WeaponType::FireAura | WeaponType::Hellfire | WeaponType::ChaosMeteor | WeaponType::ArmageddonStorm => &[0],
+        WeaponType::FireAura | WeaponType::NetherBlaze | WeaponType::FallingLuminary | WeaponType::ArmageddonStorm => &[0],
         WeaponType::BrimstoneRay | WeaponType::InfernalCataclysm => &[0, 3],
         WeaponType::ThunderOrb | WeaponType::ThunderstormWrath | WeaponType::ChainLightning | WeaponType::StormGodWrath | WeaponType::ChainFrost | WeaponType::AbsoluteZero => &[1],
-        WeaponType::HolyHammer | WeaponType::DivineShield | WeaponType::AegisOrbiters | WeaponType::InvincibleBastion | WeaponType::WindBlade | WeaponType::BladeStorm => &[2],
-        WeaponType::MagicWand | WeaponType::DeathRay | WeaponType::SingularityOrb | WeaponType::EventHorizon | WeaponType::VoidRift | WeaponType::SingularityCollapse => &[3],
+        WeaponType::HolyHammer | WeaponType::LightBastion | WeaponType::AegisOrbiters | WeaponType::InvincibleBastion | WeaponType::WindBlade | WeaponType::BladeSquall => &[2],
+        WeaponType::ArcaneScepter | WeaponType::DeathRay | WeaponType::SingularityOrb | WeaponType::EventHorizon | WeaponType::VoidRift | WeaponType::SingularityCollapse => &[3],
         WeaponType::ExecutionerAxe | WeaponType::WhirlwindCleaver | WeaponType::BloodDaggers | WeaponType::BloodHarvest | WeaponType::PoisonOrbs | WeaponType::ToxicPestilence => &[4],
         WeaponType::CelestialBow | WeaponType::StarfallBarrage | WeaponType::MissileSwarm | WeaponType::DoomsdayBarrage | WeaponType::DivineBell | WeaponType::CathedralAura | WeaponType::SoulPhantoms | WeaponType::BansheeWail => &[5],
         WeaponType::IceShards | WeaponType::BlizzardStorm => &[1, 2],
@@ -85,18 +85,18 @@ pub fn weapon_archetypes(kind: WeaponType) -> &'static [usize] {
 
 pub fn passive_archetypes(kind: PassiveType) -> &'static [usize] {
     match kind {
-        PassiveType::Pyromaniac | PassiveType::BloodStone | PassiveType::SolarRelic => &[0],
+        PassiveType::Pyromaniac | PassiveType::CrimsonHeartstone | PassiveType::SolarRelic => &[0],
         PassiveType::TeslaCoil | PassiveType::StaticCore | PassiveType::UkuleleResonance | PassiveType::ChronoHourglass => &[1],
-        PassiveType::LightArmor | PassiveType::TitanAegis | PassiveType::ImmortalAegis | PassiveType::SiegeMortar | PassiveType::TitanBloodArmor => &[2],
-        PassiveType::ColossalEye | PassiveType::CooldownTome | PassiveType::PrismaticFocus | PassiveType::ArchmageShard | PassiveType::CandelabraOfFury => &[3],
-        PassiveType::OctarineCore | PassiveType::SoulHarvester | PassiveType::CorrosiveFlask | PassiveType::AbyssalCurseStone => &[4],
-        PassiveType::EagleScope | PassiveType::BlessedHeart | PassiveType::DivinityAura | PassiveType::SpeedGloves | PassiveType::DuplicatorRelic | PassiveType::GoldenSeal => &[5],
-        PassiveType::GiantHeart | PassiveType::SporeMushroom | PassiveType::SilverTears => &[0, 2],
-        PassiveType::CloverOfFate | PassiveType::FateWeaver => &[1, 4],
-        PassiveType::DivineRapier => &[4, 5],
+        PassiveType::LightArmor | PassiveType::TitanAegis | PassiveType::RevivalPhylactery | PassiveType::CalamityMortar | PassiveType::TitanBloodArmor => &[2],
+        PassiveType::ColossalEye | PassiveType::CooldownTome | PassiveType::PrismaticFocus | PassiveType::ElderMageShard | PassiveType::AbyssalBrazier => &[3],
+        PassiveType::OccultPrism | PassiveType::SoulHarvester | PassiveType::CorrosiveFlask | PassiveType::AbyssalCurseStone => &[4],
+        PassiveType::EagleScope | PassiveType::BlessedHeart | PassiveType::DivinityAura | PassiveType::SpeedGloves | PassiveType::TwinPrism | PassiveType::GoldenSeal => &[5],
+        PassiveType::GiantHeart | PassiveType::SporeMushroom | PassiveType::MoonDew => &[0, 2],
+        PassiveType::FortuneCoin | PassiveType::FateWeaver => &[1, 4],
+        PassiveType::DoomedBlade => &[4, 5],
         PassiveType::FrostRing => &[1, 2],
         PassiveType::MagnetSphere => &[3, 4],
-        PassiveType::BerserkerBlood => &[0, 2],
+        PassiveType::FrenzyIchor => &[0, 2],
         PassiveType::MartyrVanguard => &[2, 5],
     }
 }
@@ -118,7 +118,7 @@ pub fn default_passive_priorities() -> Vec<f32> {
         1.3, 1.5, 1.4, 1.4, 1.2, 1.2, 1.5, 1.3, 1.3, 1.4, 1.5, 1.6, 1.4, 1.5, // 1..14 (Базовые пассивки)
         1.8, 1.7, 1.6, 1.8, 2.0, 1.6, 1.5, 1.7, 1.6, 1.6, 1.7, 1.5, 1.6, 1.7, // 15..28 (Легендарные реликвии)
         1.6,                                                                   // 29: Споровый Мицелий
-        1.9, 1.7, 1.8, 1.8, 1.9, 1.7,                                         // 30..35 (Дупликатор, Канделябр, Проклятие, Слеза, Печать, Кровавый Титан)
+        1.9, 1.7, 1.8, 1.8, 1.9, 1.7,                                         // 30..35 (Призма Удвоения, Жаровня Бездны, Проклятие, Лунная Роса, Печать, Кровавый Титан)
     ]
 }
 

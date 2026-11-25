@@ -451,7 +451,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
     let weapons_page1 = [
         (
             WeaponType::WindBlade,
-            "1. Клинок Ветра -> БУРЯ КЛИНКОВ",
+            "1. Клинок Ветра -> ШКВАЛ ЛЕЗВИЙ",
             "Рецепт: Клинок Ветра (ур. 8) + Перчатка Скорости",
             "Базовый: Серповидные клинки ветра по курсу бега.",
             "ЭВОЛЮЦИЯ: Вихрь из 8 вращающихся лезвий вокруг босса.",
@@ -460,7 +460,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
         ),
         (
             WeaponType::FireAura,
-            "2. Огненная Аура -> АДСКОЕ ПЕКЛО",
+            "2. Огненная Аура -> ПЕКЛО ПРЕИСПОДНЕЙ",
             "Рецепт: Огненная Аура (ур. 8) + Сердце Гиганта",
             "Базовый: Пульсирующая огненная волна (DoT горение).",
             "ЭВОЛЮЦИЯ: % урон от HP + детонация трупов горящих мобов!",
@@ -468,17 +468,17 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
             ORANGE,
         ),
         (
-            WeaponType::MagicWand,
-            "3. Магический Жезл -> ЛУЧ СМЕРТИ",
-            "Рецепт: Магический Жезл (ур. 8) + Фолиант Времени",
+            WeaponType::ArcaneScepter,
+            "3. Скипетр Арканы -> ЛУЧ СМЕРТИ",
+            "Рецепт: Скипетр Арканы (ур. 8) + Фолиант Времени",
             "Базовый: Самонаводящиеся сгустки тайной магии.",
             "ЭВОЛЮЦИЯ: Прожигающий лазерный луч через весь экран.",
-            textures.icon_magic_wand.as_ref().or(textures.icon_wand.as_ref()),
+            textures.icon_arcane_scepter.as_ref().or(textures.icon_wand.as_ref()),
             VIOLET,
         ),
         (
             WeaponType::HolyHammer,
-            "4. Святой Молот -> ПРАВЕДНЫЙ ЩИТ",
+            "4. Святой Молот -> БАСТИОН СВЕТА",
             "Рецепт: Святой Молот (ур. 8) + Броня Света",
             "Базовый: Тяжёлые удары святым молотом по площади.",
             "ЭВОЛЮЦИЯ: Вращающийся щит света с 12% вампиризмом в HP.",
@@ -506,7 +506,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
         (
             WeaponType::ExecutionerAxe,
             "7. Топор Палача -> ВИХРЕВОЙ СЕКАЧ",
-            "Рецепт: Топор Палача (ур. 8) + Кровавый Камень",
+            "Рецепт: Топор Палача (ур. 8) + Багровый Сердцевик",
             "Базовый: Вращающиеся секиры с пробитием 4 целей.",
             "ЭВОЛЮЦИЯ: 12 рассекающих топоров по спирали с кровотечением.",
             textures.icon_executioner_axe.as_ref().or(textures.icon_ax.as_ref()),
@@ -590,19 +590,19 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
         (
             WeaponType::AegisOrbiters,
             "16. Бастион Эгиды -> НЕСОКРУШИМАЯ КРЕПОСТЬ",
-            "Рецепт: Бастион Эгиды (ур. 8) + Эгида Бессмертия",
+            "Рецепт: Бастион Эгиды (ур. 8) + Филактерия Возрождения",
             "Базовый: 4 парящих щита, отражающих снаряды мобов.",
             "ЭВОЛЮЦИЯ: 8 щитов-клинков: 100% отражение дальних атак!",
             textures.icon_aegis_orbiters.as_ref().or(textures.icon_shield.as_ref()),
             GOLD,
         ),
         (
-            WeaponType::ChaosMeteor,
-            "17. Метеорит Хаоса -> АРМАГЕДДОН",
-            "Рецепт: Метеорит Хаоса (ур. 8) + Октариновое Ядро",
+            WeaponType::FallingLuminary,
+            "17. Падающее Светило -> АРМАГЕДДОН",
+            "Рецепт: Падающее Светило (ур. 8) + Оккультная Призма",
             "Базовый: Падение пылающих комет в скопления мобов.",
             "ЭВОЛЮЦИЯ: Залп из 5 метеоритов: кратеры с магмой на 8 сек!",
-            textures.icon_chaos_meteor.as_ref().or(textures.icon_elixir.as_ref()),
+            textures.icon_falling_luminary.as_ref().or(textures.icon_elixir.as_ref()),
             ORANGE,
         ),
         (
@@ -647,7 +647,7 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
         (
             WeaponType::FaithBoomerang,
             "22. Клинок Веры -> НЕБЕСНЫЙ ВЕРДИКТ",
-            "Рецепт: Клинок Веры (ур. 8) + Клевер Судьбы",
+            "Рецепт: Клинок Веры (ур. 8) + Монета Удачи",
             "Базовый: Вращающийся крест-бумеранг, рассекающий ряды монстров.",
             "ЭВОЛЮЦИЯ: Каскад святых клинков судного дня с повышенным критом!",
             textures.icon_sword.as_ref().or(textures.proj_holy.as_ref()),
@@ -665,10 +665,10 @@ fn draw_tab_weapons(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures:
         (
             WeaponType::VampiricAura,
             "24. Аура Вампиризма -> ПИРШЕСТВО ДУШ",
-            "Рецепт: Аура Вампиризма (ур. 8) + Кровавый Камень",
+            "Рецепт: Аура Вампиризма (ур. 8) + Багровый Сердцевик",
             "Базовый: Алая аура, непрерывно вытягивающая жизнь из мобов в радиусе.",
             "ЭВОЛЮЦИЯ: Колоссальный радиус кражи HP и постоянный рост силы за души!",
-            textures.icon_blood_stone.as_ref().or(textures.icon_fire_aura.as_ref()),
+            textures.icon_crimson_heartstone.as_ref().or(textures.icon_fire_aura.as_ref()),
             Color::new(1.0, 0.15, 0.25, 1.0),
         ),
         (
@@ -827,7 +827,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             PassiveType::SpeedGloves,
             "1. Перчатка Скорости",
             "-10% времени перезарядки атак за ур. (до -50%).",
-            "Эволюция: Клинок Ветра -> БУРЯ КЛИНКОВ",
+            "Эволюция: Клинок Ветра -> ШКВАЛ ЛЕЗВИЙ",
             textures.icon_speed_gloves.as_ref().or(textures.icon_glove.as_ref()),
             SKYBLUE,
         ),
@@ -835,7 +835,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             PassiveType::GiantHeart,
             "2. Сердце Гиганта",
             "+25% к макс. HP и +3.0 HP/сек регенерации за ур.",
-            "Эволюция: Огненная Аура -> АДСКОЕ ПЕКЛО",
+            "Эволюция: Огненная Аура -> ПЕКЛО ПРЕИСПОДНЕЙ",
             textures.icon_giant_heart.as_ref().or(textures.icon_chest.as_ref()),
             RED,
         ),
@@ -843,7 +843,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             PassiveType::CooldownTome,
             "3. Фолиант Времени",
             "-8% ко всем кулдаунам оружия и рывка (Dash).",
-            "Эволюция: Магический Жезл -> ЛУЧ СМЕРТИ",
+            "Эволюция: Скипетр Арканы -> ЛУЧ СМЕРТИ",
             textures.icon_cooldown_tome.as_ref().or(textures.icon_book.as_ref()),
             VIOLET,
         ),
@@ -851,7 +851,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             PassiveType::LightArmor,
             "4. Броня Света",
             "+3 к плоской броне и +8% к сопротивлению физ. урону.",
-            "Эволюция: Святой Молот -> ПРАВЕДНЫЙ ЩИТ",
+            "Эволюция: Святой Молот -> БАСТИОН СВЕТА",
             textures.icon_light_armor.as_ref().or(textures.icon_armor.as_ref()),
             GOLD,
         ),
@@ -872,11 +872,11 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             LIME,
         ),
         (
-            PassiveType::BloodStone,
-            "7. Кровавый Камень",
+            PassiveType::CrimsonHeartstone,
+            "7. Багровый Сердцевик",
             "+12% к общему урону и +2.5 HP/сек регенерации.",
             "Эволюция: Топор Палача -> ВИХРЕВОЙ СЕКАЧ",
-            textures.icon_blood_stone.as_ref().or(textures.icon_bottle.as_ref()),
+            textures.icon_crimson_heartstone.as_ref().or(textures.icon_bottle.as_ref()),
             RED,
         ),
         (
@@ -912,11 +912,11 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             Color::new(0.3, 0.8, 1.0, 1.0),
         ),
         (
-            PassiveType::CloverOfFate,
-            "12. Клевер Судьбы",
+            PassiveType::FortuneCoin,
+            "12. Монета Удачи",
             "+12% шанс критического удара (х2 урон) за ур.",
             "Эволюция: Удваивает весь исходящий крит!",
-            textures.icon_clover.as_ref(),
+            textures.icon_fortune_coin.as_ref(),
             Color::new(0.3, 0.9, 0.4, 1.0),
         ),
         (
@@ -939,19 +939,19 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
 
     let passives_page2 = [
         (
-            PassiveType::OctarineCore,
-            "15. Октариновое Ядро",
+            PassiveType::OccultPrism,
+            "15. Оккультная Призма",
             "+25% снижение отката всех способностей, 6% вампиризм от заклинаний.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Безграничная магическая мощь.",
-            textures.icon_octarine_core.as_ref().or(textures.icon_jewel.as_ref()),
+            textures.icon_occult_prism.as_ref().or(textures.icon_jewel.as_ref()),
             VIOLET,
         ),
         (
-            PassiveType::DivineRapier,
-            "16. Божественная Рапира",
+            PassiveType::DoomedBlade,
+            "16. Клинок Обречённых",
             "+50% ко всему наносимому урону, +35% пробития брони врагов.",
-            "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Сокрушительный удар паладина.",
-            textures.icon_divine_rapier.as_ref().or(textures.icon_sword.as_ref()),
+            "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Сокрушительный удар обречённого.",
+            textures.icon_doomed_blade.as_ref().or(textures.icon_sword.as_ref()),
             GOLD,
         ),
         (
@@ -971,11 +971,11 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             Color::new(0.4, 0.9, 1.0, 1.0),
         ),
         (
-            PassiveType::ImmortalAegis,
-            "19. Эгида Бессмертия",
+            PassiveType::RevivalPhylactery,
+            "19. Филактерия Возрождения",
             "ВОСКРЕШЕНИЕ: При гибели босс восстает со 100% HP и отбрасывает орду!",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Второе дыхание в смертельном бою.",
-            textures.icon_immortal_aegis.as_ref().or(textures.icon_shield.as_ref()),
+            textures.icon_revival_phylactery.as_ref().or(textures.icon_shield.as_ref()),
             GOLD,
         ),
         (
@@ -995,11 +995,11 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             SKYBLUE,
         ),
         (
-            PassiveType::ArchmageShard,
-            "22. Осколок Архимага",
+            PassiveType::ElderMageShard,
+            "22. Осколок Первомага",
             "+20% к урону, все заклинания пробивают +1 дополнительного врага.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Сквозная магическая волна.",
-            textures.icon_archmage_shard.as_ref().or(textures.icon_wand.as_ref()),
+            textures.icon_elder_mage_shard.as_ref().or(textures.icon_wand.as_ref()),
             Color::new(0.85, 0.4, 1.0, 1.0),
         ),
         (
@@ -1019,7 +1019,7 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             YELLOW,
         ),
         (
-            PassiveType::SiegeMortar,
+            PassiveType::CalamityMortar,
             "25. Мортира Бедствия",
             "+40% к урону по площади (AoE), сотрясает ряды наступающих.",
             "ЛЕГЕНДАРНАЯ РЕЛИКВИЯ: Сокрушительная взрывная мощь.",
@@ -1062,18 +1062,18 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             Color::new(0.2, 0.95, 0.6, 1.0),
         ),
         (
-            PassiveType::DuplicatorRelic,
-            "30. Реликвия Раздвоения",
+            PassiveType::TwinPrism,
+            "30. Призма Удвоения",
             "+1 дополнительный снаряд/орбиталка ко всем навыкам за каждый уровень!",
             "КЛЮЧЕВОЙ АРТЕФАКТ: Умножает огневую мощь и плотность щитов в 1.5 - 2 раза.",
             textures.icon_prismatic.as_ref().or(textures.icon_jewel.as_ref()),
             GOLD,
         ),
         (
-            PassiveType::CandelabraOfFury,
-            "31. Канделябр Ярости",
+            PassiveType::AbyssalBrazier,
+            "31. Жаровня Бездны",
             "+25% к площади действия (AoE) всех аур, взрывов и орбитальных барьеров.",
-            "КЛЮЧЕВОЙ АРТЕФАКТ: Огненная Аура и Буря Клинков охватывают огромную зону.",
+            "КЛЮЧЕВОЙ АРТЕФАКТ: Огненная Аура и Шквал Лезвий охватывают огромную зону.",
             textures.icon_cinder_heart.as_ref().or(textures.icon_fire_aura.as_ref()),
             ORANGE,
         ),
@@ -1086,8 +1086,8 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             PURPLE,
         ),
         (
-            PassiveType::SilverTears,
-            "33. Серебряные Слёзы",
+            PassiveType::MoonDew,
+            "33. Лунная Роса",
             "Периодическое благословение: мгновенное исцеление +10 HP каждые 3 секунды.",
             "СВЯТОСТЬ: Защищает босса от периодического DoT-урона яда и горения.",
             textures.icon_halo_radiance.as_ref().or(textures.icon_elixir.as_ref()),
@@ -1110,11 +1110,11 @@ fn draw_tab_passives(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts, textures
             RED,
         ),
         (
-            PassiveType::BerserkerBlood,
-            "36. Кровь Берсерка",
+            PassiveType::FrenzyIchor,
+            "36. Ихор Неистовства",
             "Регенерация HP и скорость атаки оружия растут тем сильнее, чем ниже здоровье босса.",
             "СВЯЗКА ДЛЯ ВЫЖИВАНИЯ: Превращает предсмертное состояние в сокрушительную ярость.",
-            textures.icon_blood_stone.as_ref().or(textures.icon_sword.as_ref()),
+            textures.icon_crimson_heartstone.as_ref().or(textures.icon_sword.as_ref()),
             RED,
         ),
         (
@@ -1230,7 +1230,7 @@ fn draw_tab_mechanics(x: f32, y: f32, w: f32, h: f32, fonts: &GameFonts) {
     let mut cy3 = y2 + 40.0;
     cy3 = fonts.draw_text_wrapped("• Приоритеты огня: Оружие босса целится в культистов-стрелков и Алтари!", x + 12.0, cy3, 11.0, 14.5, text_w, WHITE) + 3.0;
     cy3 = fonts.draw_text_wrapped("• Анти-снайперский натиск: При накоплении дальников босс идёт на сближение.", x + 12.0, cy3, 11.0, 14.5, text_w, SKYBLUE) + 3.0;
-    cy3 = fonts.draw_text_wrapped("• Парирование атак: Вращающиеся щиты и Буря Клинков сбивают стрелы культистов!", x + 12.0, cy3, 11.0, 14.5, text_w, YELLOW) + 3.0;
+    cy3 = fonts.draw_text_wrapped("• Парирование атак: Вращающиеся щиты и Шквал Лезвий сбивают стрелы культистов!", x + 12.0, cy3, 11.0, 14.5, text_w, YELLOW) + 3.0;
     fonts.draw_text_wrapped("• Экстренный рывок (8-лучевой Context Steering Dash): Срабатывает при окружении или HP <30%. Рывок на 180 px наносит 80 урона по пути!", x + 12.0, cy3, 11.0, 14.5, text_w, GOLD);
 
     // Карточка 4: Анти-Пассивность (Медитация) и Сноуболл

@@ -1,5 +1,4 @@
 use macroquad::prelude::*;
-use crate::core::rand;
 use crate::ecs::components::inventory::PassiveType;
 use crate::ecs::world::World;
 
@@ -46,10 +45,10 @@ pub fn update_meditation(world: &mut World, dt: f32) {
             crate::ecs::systems::coop::apply_pending_level_ups(world);
 
             // Визуальные частицы медитации (зеленые и золотые искры вокруг босса)
-            if !world.is_headless && rand::gen_range(0.0, 1.0) < 0.40 {
+            if !world.is_headless && crate::core::visual_rand::gen_range(0.0, 1.0) < 0.40 {
                 world.particles.push(crate::ecs::world::ParticleEntity {
-                    pos: boss_pos + Vec2::new(rand::gen_range(-25.0, 25.0), rand::gen_range(-25.0, 25.0)),
-                    vel: Vec2::new(rand::gen_range(-10.0, 10.0), -40.0),
+                    pos: boss_pos + Vec2::new(crate::core::visual_rand::gen_range(-25.0, 25.0), crate::core::visual_rand::gen_range(-25.0, 25.0)),
+                    vel: Vec2::new(crate::core::visual_rand::gen_range(-10.0, 10.0), -40.0),
                     color: Color::new(0.2, 1.0, 0.4, 0.85),
                     radius: 3.0,
                     lifetime: 0.7,
@@ -85,7 +84,7 @@ pub fn update_meditation(world: &mut World, dt: f32) {
             }
 
             // Текстовая плашка восстановления раз в секунду
-            if prev_mush < 0.4 || (world.boss_mushroom_still_time % 1.0 < dt) {
+            if !world.is_headless && (prev_mush < 0.4 || (world.boss_mushroom_still_time % 1.0 < dt)) {
                 world.add_floating_text(
                     boss_pos + Vec2::new(0.0, -48.0),
                     format!("+{:.0} HP (МИЦЕЛИЙ AURA)", heal_per_sec),
@@ -95,21 +94,21 @@ pub fn update_meditation(world: &mut World, dt: f32) {
             }
 
             // Специфичная анимация: биолюминесцентные споры по радиусу ауры
-            if !world.is_headless && rand::gen_range(0.0, 1.0) < 0.65 {
-                let ang = rand::gen_range(0.0, std::f32::consts::PI * 2.0);
-                let dist = rand::gen_range(0.0, aura_radius);
+            if !world.is_headless && crate::core::visual_rand::gen_range(0.0, 1.0) < 0.65 {
+                let ang = crate::core::visual_rand::gen_range(0.0, std::f32::consts::PI * 2.0);
+                let dist = crate::core::visual_rand::gen_range(0.0, aura_radius);
                 let spore_x = ang.cos() * dist;
                 let spore_y = ang.sin() * dist;
-                let spore_col = if rand::gen_range(0.0, 1.0) < 0.5 {
+                let spore_col = if crate::core::visual_rand::gen_range(0.0, 1.0) < 0.5 {
                     Color::new(0.15, 1.0, 0.60, 0.90) // изумрудные споры
                 } else {
                     Color::new(0.20, 0.90, 1.00, 0.90) // бирюзовые споры
                 };
                 world.particles.push(crate::ecs::world::ParticleEntity {
                     pos: boss_pos + Vec2::new(spore_x, spore_y),
-                    vel: Vec2::new(rand::gen_range(-6.0, 6.0), rand::gen_range(-32.0, -14.0)),
+                    vel: Vec2::new(crate::core::visual_rand::gen_range(-6.0, 6.0), crate::core::visual_rand::gen_range(-32.0, -14.0)),
                     color: spore_col,
-                    radius: rand::gen_range(2.0, 4.2),
+                    radius: crate::core::visual_rand::gen_range(2.0, 4.2),
                     lifetime: 0.80,
                     max_lifetime: 0.80,
                 });

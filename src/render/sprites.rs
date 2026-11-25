@@ -963,7 +963,7 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
     if let Some(w_kind) = proj.source_weapon {
         match w_kind {
             // Клинок Ветра: светящийся ветряной клинок
-            crate::ecs::components::inventory::WeaponType::WindBlade | crate::ecs::components::inventory::WeaponType::BladeStorm => {
+            crate::ecs::components::inventory::WeaponType::WindBlade | crate::ecs::components::inventory::WeaponType::BladeSquall => {
                 if let Some(tex) = textures.proj_wind.as_ref() {
                     let size = radius * 3.4;
                     draw_line(pos.x - dir.x * 18.0, pos.y - dir.y * 18.0, pos.x, pos.y, 2.5, Color::new(0.4, 0.9, 0.9, 0.5));
@@ -993,8 +993,8 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
                 draw_line(pos.x - dir.x * 24.0, pos.y - dir.y * 24.0, pos.x, pos.y, 3.0, Color::new(0.3, 0.9, 0.8, 0.6));
                 return;
             }
-            // Магический Жезл: пульсирующая сфера тайной магии
-            crate::ecs::components::inventory::WeaponType::MagicWand | crate::ecs::components::inventory::WeaponType::DeathRay => {
+            // Скипетр Арканы: пульсирующая сфера тайной магии
+            crate::ecs::components::inventory::WeaponType::ArcaneScepter | crate::ecs::components::inventory::WeaponType::DeathRay => {
                 if let Some(tex) = textures.proj_magic.as_ref() {
                     let size = radius * 3.2;
                     let rot = get_time() as f32 * 8.0;
@@ -1018,7 +1018,7 @@ pub fn draw_projectile_sprite(proj: &crate::ecs::world::ProjectileEntity, textur
                 return;
             }
             // Святой Молот: сияющий золотой молот паладинов
-            crate::ecs::components::inventory::WeaponType::HolyHammer | crate::ecs::components::inventory::WeaponType::DivineShield => {
+            crate::ecs::components::inventory::WeaponType::HolyHammer | crate::ecs::components::inventory::WeaponType::LightBastion => {
                 if let Some(tex) = textures.proj_holy.as_ref() {
                     let rot = get_time() as f32 * 12.0;
                     let size = radius * 3.2;

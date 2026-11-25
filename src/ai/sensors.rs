@@ -626,10 +626,44 @@ pub fn extract_boss_observations(world: &World) -> [f32; INPUT_SIZE] {
 }
 
 /// ============================================================================
-/// СЕНСОРЫ ДИРЕКТОРА — 177 входов
+/// СЕНСОРЫ ДИРЕКТОРА — 177 входов (итого 260 + 177 = 437 признаков)
 /// ============================================================================
+pub const BOSS_OBS_SIZE: usize = INPUT_SIZE;
 pub const DIRECTOR_INPUT_SIZE: usize = crate::ai::neural_net::DIRECTOR_INPUT_SIZE;
+pub const TOTAL_SENSOR_SCHEMA_DIM: usize = BOSS_OBS_SIZE + DIRECTOR_INPUT_SIZE;
+pub const SENSOR_SCHEMA_VERSION: u32 = crate::ai::models::MODEL_FORMAT_VERSION;
 pub const DIRECTOR_ALTAR_SLOT_COUNT: usize = 25;
+
+const _: () = assert!(BOSS_OBS_SIZE == 260);
+const _: () = assert!(DIRECTOR_INPUT_SIZE == 177);
+const _: () = assert!(TOTAL_SENSOR_SCHEMA_DIM == 437);
+
+/// Детерминированный 64-битный FNV-1a digest полной схемы из 437 сенсоров
+/// (версия схемы + 260 входов Босса + 177 входов Директора).
+pub fn compute_sensor_schema_437_digest(
+    boss_obs: &[f32; INPUT_SIZE],
+    director_obs: &[f32; DIRECTOR_INPUT_SIZE],
+) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut feed_bytes = |bytes: &[u8]| {
+        for &b in bytes {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    };
+
+    feed_bytes(&SENSOR_SCHEMA_VERSION.to_le_bytes());
+    feed_bytes(&(TOTAL_SENSOR_SCHEMA_DIM as u32).to_le_bytes());
+
+    for &val in boss_obs.iter().chain(director_obs.iter()) {
+        let bits = if val == 0.0 { 0.0f32.to_bits() } else { val.to_bits() };
+        feed_bytes(&bits.to_le_bytes());
+    }
+
+    hash
+}
 
 /// Legal slots are shared by the observation and the action mask so the
 /// Director never trains against a position rule different from execution.
@@ -647,7 +681,7 @@ pub fn weapon_type_to_index(w: WeaponType) -> usize {
     match w {
         WeaponType::WindBlade => 0,
         WeaponType::FireAura => 1,
-        WeaponType::MagicWand => 2,
+        WeaponType::ArcaneScepter => 2,
         WeaponType::HolyHammer => 3,
         WeaponType::IceShards => 4,
         WeaponType::PoisonOrbs => 5,
@@ -663,12 +697,12 @@ pub fn weapon_type_to_index(w: WeaponType) -> usize {
         WeaponType::DivineBell => 15,
         WeaponType::SoulPhantoms => 16,
         WeaponType::AegisOrbiters => 17,
-        WeaponType::ChaosMeteor => 18,
+        WeaponType::FallingLuminary => 18,
         WeaponType::VoidRift => 19,
-        WeaponType::BladeStorm => 20,
-        WeaponType::Hellfire => 21,
+        WeaponType::BladeSquall => 20,
+        WeaponType::NetherBlaze => 21,
         WeaponType::DeathRay => 22,
-        WeaponType::DivineShield => 23,
+        WeaponType::LightBastion => 23,
         WeaponType::BlizzardStorm => 24,
         WeaponType::ToxicPestilence => 25,
         WeaponType::WhirlwindCleaver => 26,
@@ -713,18 +747,18 @@ pub fn passive_type_to_index(p: PassiveType) -> usize {
         PassiveType::LightArmor => 3,
         PassiveType::FrostRing => 4,
         PassiveType::CorrosiveFlask => 5,
-        PassiveType::BloodStone => 6,
+        PassiveType::CrimsonHeartstone => 6,
         PassiveType::EagleScope => 7,
         PassiveType::ChronoHourglass => 8,
         PassiveType::MagnetSphere => 9,
         PassiveType::TeslaCoil => 10,
-        PassiveType::CloverOfFate => 11,
+        PassiveType::FortuneCoin => 11,
         PassiveType::PrismaticFocus => 12,
         PassiveType::TitanAegis => 13,
-        PassiveType::ImmortalAegis => 14,
-        PassiveType::ArchmageShard => 15,
-        PassiveType::DivineRapier => 16,
-        PassiveType::OctarineCore => 17,
+        PassiveType::RevivalPhylactery => 14,
+        PassiveType::ElderMageShard => 15,
+        PassiveType::DoomedBlade => 16,
+        PassiveType::OccultPrism => 17,
         PassiveType::SolarRelic => 18,
         PassiveType::StaticCore => 19,
         PassiveType::ColossalEye => 20,
@@ -734,15 +768,15 @@ pub fn passive_type_to_index(p: PassiveType) -> usize {
         PassiveType::DivinityAura => 24,
         PassiveType::UkuleleResonance => 25,
         PassiveType::FateWeaver => 26,
-        PassiveType::SiegeMortar => 27,
+        PassiveType::CalamityMortar => 27,
         PassiveType::SporeMushroom => 28,
-        PassiveType::DuplicatorRelic => 29,
-        PassiveType::CandelabraOfFury => 30,
+        PassiveType::TwinPrism => 29,
+        PassiveType::AbyssalBrazier => 30,
         PassiveType::AbyssalCurseStone => 31,
-        PassiveType::SilverTears => 32,
+        PassiveType::MoonDew => 32,
         PassiveType::GoldenSeal => 33,
         PassiveType::TitanBloodArmor => 34,
-        PassiveType::BerserkerBlood => 35,
+        PassiveType::FrenzyIchor => 35,
         PassiveType::MartyrVanguard => 36,
     }
 }
@@ -1088,19 +1122,19 @@ pub fn extract_director_observations(world: &World, sim_time: f32) -> [f32; DIRE
             PassiveType::GiantHeart
             | PassiveType::LightArmor
             | PassiveType::TitanAegis
-            | PassiveType::ImmortalAegis
+            | PassiveType::RevivalPhylactery
             | PassiveType::BlessedHeart
             | PassiveType::SporeMushroom
-            | PassiveType::BloodStone => def_levels += lvl,
+            | PassiveType::CrimsonHeartstone => def_levels += lvl,
             PassiveType::PrismaticFocus
-            | PassiveType::ArchmageShard
-            | PassiveType::DivineRapier
+            | PassiveType::ElderMageShard
+            | PassiveType::DoomedBlade
             | PassiveType::Pyromaniac
             | PassiveType::SolarRelic
             | PassiveType::StaticCore
             | PassiveType::ColossalEye
             | PassiveType::SoulHarvester
-            | PassiveType::SiegeMortar
+            | PassiveType::CalamityMortar
             | PassiveType::TeslaCoil
             | PassiveType::UkuleleResonance => off_levels += lvl,
             _ => util_levels += lvl,
@@ -1403,5 +1437,134 @@ mod tests {
         assert_eq!(cd_t1, 14.0, "Тир 1 (скелеты) имеет КД ровно 14.0 секунд");
         assert_eq!(cd_t2, 21.0, "Тир 2 (гончие) имеет КД ровно 21.0 секунду (+7с)");
         assert_eq!(cd_t8, 63.0, "Тир 8 (жнец) имеет КД ровно 63.0 секунды (14 + 7*7)");
+    }
+
+    #[test]
+    fn test_sensor_schema_437_contract_and_digest() {
+        use crate::ecs::components::combat::DamageType;
+        use crate::ecs::components::inventory::{PassiveSlot, WeaponSlot};
+        use crate::ecs::world::{AcidPoolEntity, MobEntity, ProjectileEntity};
+
+        assert_eq!(BOSS_OBS_SIZE, 260);
+        assert_eq!(DIRECTOR_INPUT_SIZE, 177);
+        assert_eq!(TOTAL_SENSOR_SCHEMA_DIM, 437);
+
+        let build_fixture = || {
+            let mut world = World::new();
+            world.is_headless = true;
+            world.boss_pos = Vec2::new(2400.0, 1800.0);
+            world.boss_vel = Vec2::new(90.0, -40.0);
+            world.boss_facing = Vec2::new(1.0, -0.5).normalize();
+            world.game_time = 123.5;
+            world.match_duration_secs = 300.0;
+            world.boss_inventory.weapons.push(WeaponSlot {
+                kind: WeaponType::ArcaneScepter,
+                level: 4,
+                cooldown_timer: 0.2,
+                base_cooldown: 0.7,
+                damage: 32.0,
+                is_evolved: false,
+                limit_break_level: 0,
+                bonus_projectiles: 0,
+            });
+            world.boss_inventory.passives.push(PassiveSlot {
+                kind: PassiveType::OccultPrism,
+                level: 2,
+            });
+            world.add_coop_boss(2, Vec2::new(2650.0, 1950.0), "Wingman".to_string(), 1);
+
+            world.structures.clear();
+            world.structures.push(StructureEntity {
+                id: 201,
+                pos: Vec2::new(2700.0, 1750.0),
+                health: Health::new(600.0),
+                resistances: Default::default(),
+                faction: Faction::Director,
+                radius: 40.0,
+                structure_type: crate::content::structures::STRUCTURE_ALTAR,
+                pulse_timer: 0.5,
+                spawn_timer: 1.0,
+                lifetime: 0.0,
+                max_lifetime: 0.0,
+                is_active: true,
+                state_timer: 0.0,
+            });
+            world.structures.push(StructureEntity {
+                id: 202,
+                pos: Vec2::new(3100.0, 2200.0),
+                health: Health::new(2000.0),
+                resistances: Default::default(),
+                faction: Faction::Director,
+                radius: 75.0,
+                structure_type: crate::content::structures::STRUCTURE_OBELISK,
+                pulse_timer: 0.0,
+                spawn_timer: 0.0,
+                lifetime: 0.0,
+                max_lifetime: 0.0,
+                is_active: true,
+                state_timer: 12.0,
+            });
+
+            let m1 = MobEntity::new_test(301, Vec2::new(2460.0, 1820.0), 3);
+            let mut m2 = MobEntity::new_test(302, Vec2::new(2520.0, 1900.0), 8);
+            m2.is_elite = true;
+            world.mobs.push(m1);
+            world.mobs.push(m2);
+            world.rebuild_spatial_grid();
+
+            world.projectiles.push(ProjectileEntity {
+                id: 401,
+                pos: Vec2::new(2550.0, 1800.0),
+                prev_pos: Vec2::new(2550.0, 1800.0),
+                vel: Vec2::new(-280.0, 0.0),
+                radius: 8.0,
+                damage: 24.0,
+                damage_type: DamageType::Fire,
+                armor_penetration: 0.0,
+                pierce: 1,
+                lifetime: 1.5,
+                faction: Faction::Director,
+                owner_boss_id: None,
+                homing_strength: 0.0,
+                source_weapon: None,
+            });
+
+            world.acid_pools.push(AcidPoolEntity {
+                pos: Vec2::new(2440.0, 1790.0),
+                radius: 45.0,
+                lifetime: 3.0,
+                dps: 15.0,
+                corrosive: true,
+                is_director_source: true,
+                owner_boss_id: None,
+            });
+
+            world
+        };
+
+        let world_a = build_fixture();
+        let world_b = build_fixture();
+
+        let boss_obs_a = extract_boss_observations(&world_a);
+        let dir_obs_a = extract_director_observations(&world_a, 123.5);
+        let boss_obs_b = extract_boss_observations(&world_b);
+        let dir_obs_b = extract_director_observations(&world_b, 123.5);
+
+        assert_eq!(boss_obs_a.len() + dir_obs_a.len(), TOTAL_SENSOR_SCHEMA_DIM);
+        for (idx, &v) in boss_obs_a.iter().chain(dir_obs_a.iter()).enumerate() {
+            assert!(v.is_finite(), "Sensor {} must be finite, got {}", idx, v);
+        }
+
+        let digest_a = compute_sensor_schema_437_digest(&boss_obs_a, &dir_obs_a);
+        let digest_b = compute_sensor_schema_437_digest(&boss_obs_b, &dir_obs_b);
+        assert_eq!(digest_a, digest_b, "437-sensor digest must be deterministic");
+        const EXPECTED_SENSOR_437_DIGEST: u64 = 0xea1b839b7c1d9bd6;
+        assert_eq!(
+            digest_a,
+            EXPECTED_SENSOR_437_DIGEST,
+            "437-sensor schema digest drifted: got {:#018x}, expected {:#018x}",
+            digest_a,
+            EXPECTED_SENSOR_437_DIGEST
+        );
     }
 }

@@ -10,10 +10,7 @@ use crate::content::structures::{
     can_place_blood_altar, spawn_blood_altar, BLOOD_ALTAR_COST,
 };
 use crate::core::{MAP_HEIGHT, MAP_WIDTH};
-use crate::ecs::systems::{
-    director::update_director,
-    movement::update_movement,
-};
+use crate::ecs::systems::director::update_director;
 use crate::ecs::world::World;
 
 /// Решение Босса, закэшированное между «мыслями»; по умолчанию обучение решает на каждом 20-Гц тике.
@@ -85,10 +82,72 @@ pub fn run_headless_simulation_with_boss_count(
     boss_decision_interval: f32,
     boss_count: usize,
 ) -> MatchResult {
+    run_headless_simulation_with_frame_recorder(
+        boss_model,
+        director_model,
+        seed,
+        max_duration_seconds,
+        boss_decision_interval,
+        boss_count,
+        |_| {},
+    )
+}
+
+pub fn run_headless_simulation_collecting_frames(
+    boss_model: &BossModel,
+    director_model: &DirectorModel,
+    seed: u64,
+    max_duration_seconds: f32,
+    boss_decision_interval: f32,
+    boss_count: usize,
+) -> (MatchResult, Vec<Vec<[usize; 2]>>) {
+    let mut frames = Vec::with_capacity((max_duration_seconds / 0.05) as usize);
+    let result = run_headless_simulation_with_frame_recorder(
+        boss_model,
+        director_model,
+        seed,
+        max_duration_seconds,
+        boss_decision_interval,
+        boss_count,
+        |world| {
+            let mut active = world
+                .spatial_grid
+                .active_coords()
+                .into_iter()
+                .map(|(cx, cy)| [cx, cy])
+                .collect::<Vec<[usize; 2]>>();
+            let cell_size = crate::core::spatial_grid::CELL_SIZE;
+            let bx = ((world.boss_pos.x + cell_size * 2.0) / cell_size) as usize;
+            let by = ((world.boss_pos.y + cell_size * 2.0) / cell_size) as usize;
+            if !active.contains(&[bx, by]) {
+                active.push([bx, by]);
+            }
+            frames.push(active);
+        },
+    );
+    (result, frames)
+}
+
+pub fn run_headless_simulation_with_frame_recorder<F>(
+    boss_model: &BossModel,
+    director_model: &DirectorModel,
+    seed: u64,
+    max_duration_seconds: f32,
+    boss_decision_interval: f32,
+    boss_count: usize,
+    mut on_frame: F,
+) -> MatchResult
+where
+    F: FnMut(&World),
+{
     rand::seed(seed);
+
+    const TICK_DT: f32 = crate::core::time::FIXED_SIM_DT; // 20 тиков на каждую виртуальную секунду
+    const DIRECTOR_PERIOD_TICKS: u32 = crate::core::time::DIRECTOR_PERIOD_TICKS; // 8 * 0.05 = 0.40 сек
 
     let mut world = World::new();
     world.is_headless = true;
+    world.match_duration_secs = max_duration_seconds.max(TICK_DT);
     world.boss_model = Some(boss_model.clone());
     let boss_count = boss_count.clamp(1, 8);
     if boss_count > 1 {
@@ -107,10 +166,12 @@ pub fn run_headless_simulation_with_boss_count(
         );
     }
 
-    let dt = 0.05f32; // 20 тиков на каждую виртуальную секунду
-    let boss_decision_interval = boss_decision_interval.max(dt);
+    let dt = TICK_DT;
+    let max_ticks = (max_duration_seconds.max(TICK_DT) / TICK_DT).round().max(1.0) as u32;
+    let boss_think_period_ticks = ((boss_decision_interval.max(TICK_DT)) / TICK_DT)
+        .round()
+        .max(1.0) as u32;
     let mut sim_time = 0.0f32;
-    let mut director_decision_timer = 0.4; // решение в первом же тике
     let mut altars_built = 1;
     let mut total_altar_uptime_seconds = 0.0f32;
     let mut total_meditation_time = 0.0f32;
@@ -123,17 +184,18 @@ pub fn run_headless_simulation_with_boss_count(
     crate::content::structures::spawn_corner_obelisks(&mut world);
 
     let mut cached_action: Option<BossAction> = None;
+    let mut boss_think_ticks: u32 = boss_think_period_ticks;
     let mut coop_cached_actions = vec![None; world.coop_bosses.len()];
-    let mut coop_think_timers = vec![boss_decision_interval; world.coop_bosses.len()];
-    let mut boss_think_timer = boss_decision_interval;
+    let mut coop_think_ticks = vec![boss_think_period_ticks; world.coop_bosses.len()];
 
-    while world.any_boss_alive() && sim_time < max_duration_seconds {
-        sim_time += dt;
-        director_decision_timer += dt;
+    for tick in 0..max_ticks {
+        if !world.any_boss_alive() {
+            break;
+        }
+        sim_time = (tick + 1) as f32 * dt;
 
-        // 1. Тактические решения Директора (каждые 0.4 сек)
-        if director_decision_timer >= 0.4 {
-            director_decision_timer -= 0.4;
+        // 1. Тактические решения Директора (ровно каждые 8 тиков = 0.40 сек, начиная с тика 0)
+        if tick % DIRECTOR_PERIOD_TICKS == 0 {
             run_director_decision(
                 &mut world,
                 sim_time,
@@ -155,11 +217,11 @@ pub fn run_headless_simulation_with_boss_count(
         world.boss_inventory.update_damage_decay(dt);
 
         // 3. Мышление Босса и применение закэшированного действия
-        boss_think_timer += dt;
-        if cached_action.is_none() || boss_think_timer >= boss_decision_interval {
-            boss_think_timer = 0.0;
+        if cached_action.is_none() || boss_think_ticks >= boss_think_period_ticks {
+            boss_think_ticks = 0;
             cached_action = Some(think_boss(&world, boss_model));
         }
+        boss_think_ticks += 1;
         let action = cached_action.unwrap_or(BossAction {
             move_dir: Vec2::ZERO,
             move_mag: 0.0,
@@ -179,12 +241,12 @@ pub fn run_headless_simulation_with_boss_count(
 
         for index in 0..world.coop_bosses.len() {
             if !world.coop_bosses[index].boss_health.is_alive() { continue; }
-            coop_think_timers[index] += dt;
             world.swap_coop_boss_context(index);
-            if coop_cached_actions[index].is_none() || coop_think_timers[index] >= boss_decision_interval {
-                coop_think_timers[index] = 0.0;
+            if coop_cached_actions[index].is_none() || coop_think_ticks[index] >= boss_think_period_ticks {
+                coop_think_ticks[index] = 0;
                 coop_cached_actions[index] = Some(think_boss(&world, boss_model));
             }
+            coop_think_ticks[index] += 1;
             let coop_action = coop_cached_actions[index].unwrap_or(BossAction {
                 move_dir: Vec2::ZERO,
                 move_mag: 0.0,
@@ -204,10 +266,8 @@ pub fn run_headless_simulation_with_boss_count(
             total_meditation_time += dt;
         }
         total_meditation_time += world.coop_bosses.iter().filter(|p| p.boss_still_time >= 1.2).count() as f32 * dt;
-        update_movement(&mut world, dt);
-        crate::ecs::systems::coop::update_coop_boss_environment(&mut world, dt);
-        crate::ecs::systems::coop::update_all_boss_combat(&mut world, dt);
-        crate::ecs::systems::coop::update_revives(&mut world, dt);
+        crate::ecs::systems::coop::update_post_effects_tick(&mut world, dt);
+        on_frame(&world);
 
         // Учитываем только алтари: стены и обелиски не должны раздувать награду за uptime.
         for st in &world.structures {
@@ -700,6 +760,7 @@ mod tests {
         world_sim.projectiles.push(ProjectileEntity {
             id: 101,
             pos: target_pos,
+            prev_pos: target_pos,
             vel: Vec2::ZERO,
             radius: 8.0,
             damage: 20.0,
@@ -708,12 +769,14 @@ mod tests {
             pierce: 1,
             lifetime: 2.0,
             faction: Faction::Director,
+            owner_boss_id: None,
             homing_strength: 0.0,
             source_weapon: None,
         });
         world_runtime.projectiles.push(ProjectileEntity {
             id: 102,
             pos: target_pos,
+            prev_pos: target_pos,
             vel: Vec2::ZERO,
             radius: 8.0,
             damage: 20.0,
@@ -722,6 +785,7 @@ mod tests {
             pierce: 1,
             lifetime: 2.0,
             faction: Faction::Director,
+            owner_boss_id: None,
             homing_strength: 0.0,
             source_weapon: None,
         });
@@ -745,5 +809,108 @@ mod tests {
         assert_eq!(world_sim.structures[0].health.current, altar_initial_hp - 160.0);
         assert_eq!(world_sim.projectiles[0].lifetime, 0.0);
         assert_eq!(world_runtime.projectiles[0].lifetime, 0.0);
+    }
+
+    #[test]
+    fn test_simulation_collecting_frames() {
+        let boss = BossModel::default();
+        let director = DirectorModel::default();
+        let (_result, frames) = run_headless_simulation_collecting_frames(
+            &boss,
+            &director,
+            42,
+            2.0,
+            crate::ai::neural_net::BOSS_TRAINING_DECISION_INTERVAL,
+            1,
+        );
+        assert!(!frames.is_empty(), "Frames should not be empty");
+        for frame in &frames {
+            for &[cx, cy] in frame {
+                assert!(cx < 207, "cx out of bounds: {}", cx);
+                assert!(cy < 139, "cy out of bounds: {}", cy);
+            }
+        }
+    }
+
+    fn compute_match_digest(res: &MatchResult) -> u64 {
+        let mut hash: u64 = 0xcbf29ce484222325;
+        const FNV_PRIME: u64 = 0x100000001b3;
+        let mut feed_bytes = |bytes: &[u8]| {
+            for &b in bytes {
+                hash ^= b as u64;
+                hash = hash.wrapping_mul(FNV_PRIME);
+            }
+        };
+        let norm_f32 = |v: f32| -> [u8; 4] {
+            if v == 0.0 { 0.0f32.to_bits().to_le_bytes() } else { v.to_bits().to_le_bytes() }
+        };
+
+        feed_bytes(&res.seed.to_le_bytes());
+        feed_bytes(&norm_f32(res.match_cap));
+        feed_bytes(&norm_f32(res.survival_time));
+        feed_bytes(&(res.boss_level as u32).to_le_bytes());
+        feed_bytes(&[res.boss_won as u8]);
+        feed_bytes(&norm_f32(res.damage_dealt_to_boss));
+        feed_bytes(&norm_f32(res.director_points_spent));
+        feed_bytes(&(res.altars_built as u64).to_le_bytes());
+        feed_bytes(&(res.altars_destroyed as u64).to_le_bytes());
+        feed_bytes(&(res.obelisks_deactivated as u64).to_le_bytes());
+        for &c in &res.mobs_spawned_by_tier {
+            feed_bytes(&(c as u64).to_le_bytes());
+        }
+        hash
+    }
+
+    #[test]
+    fn test_control_simulation_digest_stable() {
+        let build_models = || {
+            rand::seed(0xC0FFEE_437_u64);
+            (BossModel::default(), DirectorModel::default())
+        };
+        let (boss_a, dir_a) = build_models();
+        let (boss_b, dir_b) = build_models();
+
+        let res_a = run_headless_simulation(&boss_a, &dir_a, 1337, 15.0, BOSS_TRAINING_DECISION_INTERVAL);
+        let res_b = run_headless_simulation(&boss_b, &dir_b, 1337, 15.0, BOSS_TRAINING_DECISION_INTERVAL);
+
+        let d_a = compute_match_digest(&res_a);
+        let d_b = compute_match_digest(&res_b);
+        assert_eq!(d_a, d_b, "Control match digest must be deterministic");
+        assert!(res_a.survival_time > 0.0 && res_a.survival_time.is_finite());
+        // Калибровочный дайджест контрольного 15-сек 20 Гц матча (обновлен после Step 3: single-pass combat, swept projectiles, exact N-tick statuses).
+        const EXPECTED_CONTROL_MATCH_DIGEST: u64 = 0xb447f0135ebcccdd;
+        assert_eq!(
+            d_a,
+            EXPECTED_CONTROL_MATCH_DIGEST,
+            "Control simulation digest drifted: got {:#018x}, expected {:#018x}",
+            d_a,
+            EXPECTED_CONTROL_MATCH_DIGEST
+        );
+    }
+
+    #[test]
+    fn test_simulation_sets_match_duration_and_exact_tick_count() {
+        let boss = BossModel::default();
+        let director = DirectorModel::default();
+        let mut observed_duration = None;
+        let mut ticks = 0usize;
+        let res = run_headless_simulation_with_frame_recorder(
+            &boss,
+            &director,
+            7,
+            120.0,
+            BOSS_TRAINING_DECISION_INTERVAL,
+            1,
+            |world| {
+                observed_duration = Some(world.match_duration_secs);
+                ticks += 1;
+            },
+        );
+        assert_eq!(observed_duration, Some(120.0));
+        assert!(ticks <= 2400);
+        if res.boss_won {
+            assert_eq!(ticks, 2400);
+            assert_eq!(res.survival_time, 120.0);
+        }
     }
 }

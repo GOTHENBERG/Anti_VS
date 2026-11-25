@@ -145,80 +145,137 @@ pub fn update_soul_link(world: &mut World, dt: f32) {
 
     let n = alive_bosses.len();
     if n < 2 {
+        world.soul_link_tension = 0.0;
         return;
     }
 
-    // Формируем кольцевую топологию звеньев
-    let mut links: Vec<(usize, usize, Vec2, Vec2)> = Vec::new();
+    // Формируем кольцевую топологию звеньев по индексам внутри `alive_bosses`
+    let mut link_pairs: Vec<(usize, usize)> = Vec::with_capacity(n);
     if n == 2 {
-        links.push((alive_bosses[0].0, alive_bosses[1].0, alive_bosses[0].1, alive_bosses[1].1));
+        link_pairs.push((0, 1));
     } else {
         for i in 0..n {
-            let next = (i + 1) % n;
-            links.push((alive_bosses[i].0, alive_bosses[next].0, alive_bosses[i].1, alive_bosses[next].1));
+            link_pairs.push((i, (i + 1) % n));
         }
     }
 
-    // 1. Физика натяжения цепи (максимум 1000 px)
-    for &(id_a, id_b, pos_a, pos_b) in &links {
-        let diff = pos_b - pos_a;
-        let dist = diff.length();
-        if dist > MAX_SOUL_LINK_LENGTH {
-            let excess = dist - MAX_SOUL_LINK_LENGTH;
-            let dir = diff / dist.max(0.001);
-            let pull = dir * (excess * 4.5 * dt);
+    // 1. XPBD (Extended Position-Based Dynamics) ограничение длины цепи (максимум 1000 px).
+    // В отличие от простого пружинного `pull` и классического PBD, податливость `alpha = compliance / dt^2`
+    // не взрывается на больших dt и возвращает физическую силу натяжения через множитель Лагранжа `lambda`.
+    let mut positions: Vec<Vec2> = alive_bosses.iter().map(|&(_, p)| p).collect();
+    let mut lambdas = vec![0.0f32; link_pairs.len()];
+    let safe_dt = dt.max(1e-4);
+    const XPBD_COMPLIANCE: f32 = 0.0005;
+    let alpha = XPBD_COMPLIANCE / (safe_dt * safe_dt);
+    const XPBD_ITERS: usize = 4;
 
-            // Применяем притягивание к боссу A
-            if id_a == 0 {
-                world.boss_pos += pull;
-            } else {
-                world.coop_bosses[id_a - 1].boss_pos += pull;
-            }
-
-            // Применяем притягивание к боссу B в противоположную сторону
-            if id_b == 0 {
-                world.boss_pos -= pull;
-            } else {
-                world.coop_bosses[id_b - 1].boss_pos -= pull;
+    for _ in 0..XPBD_ITERS {
+        for (k, &(ia, ib)) in link_pairs.iter().enumerate() {
+            let diff = positions[ib] - positions[ia];
+            let dist = diff.length();
+            if dist > MAX_SOUL_LINK_LENGTH || lambdas[k] < 0.0 {
+                let c = dist - MAX_SOUL_LINK_LENGTH;
+                let dir = if dist > 1e-5 { diff / dist } else { Vec2::X };
+                // w_a = 1.0, w_b = 1.0 -> w_sum = 2.0; градиенты: grad_a = -dir, grad_b = +dir
+                // Одностороннее ограничение: lambda <= 0 (связь тянет, но никогда не расталкивает).
+                // Применяем именно разность new_lambda - old_lambda, чтобы ослабленные звенья корректно разгружались.
+                let old_lambda = lambdas[k];
+                let d_lambda = (-c - alpha * old_lambda) / (2.0 + alpha);
+                let new_lambda = (old_lambda + d_lambda).min(0.0);
+                let eff_d_lambda = new_lambda - old_lambda;
+                lambdas[k] = new_lambda;
+                positions[ia] -= dir * eff_d_lambda;
+                positions[ib] += dir * eff_d_lambda;
             }
         }
     }
 
-    // 2. Рассекающий урон мобам, пересекающим цепь
+    // Записываем обновлённые позиции обратно в боссов и фиксируем нормированное натяжение [0..1+]
+    let inv_dt_sq = 1.0 / (safe_dt * safe_dt);
+    let mut max_tension = 0.0f32;
+    for &lambda in &lambdas {
+        max_tension = max_tension.max((-lambda) * inv_dt_sq);
+    }
+    world.soul_link_tension = (max_tension / 200000.0).clamp(0.0, 2.0);
+
+    for (idx, &(boss_slot, _)) in alive_bosses.iter().enumerate() {
+        if boss_slot == 0 {
+            world.boss_pos = positions[idx];
+        } else {
+            world.coop_bosses[boss_slot - 1].boss_pos = positions[idx];
+        }
+    }
+
+    // 2. Рассекающий урон мобам, пересекающим цепь (Thick Supercover DDA вместо перебора 20к мобов)
     let damage_slice = 260.0 * dt;
-    for &(_, _, pos_a, pos_b) in &links {
-        let min_x = pos_a.x.min(pos_b.x) - 40.0;
-        let max_x = pos_a.x.max(pos_b.x) + 40.0;
-        let min_y = pos_a.y.min(pos_b.y) - 40.0;
-        let max_y = pos_a.y.max(pos_b.y) + 40.0;
+    let is_headless = world.is_headless;
+    let use_spatial = !world.spatial_grid.is_empty() && world.spatial_grid.len() == world.mobs.len();
 
-        for mob in world.mobs.iter_mut() {
-            if !mob.health.is_alive() { continue; }
-            if mob.pos.x < min_x || mob.pos.x > max_x || mob.pos.y < min_y || mob.pos.y > max_y {
-                continue;
-            }
+    for &(ia, ib) in &link_pairs {
+        let pos_a = positions[ia];
+        let pos_b = positions[ib];
 
-            let (dist, hit_pt) = dist_to_segment(mob.pos, pos_a, pos_b);
-            if dist <= mob.radius + 14.0 {
-                mob.health.take_damage(damage_slice);
+        if use_spatial {
+            let spatial_grid = &world.spatial_grid;
+            let mobs = &mut world.mobs;
+            let particles = &mut world.particles;
+            // Запас толщины 176 px покрывает даже максимально разросшегося яростного Героя (радиус 160 + 14)
+            spatial_grid.query_segment_thick(pos_a, pos_b, 176.0, |mob_idx| {
+                if let Some(mob) = mobs.get_mut(mob_idx) {
+                    if !mob.health.is_alive() {
+                        return;
+                    }
+                    let (dist, hit_pt) = dist_to_segment(mob.pos, pos_a, pos_b);
+                    if dist <= mob.radius + 14.0 {
+                        mob.health.take_damage(damage_slice);
+                        if !is_headless && crate::core::visual_rand::gen_range(0.0, 1.0) < 0.25 {
+                            particles.push(crate::ecs::world::ParticleEntity {
+                                pos: hit_pt,
+                                vel: (mob.pos - hit_pt).normalize_or_zero() * 45.0,
+                                color: macroquad::prelude::Color::new(0.4, 0.9, 1.0, 0.9),
+                                radius: 3.5,
+                                lifetime: 0.35,
+                                max_lifetime: 0.35,
+                            });
+                        }
+                    }
+                }
+            });
+        } else {
+            // Запасной путь для изолированных юнит-тестов, добавляющих мобов без rebuild_spatial_grid()
+            let min_x = pos_a.x.min(pos_b.x) - 180.0;
+            let max_x = pos_a.x.max(pos_b.x) + 180.0;
+            let min_y = pos_a.y.min(pos_b.y) - 180.0;
+            let max_y = pos_a.y.max(pos_b.y) + 180.0;
 
-                // Эффект рассечения / искры
-                if !world.is_headless && crate::core::rand::gen_range(0.0, 1.0) < 0.25 {
-                    world.particles.push(crate::ecs::world::ParticleEntity {
-                        pos: hit_pt,
-                        vel: (mob.pos - hit_pt).normalize_or_zero() * 45.0,
-                        color: macroquad::prelude::Color::new(0.4, 0.9, 1.0, 0.9),
-                        radius: 3.5,
-                        lifetime: 0.35,
-                        max_lifetime: 0.35,
-                    });
+            for mob in world.mobs.iter_mut() {
+                if !mob.health.is_alive() { continue; }
+                if mob.pos.x < min_x || mob.pos.x > max_x || mob.pos.y < min_y || mob.pos.y > max_y {
+                    continue;
+                }
+
+                let (dist, hit_pt) = dist_to_segment(mob.pos, pos_a, pos_b);
+                if dist <= mob.radius + 14.0 {
+                    mob.health.take_damage(damage_slice);
+
+                    if !is_headless && crate::core::visual_rand::gen_range(0.0, 1.0) < 0.25 {
+                        world.particles.push(crate::ecs::world::ParticleEntity {
+                            pos: hit_pt,
+                            vel: (mob.pos - hit_pt).normalize_or_zero() * 45.0,
+                            color: macroquad::prelude::Color::new(0.4, 0.9, 1.0, 0.9),
+                            radius: 3.5,
+                            lifetime: 0.35,
+                            max_lifetime: 0.35,
+                        });
+                    }
                 }
             }
         }
     }
 }
 
-/// Ticks cooldowns and per-player damage telemetry for every non-primary actor.
+/// Ticks cooldowns and per-player damage telemetry for AI co-op Bosses when callers
+/// advance actions directly (`apply_boss_action`) without calling `update_boss_ai`/`update_player_boss`.
 pub fn tick_coop_boss_timers(world: &mut World, dt: f32) {
     for player in &mut world.coop_bosses {
         if player.human_controlled {
@@ -257,17 +314,31 @@ pub fn update_all_boss_effects(world: &mut World, dt: f32) {
     crate::ecs::systems::skills::update_heroes_and_clones(world, dt);
 }
 
-/// Runs collision, damage, XP pickup and death processing once for each Boss actor.
-pub fn update_all_boss_combat(world: &mut World, dt: f32) {
-    if world.boss_health.is_alive() {
-        crate::ecs::systems::combat::update_combat(world, dt);
-    }
+/// Applies queued level-ups across the primary Boss and every co-op Boss.
+pub fn apply_all_pending_level_ups(world: &mut World) {
+    apply_pending_level_ups(world);
     for index in 0..world.coop_bosses.len() {
-        if !world.coop_bosses[index].boss_health.is_alive() { continue; }
-        if !world.swap_coop_boss_context(index) { continue; }
-        crate::ecs::systems::combat::update_combat(world, dt);
+        if !world.swap_coop_boss_context(index) {
+            continue;
+        }
+        apply_pending_level_ups(world);
         world.swap_coop_boss_context(index);
     }
+}
+
+/// Runs collision, damage, XP pickup and death processing once per tick for all Boss actors.
+pub fn update_all_boss_combat(world: &mut World, dt: f32) {
+    if world.any_boss_alive() {
+        crate::ecs::systems::combat::update_combat(world, dt);
+    }
+}
+
+/// Runs movement, co-op environment hazards, global combat, and revives in canonical tick order.
+pub fn update_post_effects_tick(world: &mut World, dt: f32) {
+    crate::ecs::systems::movement::update_movement(world, dt);
+    update_coop_boss_environment(world, dt);
+    update_all_boss_combat(world, dt);
+    update_revives(world, dt);
 }
 
 /// Applies the same Director poison, altar miasma and wall collision to each additional player.
@@ -476,16 +547,16 @@ mod tests {
         world.boss_pending_level_ups = 1;
         world.boss_level_up_options = Some(vec![
             PerkChoice::UpgradeWeapon(WeaponType::ChainLightning),
-            PerkChoice::UpgradePassive(PassiveType::BerserkerBlood),
+            PerkChoice::UpgradePassive(PassiveType::FrenzyIchor),
             PerkChoice::UpgradePassive(PassiveType::MartyrVanguard),
         ]);
 
-        // Host player (0) chooses index 1 (BerserkerBlood)
+        // Host player (0) chooses index 1 (FrenzyIchor)
         apply_player_perk_choice_by_index(&mut world, 0, 1);
 
         assert_eq!(world.boss_pending_level_ups, 0);
         assert!(world.boss_level_up_options.is_none());
-        assert!(world.boss_inventory.has_passive(PassiveType::BerserkerBlood));
+        assert!(world.boss_inventory.has_passive(PassiveType::FrenzyIchor));
 
         // Test for co-op player (player_id 1)
         world.add_coop_boss(2, Vec2::new(100.0, 100.0), "CoopPlayer".to_string(), 0);
@@ -536,13 +607,13 @@ mod tests {
         // 3. Проверяем, что уже имеющуюся реликвию (полученную из Обелиска) МОЖНО прокачивать на level-up
         let mut inv_with_relic = BossInventory::new();
         inv_with_relic.passives.push(PassiveSlot {
-            kind: PassiveType::ImmortalAegis,
+            kind: PassiveType::RevivalPhylactery,
             level: 1,
         });
         let mut found_upgrade = false;
         for _ in 0..150 {
             let options = crate::ecs::systems::boss_ai::generate_perk_choices(&inv_with_relic);
-            if options.iter().any(|o| matches!(o, PerkChoice::UpgradePassive(PassiveType::ImmortalAegis))) {
+            if options.iter().any(|o| matches!(o, PerkChoice::UpgradePassive(PassiveType::RevivalPhylactery))) {
                 found_upgrade = true;
                 break;
             }
@@ -557,5 +628,471 @@ mod tests {
                 assert!(is_legendary_relic(*kind), "Obelisk relic choices must be legendary relics");
             }
         }
+    }
+
+    #[test]
+    fn test_soul_link_xpbd_lag_stability_and_thick_dda() {
+        let mut world = World::new();
+        world.is_headless = true;
+        world.boss_pos = Vec2::new(5000.0, 5000.0);
+        world.add_coop_boss(2, Vec2::new(6400.0, 5000.0), "Boss2".to_string(), 0); // dist = 1400 > 1000
+
+        // Моб 0 прямо на луче (в центре, x=5700, y=5008)
+        let id_on = world.alloc_id();
+        let mut mob_on = MobEntity::new_test(id_on, Vec2::new(5700.0, 5008.0), 1);
+        mob_on.health = Health::new(500.0);
+        mob_on.radius = 12.0;
+        world.mobs.push(mob_on);
+
+        // Добавляем 1000 далёких фоновых мобов, которых Thick DDA обязан проигнорировать
+        for i in 0..1000usize {
+            let id = world.alloc_id();
+            let pos = Vec2::new(8000.0 + (i % 50) as f32 * 40.0, 8000.0 + (i / 50) as f32 * 40.0);
+            world.mobs.push(MobEntity::new_test(id, pos, 1));
+        }
+        world.rebuild_spatial_grid();
+
+        // Огромный спайк dt = 1.0 сек: XPBD НЕ должен перелететь и взорвать позиции!
+        update_soul_link(&mut world, 1.0);
+
+        let new_dist = (world.coop_bosses[0].boss_pos - world.boss_pos).length();
+        assert!(
+            new_dist >= MAX_SOUL_LINK_LENGTH - 1.0 && new_dist <= 1010.0,
+            "XPBD must stably clamp near MAX_SOUL_LINK_LENGTH without overshoot on large dt, got {}",
+            new_dist
+        );
+        assert!(world.soul_link_tension > 0.0, "XPBD must report positive tether tension when taut");
+        assert!(world.mobs[0].health.current < 500.0, "Thick DDA must slice mob on link");
+        assert!(
+            (world.mobs[1].health.current - world.mobs[1].health.max).abs() < 1e-4,
+            "Distant mobs must not take slicing damage"
+        );
+    }
+
+    #[test]
+    fn test_soul_link_xpbd_unilateral_slack_and_ring_relaxation() {
+        // 1. Слабые / ненатянутые звенья (dist < MAX_SOUL_LINK_LENGTH) не должны расталкивать боссов
+        let mut world = World::new();
+        world.is_headless = true;
+        world.boss_pos = Vec2::new(1000.0, 1000.0);
+        world.add_coop_boss(2, Vec2::new(1400.0, 1000.0), "SlackBoss".to_string(), 0);
+        update_soul_link(&mut world, 0.05);
+        assert_eq!(world.boss_pos, Vec2::new(1000.0, 1000.0));
+        assert_eq!(world.coop_bosses[0].boss_pos, Vec2::new(1400.0, 1000.0));
+        assert_eq!(world.soul_link_tension, 0.0);
+
+        // 2. Кольцо из 3 боссов, где ребро (0, 1) изначально чуть натянуто (1040 > 1000),
+        // а ребро (1, 2) (1500) стягивает (1) к (2) и (0), ослабляя звено (0, 1) (< 1000).
+        // Унилатеральный XPBD с (new_lambda - old_lambda) обязан полностью разгрузить
+        // ослабленное ребро (0, 1), вернув B0 ровно в (0, 0), и сойтись на следующих тиках.
+        let mut ring = World::new();
+        ring.is_headless = true;
+        ring.boss_pos = Vec2::new(0.0, 0.0);
+        ring.add_coop_boss(2, Vec2::new(1040.0, 0.0), "B1".to_string(), 0);
+        ring.add_coop_boss(3, Vec2::new(-460.0, 0.0), "B2".to_string(), 0);
+        update_soul_link(&mut ring, 0.05);
+
+        let p0 = ring.boss_pos;
+        let p1 = ring.coop_bosses[0].boss_pos;
+        let p2 = ring.coop_bosses[1].boss_pos;
+        assert!(p0.is_finite() && p1.is_finite() && p2.is_finite());
+        assert!(
+            p0.distance(Vec2::ZERO) < 1e-3,
+            "Slackened edge (0,1) must release B0 back to origin via (new_lambda - old_lambda), got {:?}",
+            p0
+        );
+        assert!(p0.distance(p1) <= MAX_SOUL_LINK_LENGTH, "Edge (0,1) should be slack: {}", p0.distance(p1));
+        assert!(p1.distance(p2) <= 1050.0, "Edge (1,2) single-step compliant bound exceeded: {}", p1.distance(p2));
+        assert!(p2.distance(p0) <= MAX_SOUL_LINK_LENGTH, "Edge (2,0) exceeded limit: {}", p2.distance(p0));
+
+        // За несколько тиков мягкая податливость XPBD полностью сжимает и ребро (1, 2) <= MAX_SOUL_LINK_LENGTH + 1
+        for _ in 0..4 {
+            update_soul_link(&mut ring, 0.05);
+        }
+        let f0 = ring.boss_pos;
+        let f1 = ring.coop_bosses[0].boss_pos;
+        let f2 = ring.coop_bosses[1].boss_pos;
+        assert!(f1.distance(f2) <= MAX_SOUL_LINK_LENGTH + 1.0, "Edge (1,2) did not converge: {}", f1.distance(f2));
+        assert!(f0.distance(f1) > 400.0, "Relaxed edge should not over-collapse: {}", f0.distance(f1));
+    }
+
+    #[test]
+    fn test_coop_crit_and_lifesteal_belong_to_projectile_owner() {
+        use crate::ecs::components::inventory::{PassiveSlot, PassiveType, WeaponSlot, WeaponType};
+
+        crate::core::rand::seed(42);
+        let mut world = World::new();
+        world.is_headless = true;
+
+        // Boss 1 далеко, БЕЗ оружия, но с максимальным критом и OccultPrism
+        world.boss_pos = Vec2::new(1000.0, 1000.0);
+        world.boss_health.current = 500.0;
+        world.boss_inventory.weapons.clear();
+        world.boss_inventory.passives.push(PassiveSlot { kind: PassiveType::FortuneCoin, level: 5 });
+        world.boss_inventory.passives.push(PassiveSlot { kind: PassiveType::GoldenSeal, level: 1 });
+        world.boss_inventory.passives.push(PassiveSlot { kind: PassiveType::FateWeaver, level: 1 });
+        world.boss_inventory.passives.push(PassiveSlot { kind: PassiveType::OccultPrism, level: 1 });
+
+        // Boss 2 (id = 2) стреляет BloodHarvest (100 физ. урона, 20% вампиризма), БЕЗ крита и БЕЗ OccultPrism
+        world.add_coop_boss(2, Vec2::new(5000.0, 5000.0), "Boss2".to_string(), 0);
+        world.coop_bosses[0].boss_health.current = 500.0;
+        world.coop_bosses[0].boss_inventory.weapons = vec![WeaponSlot {
+            kind: WeaponType::BloodHarvest,
+            level: 1,
+            cooldown_timer: 0.0,
+            base_cooldown: 10.0,
+            damage: 100.0,
+            is_evolved: true,
+            limit_break_level: 0,
+            bonus_projectiles: 0,
+        }];
+
+        // Моб на +86px по +X (4 тика * 21px = 84px, dist=2px < 22px; соседние лучи на 60px в стороне; на тике 3 x=63px, dist=23 > 22)
+        let mob_id = world.alloc_id();
+        let mut mob = MobEntity::new_test(mob_id, Vec2::new(5086.0, 5000.0), 1);
+        mob.health = Health::new(1000.0);
+        mob.resistances = Default::default();
+        mob.speed = 0.0;
+        world.mobs.push(mob);
+        world.rebuild_spatial_grid();
+
+        for _ in 0..4 {
+            update_all_boss_effects(&mut world, 0.05);
+            crate::ecs::systems::movement::update_movement(&mut world, 0.05);
+            update_all_boss_combat(&mut world, 0.05);
+        }
+
+        let mob_dmg_taken = 1000.0 - world.mobs.iter().find(|m| m.id == mob_id).unwrap().health.current;
+        assert!(
+            (mob_dmg_taken - 100.0).abs() < 1e-3,
+            "Boss 2 has 0% crit, so mob must take 100 damage (not Boss 1's crit), got {}",
+            mob_dmg_taken
+        );
+        assert!(
+            (world.boss_health.current - 500.0).abs() < 1e-3,
+            "Boss 1 did not fire anything and must NOT heal from Boss 2's projectile, got HP {}",
+            world.boss_health.current
+        );
+        assert!(
+            (world.coop_bosses[0].boss_health.current - 520.0).abs() < 1e-3,
+            "Boss 2 must receive 20% BloodHarvest lifesteal (+20 HP), got HP {}",
+            world.coop_bosses[0].boss_health.current
+        );
+    }
+
+    #[test]
+    fn test_coop_simultaneous_hits_split_crit_and_lifesteal_correctly() {
+        use crate::ecs::components::inventory::{PassiveSlot, PassiveType, WeaponSlot, WeaponType};
+
+        crate::core::rand::seed(12345);
+        let mut world = World::new();
+        world.is_headless = true;
+
+        // Boss 1: ArcaneScepter (32 True dmg), 0% крита, OccultPrism (6% lifesteal -> 1.92 HP)
+        world.boss_pos = Vec2::new(1000.0, 1000.0);
+        world.boss_health.current = 500.0;
+        world.boss_inventory.weapons = vec![WeaponSlot {
+            kind: WeaponType::ArcaneScepter,
+            level: 1,
+            cooldown_timer: 0.0,
+            base_cooldown: 10.0,
+            damage: 32.0,
+            is_evolved: false,
+            limit_break_level: 0,
+            bonus_projectiles: 0,
+        }];
+        world.boss_inventory.passives.push(PassiveSlot { kind: PassiveType::OccultPrism, level: 1 });
+
+        // Boss 2: BloodHarvest (100 Phys dmg, 20% lifesteal), max crit + FateWeaver, NO OccultPrism
+        world.add_coop_boss(2, Vec2::new(5000.0, 5000.0), "Boss2".to_string(), 0);
+        world.coop_bosses[0].boss_health.current = 500.0;
+        world.coop_bosses[0].boss_inventory.weapons = vec![WeaponSlot {
+            kind: WeaponType::BloodHarvest,
+            level: 1,
+            cooldown_timer: 0.0,
+            base_cooldown: 10.0,
+            damage: 100.0,
+            is_evolved: true,
+            limit_break_level: 0,
+            bonus_projectiles: 0,
+        }];
+        world.coop_bosses[0].boss_inventory.passives.push(PassiveSlot { kind: PassiveType::FortuneCoin, level: 5 });
+        world.coop_bosses[0].boss_inventory.passives.push(PassiveSlot { kind: PassiveType::GoldenSeal, level: 1 });
+        world.coop_bosses[0].boss_inventory.passives.push(PassiveSlot { kind: PassiveType::FateWeaver, level: 1 });
+
+        let id_a = world.alloc_id();
+        let mut mob_a = MobEntity::new_test(id_a, Vec2::new(1086.0, 1000.0), 1);
+        mob_a.health = Health::new(1000.0);
+        mob_a.resistances = Default::default();
+        mob_a.speed = 0.0;
+        world.mobs.push(mob_a);
+
+        let id_b = world.alloc_id();
+        let mut mob_b = MobEntity::new_test(id_b, Vec2::new(5086.0, 5000.0), 1);
+        mob_b.health = Health::new(1000.0);
+        mob_b.resistances = Default::default();
+        mob_b.speed = 0.0;
+        world.mobs.push(mob_b);
+        world.rebuild_spatial_grid();
+
+        for _ in 0..4 {
+            update_all_boss_effects(&mut world, 0.05);
+            crate::ecs::systems::movement::update_movement(&mut world, 0.05);
+            update_all_boss_combat(&mut world, 0.05);
+        }
+
+        let dmg_a = 1000.0 - world.mobs.iter().find(|m| m.id == id_a).unwrap().health.current;
+        let dmg_b = 1000.0 - world.mobs.iter().find(|m| m.id == id_b).unwrap().health.current;
+        assert!((dmg_a - 32.0).abs() < 1e-3, "Boss 1 has 0% crit, expected 32 dmg, got {}", dmg_a);
+        assert!(
+            (dmg_b - 240.0).abs() < 1e-3,
+            "Boss 2 has GoldenSeal (+20% dmg) + max crit -> expected 240 dmg, got {}",
+            dmg_b
+        );
+        assert!(
+            (world.boss_health.current - (500.0 + 32.0 * 0.06)).abs() < 1e-2,
+            "Boss 1 must heal only 6% of its own 32 dmg (501.92), got {}",
+            world.boss_health.current
+        );
+        assert!(
+            (world.coop_bosses[0].boss_health.current - (500.0 + dmg_b * 0.20)).abs() < 1e-2,
+            "Boss 2 must heal 20% of its own crit dmg, got {}",
+            world.coop_bosses[0].boss_health.current
+        );
+    }
+
+    #[test]
+    fn test_coop_structure_contribution_and_kill_reward_ownership() {
+        use crate::ecs::components::inventory::{WeaponSlot, WeaponType};
+
+        let mut world = World::new();
+        world.is_headless = true;
+
+        // Boss 1 далеко без оружия и без SoulFeast
+        world.boss_pos = Vec2::new(1000.0, 1000.0);
+        world.boss_health.current = 500.0;
+        world.boss_inventory.weapons.clear();
+
+        // Boss 2 рядом с Алтарём и слабым мобом: наносит урон FireAura (очередь урона) и SoulFeast
+        world.add_coop_boss(2, Vec2::new(5000.0, 5000.0), "Boss2".to_string(), 0);
+        world.coop_bosses[0].boss_health.current = 500.0;
+        world.coop_bosses[0].boss_inventory.weapons = vec![
+            WeaponSlot {
+                kind: WeaponType::FireAura,
+                level: 1,
+                cooldown_timer: 0.0,
+                base_cooldown: 1.0,
+                damage: 50.0,
+                is_evolved: false,
+                limit_break_level: 0,
+                bonus_projectiles: 0,
+            },
+            WeaponSlot {
+                kind: WeaponType::SoulFeast,
+                level: 1,
+                cooldown_timer: 99.0,
+                base_cooldown: 1.0,
+                damage: 100.0,
+                is_evolved: true,
+                limit_break_level: 0,
+                bonus_projectiles: 0,
+            },
+        ];
+
+        crate::content::structures::spawn_blood_altar(&mut world, Vec2::new(5080.0, 5000.0));
+        let altar_id = world.structures[0].id;
+
+        let mob_id = world.alloc_id();
+        let mut mob = MobEntity::new_test(mob_id, Vec2::new(5050.0, 5000.0), 1);
+        mob.health = Health::new(10.0);
+        mob.resistances = Default::default();
+        world.mobs.push(mob);
+        world.rebuild_spatial_grid();
+
+        update_all_boss_effects(&mut world, 0.05);
+        update_all_boss_combat(&mut world, 0.05);
+
+        let contributors = world
+            .structure_contributors
+            .get(&altar_id)
+            .expect("Altar contribution must be recorded");
+        assert!(contributors.contains(&2), "Co-op Boss 2 must be recorded as contributor");
+        assert!(!contributors.contains(&1), "Idle Boss 1 must NOT steal Boss 2's structure contribution");
+        assert!(
+            (world.boss_health.current - 500.0).abs() < 1e-3,
+            "Idle Boss 1 must NOT gain Boss 2's SoulFeast kill heal, got {}",
+            world.boss_health.current
+        );
+        assert!(
+            (world.coop_bosses[0].boss_health.current - 503.5).abs() < 1e-3,
+            "Boss 2 must receive its own SoulFeast +3.5 HP on kill, got {}",
+            world.coop_bosses[0].boss_health.current
+        );
+    }
+
+    #[test]
+    fn test_20hz_fast_projectile_no_tunneling_and_status_burn_on_death() {
+        use crate::ecs::components::combat::DamageType;
+        use crate::ecs::components::inventory::{WeaponSlot, WeaponType};
+        use crate::ecs::world::ProjectileEntity;
+
+        let mut world = World::new();
+        world.is_headless = true;
+        world.boss_pos = Vec2::new(1000.0, 1000.0);
+        world.boss_inventory.weapons = vec![WeaponSlot {
+            kind: WeaponType::NetherBlaze,
+            level: 1,
+            cooldown_timer: 99.0,
+            base_cooldown: 1.0,
+            damage: 50.0,
+            is_evolved: true,
+            limit_break_level: 0,
+            bonus_projectiles: 0,
+        }];
+
+        // 1. Быстрый снаряд (1000 px/s -> 50px за 1 тик 0.05с) с последним тиком жизни lifetime=0.05
+        // пролетает через моба на полпути в (1025, 1000) при radius=8 + 12 = 20 (< 25 до конца и старта!)
+        let proj_id = world.alloc_id();
+        world.projectiles.push(ProjectileEntity {
+            id: proj_id,
+            pos: Vec2::new(1000.0, 1000.0),
+            prev_pos: Vec2::new(1000.0, 1000.0),
+            vel: Vec2::new(1000.0, 0.0),
+            damage: 80.0,
+            damage_type: DamageType::True,
+            armor_penetration: 1.0,
+            lifetime: 0.05,
+            radius: 8.0,
+            pierce: 1,
+            faction: crate::ecs::components::combat::Faction::Boss,
+            owner_boss_id: Some(1),
+            source_weapon: Some(WeaponType::ArcaneScepter),
+            homing_strength: 0.0,
+        });
+
+        let mob_tunnel_id = world.alloc_id();
+        let mut mob_tunnel = MobEntity::new_test(mob_tunnel_id, Vec2::new(1025.0, 1000.0), 1);
+        mob_tunnel.health = Health::new(200.0);
+        mob_tunnel.speed = 0.0;
+        world.mobs.push(mob_tunnel);
+
+        // 2. Моб умирает от горения в тот же тик (dt=0.05), когда burn_timer обнуляется с 0.05 до 0.0.
+        // NetherBlaze все равно обязан взорвать труп и задеть соседа в пределах 55px.
+        let burning_id = world.alloc_id();
+        let mut burning_mob = MobEntity::new_test(burning_id, Vec2::new(3000.0, 3000.0), 1);
+        burning_mob.health = Health::new(5.0);
+        burning_mob.status.apply_burn(0.05, 200.0); // 200 * 0.05 = 10 dmg > 5 HP
+        burning_mob.last_hit_boss_id = Some(1);
+        burning_mob.speed = 0.0;
+        world.mobs.push(burning_mob);
+
+        let bystander_id = world.alloc_id();
+        let mut bystander = MobEntity::new_test(bystander_id, Vec2::new(3030.0, 3000.0), 1);
+        bystander.health = Health::new(100.0);
+        bystander.speed = 0.0;
+        world.mobs.push(bystander);
+
+        world.rebuild_spatial_grid();
+        crate::ecs::systems::movement::update_movement(&mut world, 0.05);
+        update_all_boss_combat(&mut world, 0.05);
+
+        let tunneled = world.mobs.iter().find(|m| m.id == mob_tunnel_id).expect("Mob A alive");
+        assert!(
+            (tunneled.health.current - 120.0).abs() < 1e-3,
+            "Fast projectile at 20Hz must sweep segment and hit mob instead of tunneling/expiring: HP={}",
+            tunneled.health.current
+        );
+
+        let neighbor = world.mobs.iter().find(|m| m.id == bystander_id).expect("Bystander alive");
+        assert!(
+            neighbor.health.current < 100.0,
+            "NetherBlaze corpse explosion must still trigger when burn kills mob on its final 20Hz tick: HP={}",
+            neighbor.health.current
+        );
+    }
+
+    #[test]
+    fn test_20hz_freeze_duration_dash_clear_and_coop_timers_no_double_tick() {
+        use crate::ecs::components::combat::{DamageType, Faction};
+        use crate::ecs::world::ProjectileEntity;
+
+        let mut world = World::new();
+        world.is_headless = true;
+        world.boss_pos = Vec2::new(500.0, 500.0);
+        world.boss_facing = Vec2::X;
+
+        // 1. Freeze (0.15s = ровно 3 тика по 0.05s) должен замораживать моба на 3 тика и отпускать на 4-й
+        let mob_id = world.alloc_id();
+        let mut mob = MobEntity::new_test(mob_id, Vec2::new(2000.0, 2000.0), 1);
+        mob.speed = 100.0;
+        mob.status.apply_freeze(0.15);
+        let initial_mob_pos = mob.pos;
+        world.mobs.push(mob);
+
+        // 2. Co-op AI Boss 2: единичный шаг update_boss_ai (runtime путь без повторного tick_coop_boss_timers)
+        world.add_coop_boss(2, Vec2::new(3000.0, 3000.0), "Bot2".to_string(), 0);
+        world.coop_bosses[0].boss_dash_cooldown = 1.0;
+        world.coop_bosses[0].boss_invulnerable_timer = 0.25;
+
+        // 3. Рывок Primary Boss очищает вражеский снаряд, чтобы тот не нанес swept-урон на том же тике
+        let proj_id = world.alloc_id();
+        world.projectiles.push(ProjectileEntity {
+            id: proj_id,
+            pos: Vec2::new(680.0, 500.0),
+            prev_pos: Vec2::new(660.0, 500.0),
+            vel: Vec2::new(400.0, 0.0),
+            damage: 50.0,
+            damage_type: DamageType::Physical,
+            armor_penetration: 0.0,
+            lifetime: 1.0,
+            radius: 8.0,
+            pierce: 1,
+            faction: Faction::Director,
+            owner_boss_id: None,
+            source_weapon: None,
+            homing_strength: 0.0,
+        });
+        crate::ecs::systems::boss_ai::resolve_boss_dash(&mut world, Vec2::X);
+        assert!(world.projectiles[0].lifetime <= 0.0 && world.projectiles[0].pierce == 0);
+        world.boss_invulnerable_timer = 0.0; // снимаем i-frames, чтобы проверить очистку именно самого снаряда
+        let hp_before = world.boss_health.current;
+
+        for tick in 0..4 {
+            if tick == 0 && world.swap_coop_boss_context(0) {
+                crate::ecs::systems::boss_ai::update_boss_ai(&mut world, 0.05);
+                world.swap_coop_boss_context(0);
+            }
+            crate::ecs::systems::movement::update_movement(&mut world, 0.05);
+            update_all_boss_combat(&mut world, 0.05);
+
+            let mob_now = world.mobs.iter().find(|m| m.id == mob_id).unwrap();
+            if tick < 3 {
+                assert_eq!(
+                    mob_now.pos, initial_mob_pos,
+                    "Freeze 0.15s at 20Hz must keep mob stationary through tick {}",
+                    tick + 1
+                );
+            } else {
+                assert_ne!(
+                    mob_now.pos, initial_mob_pos,
+                    "Mob must resume moving on tick 4 after 0.15s freeze expires"
+                );
+            }
+        }
+
+        assert!(
+            (world.boss_health.current - hp_before).abs() < 1e-4,
+            "Director projectile cleared by dash must not hit on that tick"
+        );
+        assert!(
+            (world.coop_bosses[0].boss_dash_cooldown - 0.95).abs() < 1e-4,
+            "AI co-op dash cooldown must tick once by 0.05s (got {})",
+            world.coop_bosses[0].boss_dash_cooldown
+        );
+        assert!(
+            (world.coop_bosses[0].boss_invulnerable_timer - 0.20).abs() < 1e-4,
+            "AI co-op invulnerability must tick once by 0.05s (got {})",
+            world.coop_bosses[0].boss_invulnerable_timer
+        );
     }
 }

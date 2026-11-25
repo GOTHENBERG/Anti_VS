@@ -1,8 +1,125 @@
 use crate::core::rand;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use crate::ai::league::{
+    ControlLeagueReport, ControlLeagueRoster, print_control_league_report,
+};
 use crate::ai::models::{BossModel, DirectorModel, TrainingStats, MODEL_FORMAT_VERSION};
+use crate::ai::sensors::TOTAL_SENSOR_SCHEMA_DIM;
 use crate::ai::simulation::{run_headless_simulation_with_boss_count, MatchResult};
 use crate::ecs::components::inventory::{PassiveType, WeaponType};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenerationManifest {
+    pub generation_id: usize,
+    pub model_format_version: u32,
+    pub sensor_schema_dim: usize,
+    pub run_seed: u64,
+    pub boss_model_hash: String,
+    pub director_model_hash: String,
+    pub control_league_digest: Option<String>,
+    pub boss_control_fitness: Option<f32>,
+    pub boss_control_win_rate: Option<f32>,
+    pub director_control_fitness: Option<f32>,
+    pub director_control_win_rate: Option<f32>,
+    pub timestamp: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SeedRunSummary {
+    pub seed: u64,
+    pub generation: u32,
+    pub boss_train_fitness: f32,
+    pub director_train_fitness: f32,
+    pub total_matches: usize,
+    pub control_report: ControlLeagueReport,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MultiSeedMetricStats {
+    pub mean: f32,
+    pub std_dev: f32,
+    pub min: f32,
+    pub max: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MultiSeedReport {
+    pub seeds: Vec<u64>,
+    pub generations_per_seed: usize,
+    pub population_size: usize,
+    pub match_cap_arg: Option<f32>,
+    pub baseline_disk: Option<ControlLeagueReport>,
+    pub seed_runs: Vec<SeedRunSummary>,
+    pub boss_fitness_stats: MultiSeedMetricStats,
+    pub boss_win_rate_stats: MultiSeedMetricStats,
+    pub boss_survival_secs_stats: MultiSeedMetricStats,
+    pub director_fitness_stats: MultiSeedMetricStats,
+    pub director_win_rate_stats: MultiSeedMetricStats,
+    pub director_kill_time_stats: MultiSeedMetricStats,
+    pub best_boss_seed: u64,
+    pub best_director_seed: u64,
+    pub combined_control_report: ControlLeagueReport,
+    pub promoted_to_live_models: bool,
+    pub timestamp: String,
+}
+
+pub struct SingleSeedOutcome {
+    pub seed: u64,
+    pub best_boss: BossModel,
+    pub best_director: DirectorModel,
+    pub total_matches: usize,
+    pub best_avg_boss_level: u32,
+}
+
+fn fnv1a_64_hex(bytes: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    for &b in bytes {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    format!("{:#018x}", hash)
+}
+
+pub(crate) fn atomic_write_bytes(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    let tmp_name = format!(
+        "{}.tmp.{}",
+        path.file_name().and_then(|s| s.to_str()).unwrap_or("artifact"),
+        std::process::id()
+    );
+    let tmp_path = path.with_file_name(tmp_name);
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp_path)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
+    std::fs::rename(&tmp_path, path)?;
+    Ok(())
+}
+
+fn metric_stats(values: &[f32]) -> MultiSeedMetricStats {
+    if values.is_empty() {
+        return MultiSeedMetricStats { mean: 0.0, std_dev: 0.0, min: 0.0, max: 0.0 };
+    }
+    let n = values.len() as f32;
+    let mean = values.iter().copied().sum::<f32>() / n;
+    let var = values.iter().map(|v| (v - mean) * (v - mean)).sum::<f32>() / n;
+    let min = values.iter().copied().fold(f32::INFINITY, f32::min);
+    let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    MultiSeedMetricStats {
+        mean,
+        std_dev: var.sqrt(),
+        min,
+        max,
+    }
+}
 
 const MATCHES_PER_AGENT: usize = 6;
 /// Полная длительность матча (17 минут), к которой стремится curriculum.
@@ -79,7 +196,7 @@ fn shuffle<T>(items: &mut [T]) {
 /// - 150 за среднюю долю времени жизни построенных алтарей;
 /// - 50 за конверсию душ в действия (spent / (spent + unspent + 100));
 /// - отрицательный бонус Директору за уничтоженные алтари и деактивированные обелиски.
-fn director_utility(res: &MatchResult) -> f32 {
+pub(crate) fn director_utility(res: &MatchResult) -> f32 {
     let cap = res.match_cap.max(1.0);
     let survival_frac = (res.survival_time / cap).clamp(0.0, 1.0);
     let time_reward = (1.0 - survival_frac) * 600.0;
@@ -394,32 +511,74 @@ pub fn run_co_evolutionary_training(
     boss_decision_interval: f32,
     boss_count: usize,
     island_config: IslandConfig,
+    seed_override: Option<u64>,
 ) {
+    let run_seed = seed_override.unwrap_or_else(system_base_seed);
+    let outcome = train_co_evolution_seed(
+        generations,
+        population_size,
+        reset,
+        round_duration,
+        boss_decision_interval,
+        boss_count,
+        &island_config,
+        run_seed,
+        true,
+    );
+    let league_report = ControlLeagueRoster::canonical()
+        .evaluate(&outcome.best_boss, &outcome.best_director);
+    print_control_league_report(
+        &format!("Final Single-Seed Evaluation (seed={})", run_seed),
+        &league_report,
+    );
+    save_models(
+        &outcome.best_boss,
+        &outcome.best_director,
+        outcome.best_boss.generation as usize,
+        outcome.total_matches,
+        outcome.best_avg_boss_level,
+        run_seed,
+        Some(&league_report),
+        true,
+    );
+}
+
+pub fn train_co_evolution_seed(
+    generations: usize,
+    population_size: usize,
+    reset: bool,
+    round_duration: Option<f32>,
+    boss_decision_interval: f32,
+    boss_count: usize,
+    island_config: &IslandConfig,
+    run_seed: u64,
+    save_live_checkpoints: bool,
+) -> SingleSeedOutcome {
+    rand::seed(run_seed);
     let generations = generations.max(1);
-    // Два элита занимают всю популяцию; при размере 2 следующие поколения
-    // не получают потомков и перестают исследовать новые политики.
     let population_size = population_size.max(3);
     let boss_count = boss_count.clamp(1, 8);
     let duration_info = match round_duration {
         Some(d) => format!("ФИКСИРОВАННЫЙ ({:.0} сек / {:.1} мин)", d, d / 60.0),
-        None => format!("Curriculum (300с -> 1020с)"),
+        None => "Curriculum (300с -> 1020с)".to_string(),
     };
 
     println!("============================================================");
     println!(">>> ЗАПУСК ТУРНИРА СО-ЭВОЛЮЦИИ ИИ (LEAGUE SELF-PLAY)");
+    println!("  Seed запуска: {} ({:#018x})", run_seed, run_seed);
     println!("  Движок: {} потоков Rayon (ноль-суммарные матчи с фиксированными seed)", rayon::current_num_threads());
     println!("  Поколений: {} | Размер популяции каждого агента: {}", generations, population_size);
     println!("  Длительность матчей: {}", duration_info);
     println!("  Боссов в команде обучения: {}", boss_count);
     println!("  Частота решений Босса: {:.0} мс", boss_decision_interval * 1000.0);
-    println!("  Формат: v{} (старый фитнес инвалидируется при загрузке)", MODEL_FORMAT_VERSION);
+    println!("  Формат: v{} | Сенсоров: {}", MODEL_FORMAT_VERSION, TOTAL_SENSOR_SCHEMA_DIM);
     println!("  Зал Славы (League Hall of Fame): АКТИВЕН (защита от забывания)");
     if let Some(ref dir) = island_config.exchange_dir {
         println!("  [ОСТРОВ] Островная модель: АКТИВНА | Остров: '{}' | Каталог: {:?} | Миграция: каждые {} поколений",
             island_config.island_name, dir, island_config.migrate_every);
     }
     if reset {
-        println!("  [СБРОС --clean]: ИИ Босса очищен, обучение начнется с нуля!");
+        println!("  [СБРОС --clean]: ИИ Босса и Директора очищены, обучение с нуля!");
     }
     println!("============================================================");
 
@@ -536,7 +695,7 @@ pub fn run_co_evolutionary_training(
     let mut director_sigma = 0.18f32;
     let mut prev_best_boss_fitness = f32::NEG_INFINITY;
     let mut prev_best_director_fitness = f32::NEG_INFINITY;
-    let base_seed = system_base_seed();
+    let base_seed = run_seed;
 
     // 3. Цикл поколений обучения
     for gen_idx in 1..=generations {
@@ -978,28 +1137,243 @@ pub fn run_co_evolutionary_training(
         boss_pop = next_boss_pop;
         director_pop = next_dir_pop;
 
-        // Авто-сохранение каждые 25 поколений
-        if gen_idx % 25 == 0 && gen_idx < generations {
+        // Авто-сохранение каждые 25 поколений (если разрешена живая запись)
+        if save_live_checkpoints && gen_idx % 25 == 0 && gen_idx < generations {
             save_models(
                 &best_overall_boss,
                 &best_overall_director,
                 base_gen as usize + gen_idx,
                 total_matches_played,
                 best_avg_boss_level,
+                run_seed,
+                None,
                 false,
             );
         }
     }
 
-    // 5. Финальный экспорт
-    save_models(
-        &best_overall_boss,
-        &best_overall_director,
-        base_gen as usize + generations,
-        total_matches_played,
+    SingleSeedOutcome {
+        seed: run_seed,
+        best_boss: best_overall_boss,
+        best_director: best_overall_director,
+        total_matches: total_matches_played,
         best_avg_boss_level,
-        true,
+    }
+}
+
+/// Запускает обучение на нескольких независимых seed с единой оценкой на Контрольной Лиге,
+/// публикует разброс качества (mean ± std) и атомарно обновляет модели при победе в Лиге (или `--force-promote`).
+#[allow(clippy::too_many_arguments)]
+pub fn run_multi_seed_training_and_league(
+    seeds: &[u64],
+    generations: usize,
+    population_size: usize,
+    reset: bool,
+    round_duration: Option<f32>,
+    boss_decision_interval: f32,
+    boss_count: usize,
+    island_config: &IslandConfig,
+    force_promote: bool,
+) -> MultiSeedReport {
+    let league = ControlLeagueRoster::canonical();
+    let disk_boss = crate::ai::load_trained_boss_model();
+    let disk_dir = crate::ai::load_trained_director_model();
+    let baseline_disk = match (&disk_boss, &disk_dir) {
+        (Some(b), Some(d)) => {
+            let rep = league.evaluate(b, d);
+            print_control_league_report("Baseline On-Disk Models (Pre-Run)", &rep);
+            Some(rep)
+        }
+        _ => None,
+    };
+
+    let default_rep = {
+        rand::seed(0xDEF0_0001);
+        let b = BossModel::default();
+        let d = DirectorModel::default();
+        league.evaluate(&b, &d)
+    };
+    print_control_league_report("Untrained Default Baseline", &default_rep);
+
+    let mut seed_runs = Vec::with_capacity(seeds.len());
+    let mut seed_bosses: Vec<(u64, BossModel, SingleSeedOutcome)> = Vec::with_capacity(seeds.len());
+    let mut seed_dirs: Vec<(u64, DirectorModel)> = Vec::with_capacity(seeds.len());
+
+    for &seed in seeds {
+        let outcome = train_co_evolution_seed(
+            generations,
+            population_size,
+            reset,
+            round_duration,
+            boss_decision_interval,
+            boss_count,
+            island_config,
+            seed,
+            false,
+        );
+        let rep = league.evaluate(&outcome.best_boss, &outcome.best_director);
+        print_control_league_report(&format!("Seed {} Champion", seed), &rep);
+
+        let seed_dir = format!("models/seeds/seed_{}", seed);
+        if let Ok(b_json) = serde_json::to_vec_pretty(&outcome.best_boss) {
+            let _ = atomic_write_bytes(std::path::Path::new(&format!("{}/boss_policy.json", seed_dir)), &b_json);
+        }
+        if let Ok(d_json) = serde_json::to_vec_pretty(&outcome.best_director) {
+            let _ = atomic_write_bytes(std::path::Path::new(&format!("{}/director_policy.json", seed_dir)), &d_json);
+        }
+        if let Ok(r_json) = serde_json::to_vec_pretty(&rep) {
+            let _ = atomic_write_bytes(std::path::Path::new(&format!("{}/control_report.json", seed_dir)), &r_json);
+        }
+
+        seed_runs.push(SeedRunSummary {
+            seed,
+            generation: outcome.best_boss.generation,
+            boss_train_fitness: outcome.best_boss.fitness,
+            director_train_fitness: outcome.best_director.fitness,
+            total_matches: outcome.total_matches,
+            control_report: rep,
+        });
+        let best_b = outcome.best_boss.clone();
+        let best_d = outcome.best_director.clone();
+        seed_bosses.push((seed, best_b, outcome));
+        seed_dirs.push((seed, best_d));
+    }
+
+    let boss_fits: Vec<f32> = seed_runs.iter().map(|s| s.control_report.boss.fitness_mean).collect();
+    let boss_wins: Vec<f32> = seed_runs.iter().map(|s| s.control_report.boss.win_rate * 100.0).collect();
+    let boss_survs: Vec<f32> = seed_runs.iter().map(|s| s.control_report.boss.avg_survival_secs).collect();
+    let dir_fits: Vec<f32> = seed_runs.iter().map(|s| s.control_report.director.fitness_mean).collect();
+    let dir_wins: Vec<f32> = seed_runs.iter().map(|s| s.control_report.director.win_rate * 100.0).collect();
+    let dir_kills: Vec<f32> = seed_runs.iter().map(|s| s.control_report.director.avg_kill_time_secs).collect();
+
+    let boss_fitness_stats = metric_stats(&boss_fits);
+    let boss_win_rate_stats = metric_stats(&boss_wins);
+    let boss_survival_secs_stats = metric_stats(&boss_survs);
+    let director_fitness_stats = metric_stats(&dir_fits);
+    let director_win_rate_stats = metric_stats(&dir_wins);
+    let director_kill_time_stats = metric_stats(&dir_kills);
+
+    let best_boss_idx = seed_runs
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.control_report.boss.fitness_mean.total_cmp(&b.1.control_report.boss.fitness_mean))
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+    let best_dir_idx = seed_runs
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.control_report.director.fitness_mean.total_cmp(&b.1.control_report.director.fitness_mean))
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    let best_boss_seed = seed_runs[best_boss_idx].seed;
+    let best_director_seed = seed_runs[best_dir_idx].seed;
+    let mut final_boss = seed_bosses[best_boss_idx].1.clone();
+    let mut final_dir = seed_dirs[best_dir_idx].1.clone();
+    let total_matches_all: usize = seed_bosses.iter().map(|(_, _, o)| o.total_matches).sum();
+    let max_boss_level = seed_bosses.iter().map(|(_, _, o)| o.best_avg_boss_level).max().unwrap_or(1);
+
+    // По каждой роли отдельно проверяем превосходство над прошлой моделью на диске в Контрольной Лиге.
+    let mut boss_promoted = force_promote || baseline_disk.is_none();
+    if let Some(ref base) = baseline_disk {
+        if seed_runs[best_boss_idx].control_report.boss.fitness_mean >= base.boss.fitness_mean {
+            boss_promoted = true;
+        } else if !force_promote {
+            if let Some(existing) = disk_boss {
+                final_boss = existing;
+            }
+        }
+    }
+    let mut dir_promoted = force_promote || baseline_disk.is_none();
+    if let Some(ref base) = baseline_disk {
+        if seed_runs[best_dir_idx].control_report.director.fitness_mean >= base.director.fitness_mean {
+            dir_promoted = true;
+        } else if !force_promote {
+            if let Some(existing) = disk_dir {
+                final_dir = existing;
+            }
+        }
+    }
+
+    let combined_control_report = league.evaluate(&final_boss, &final_dir);
+    println!("\n==========================================================================");
+    println!(" [MULTI-SEED SUMMARY across {} seeds: {:?}]", seeds.len(), seeds);
+    println!(
+        "   Boss Control Fit: {:+7.2} ± {:5.2} (min {:+7.2}, max {:+7.2}) | Win%: {:4.1} ± {:4.1}% | Surv: {:.1} ± {:.1}s",
+        boss_fitness_stats.mean, boss_fitness_stats.std_dev, boss_fitness_stats.min, boss_fitness_stats.max,
+        boss_win_rate_stats.mean, boss_win_rate_stats.std_dev,
+        boss_survival_secs_stats.mean, boss_survival_secs_stats.std_dev
     );
+    println!(
+        "   Dir  Control Fit: {:+7.2} ± {:5.2} (min {:+7.2}, max {:+7.2}) | Win%: {:4.1} ± {:4.1}% | End : {:.1} ± {:.1}s",
+        director_fitness_stats.mean, director_fitness_stats.std_dev, director_fitness_stats.min, director_fitness_stats.max,
+        director_win_rate_stats.mean, director_win_rate_stats.std_dev,
+        director_kill_time_stats.mean, director_kill_time_stats.std_dev
+    );
+    println!(
+        "   Selected: Boss from seed {} (promoted={}) | Director from seed {} (promoted={})",
+        best_boss_seed, boss_promoted, best_director_seed, dir_promoted
+    );
+    print_control_league_report("FINAL SELECTED MODELS", &combined_control_report);
+
+    let promoted = boss_promoted || dir_promoted;
+    if promoted {
+        save_models(
+            &final_boss,
+            &final_dir,
+            final_boss.generation.max(final_dir.generation) as usize,
+            total_matches_all,
+            max_boss_level,
+            best_boss_seed,
+            Some(&combined_control_report),
+            true,
+        );
+    } else {
+        println!("[ЛИГА] Прежние модели на диске показали более высокий результат — боевые файлы не перезаписаны.");
+    }
+
+    let report = MultiSeedReport {
+        seeds: seeds.to_vec(),
+        generations_per_seed: generations,
+        population_size,
+        match_cap_arg: round_duration,
+        baseline_disk,
+        seed_runs,
+        boss_fitness_stats,
+        boss_win_rate_stats,
+        boss_survival_secs_stats,
+        director_fitness_stats,
+        director_win_rate_stats,
+        director_kill_time_stats,
+        best_boss_seed,
+        best_director_seed,
+        combined_control_report,
+        promoted_to_live_models: promoted,
+        timestamp: utc_timestamp(),
+    };
+    if let Ok(json) = serde_json::to_vec_pretty(&report) {
+        let _ = atomic_write_bytes(std::path::Path::new("models/control_league_report.json"), &json);
+    }
+    report
+}
+
+/// Запускает оценку текущих моделей на диске (и базовых эталонов) на Контрольной Лиге.
+pub fn run_control_league_cli() {
+    let league = ControlLeagueRoster::canonical();
+    rand::seed(0xDEF0_0001);
+    let default_boss = BossModel::default();
+    let default_dir = DirectorModel::default();
+    let default_rep = league.evaluate(&default_boss, &default_dir);
+    print_control_league_report("Default Untrained Models", &default_rep);
+
+    let disk_boss = crate::ai::load_trained_boss_model();
+    let disk_dir = crate::ai::load_trained_director_model();
+    if let (Some(b), Some(d)) = (disk_boss, disk_dir) {
+        let rep = league.evaluate(&b, &d);
+        print_control_league_report("Active On-Disk Models (models/*_policy.json)", &rep);
+    } else {
+        println!("[ЛИГА] Обученные модели в models/*_policy.json не найдены.");
+    }
 }
 
 fn save_models(
@@ -1008,16 +1382,17 @@ fn save_models(
     generations_total: usize,
     matches_played: usize,
     best_boss_level: u32,
+    run_seed: u64,
+    league_report: Option<&ControlLeagueReport>,
     is_final: bool,
 ) {
     let _ = std::fs::create_dir_all("models");
     if is_final {
-        println!("\n[СОХРАНЕНИЕ] Финальный экспорт обученных моделей...");
+        println!("\n[СОХРАНЕНИЕ] Финальный атомарный экспорт обученных моделей...");
     } else {
-        println!("\n[ЧЕКПОИНТ #{}] Автоматическое сохранение прогресса на диск...", boss.generation);
+        println!("\n[ЧЕКПОИНТ #{}] Атомарное сохранение прогресса на диск...", boss.generation);
     }
 
-    // Гарантируем корректные метаданные формата перед записью
     let mut boss_out = boss.clone();
     boss_out.model_version = MODEL_FORMAT_VERSION;
     boss_out.fitness_version = MODEL_FORMAT_VERSION;
@@ -1034,8 +1409,10 @@ fn save_models(
         director_out.total_synapses = net.total_synapses();
     }
 
-    if let Ok(boss_json) = serde_json::to_string_pretty(&boss_out) {
-        if std::fs::write("models/boss_policy.json", &boss_json).is_ok() {
+    let mut boss_hash = String::new();
+    if let Ok(boss_json) = serde_json::to_vec_pretty(&boss_out) {
+        boss_hash = fnv1a_64_hex(&boss_json);
+        if atomic_write_bytes(std::path::Path::new("models/boss_policy.json"), &boss_json).is_ok() {
             println!(
                 "  [OK] Модель Босса ({} синапсов, Поколение #{}) -> models/boss_policy.json",
                 boss_out.total_synapses, boss_out.generation
@@ -1045,10 +1422,10 @@ fn save_models(
 
     let archetype_names = [
         "Инфернальный Пиромант (Огонь, Пламя, Сердце Пироманта)",
-        "Сверхпроводящий Громовержец (Молния, Тесла, Лира, Клевер)",
-        "Несокрушимый Бастион (Орбиты, Молот, Щиты, Эгида)",
+        "Сверхпроводящий Громовержец (Молния, Тесла, Лира, Монета Удачи)",
+        "Несокрушимый Бастион (Орбиты, Молот, Щиты, Филактерия)",
         "Аннигилятор Бездны (Луч Смерти, Сингулярность, Око Колосса)",
-        "Кровавый Жнец (Топор, Кинжалы, Вампиризм, Клевер)",
+        "Кровавый Жнец (Топор, Кинжалы, Вампиризм, Монета Удачи)",
         "Звёздный Охотник (Лук, Ракеты, Самонаведение, Орлиный Глаз)",
     ];
     let mut best_arch = 0;
@@ -1066,8 +1443,10 @@ fn save_models(
         );
     }
 
-    if let Ok(dir_json) = serde_json::to_string_pretty(&director_out) {
-        if std::fs::write("models/director_policy.json", &dir_json).is_ok() {
+    let mut dir_hash = String::new();
+    if let Ok(dir_json) = serde_json::to_vec_pretty(&director_out) {
+        dir_hash = fnv1a_64_hex(&dir_json);
+        if atomic_write_bytes(std::path::Path::new("models/director_policy.json"), &dir_json).is_ok() {
             println!(
                 "  [OK] Модель Директора ({} синапсов, Поколение #{}) -> models/director_policy.json",
                 director_out.total_synapses, director_out.generation
@@ -1075,24 +1454,43 @@ fn save_models(
         }
     }
 
+    let ts = utc_timestamp();
     let stats = TrainingStats {
         total_generations: generations_total,
         total_matches_played: matches_played,
         best_boss_survival_time: boss_out.avg_survival_time,
         best_boss_level,
         best_director_kill_time: director_out.avg_boss_kill_time,
-        timestamp: utc_timestamp(),
+        timestamp: ts.clone(),
         fitness_formula: "zero-sum: Boss = -DirectorUtility; Director = +DirectorUtility \
             (time 600 + kill 400 + damage 200 + altar uptime 150 + economy 50 - structure reward: 8/altar, 25/obelisk)"
             .to_string(),
     };
 
-    if let Ok(stats_json) = serde_json::to_string_pretty(&stats) {
-        let _ = std::fs::write("models/training_log.json", stats_json);
+    if let Ok(stats_json) = serde_json::to_vec_pretty(&stats) {
+        let _ = atomic_write_bytes(std::path::Path::new("models/training_log.json"), &stats_json);
+    }
+
+    let manifest = GenerationManifest {
+        generation_id: generations_total,
+        model_format_version: MODEL_FORMAT_VERSION,
+        sensor_schema_dim: TOTAL_SENSOR_SCHEMA_DIM,
+        run_seed,
+        boss_model_hash: boss_hash,
+        director_model_hash: dir_hash,
+        control_league_digest: league_report.map(|r| format!("{:#018x}", r.digest)),
+        boss_control_fitness: league_report.map(|r| r.boss.fitness_mean),
+        boss_control_win_rate: league_report.map(|r| r.boss.win_rate),
+        director_control_fitness: league_report.map(|r| r.director.fitness_mean),
+        director_control_win_rate: league_report.map(|r| r.director.win_rate),
+        timestamp: ts,
+    };
+    if let Ok(manifest_json) = serde_json::to_vec_pretty(&manifest) {
+        let _ = atomic_write_bytes(std::path::Path::new("models/generation_manifest.json"), &manifest_json);
     }
 
     if is_final {
-        println!("[ГОТОВО] Обучение завершено. Модели сохранены и готовы к игре.\n");
+        println!("[ГОТОВО] Обучение завершено. Модели и generation_manifest.json сохранены атомарно.\n");
         append_to_history_log("[ГОТОВО] Обучение завершено. Модели сохранены на диск.\n\n");
     }
 }
@@ -1290,5 +1688,30 @@ mod tests {
         assert_eq!(hof_dir_b[1].fitness, 150.0);
 
         let _ = std::fs::remove_dir_all(&exchange_dir);
+    }
+
+    #[test]
+    fn test_seeded_coevolution_reproducible_and_atomic_write() {
+        let cfg = IslandConfig::default();
+        let a = train_co_evolution_seed(1, 3, true, Some(30.0), 0.2, 1, &cfg, 0x7777_u64, false);
+        let b = train_co_evolution_seed(1, 3, true, Some(30.0), 0.2, 1, &cfg, 0x7777_u64, false);
+
+        assert_eq!(a.best_boss.fitness, b.best_boss.fitness);
+        assert_eq!(a.best_director.fitness, b.best_director.fitness);
+        assert_eq!(
+            serde_json::to_vec(&a.best_boss).unwrap(),
+            serde_json::to_vec(&b.best_boss).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_vec(&a.best_director).unwrap(),
+            serde_json::to_vec(&b.best_director).unwrap()
+        );
+
+        let tmp_dir = std::env::temp_dir().join("anti_vs_test_atomic");
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        let target = tmp_dir.join("manifest.json");
+        atomic_write_bytes(&target, br#"{"ok":true}"#).expect("atomic write succeeds");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), r#"{"ok":true}"#);
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }

@@ -64,13 +64,83 @@ impl Default for Resistances {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DamageTarget {
+    Boss,
+    Mob { index: usize, id: usize },
+    Structure { id: usize },
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DamagePacket {
     pub source_id: Option<usize>,
-    pub target_id: usize,
+    pub owner_boss_id: Option<u8>,
+    pub target: DamageTarget,
     pub amount: f32,
     pub damage_type: DamageType,
     pub armor_penetration: f32, // e.g. 0.20 = 20%
+}
+
+impl DamagePacket {
+    #[inline]
+    pub fn boss(
+        source_id: Option<usize>,
+        amount: f32,
+        damage_type: DamageType,
+        armor_penetration: f32,
+    ) -> Self {
+        Self {
+            source_id,
+            owner_boss_id: None,
+            target: DamageTarget::Boss,
+            amount,
+            damage_type,
+            armor_penetration,
+        }
+    }
+
+    #[inline]
+    pub fn mob(
+        source_id: Option<usize>,
+        index: usize,
+        id: usize,
+        amount: f32,
+        damage_type: DamageType,
+        armor_penetration: f32,
+    ) -> Self {
+        Self {
+            source_id,
+            owner_boss_id: None,
+            target: DamageTarget::Mob { index, id },
+            amount,
+            damage_type,
+            armor_penetration,
+        }
+    }
+
+    #[inline]
+    pub fn structure(
+        source_id: Option<usize>,
+        id: usize,
+        amount: f32,
+        damage_type: DamageType,
+        armor_penetration: f32,
+    ) -> Self {
+        Self {
+            source_id,
+            owner_boss_id: None,
+            target: DamageTarget::Structure { id },
+            amount,
+            damage_type,
+            armor_penetration,
+        }
+    }
+
+    #[inline]
+    pub fn with_owner(mut self, owner_boss_id: Option<u8>) -> Self {
+        self.owner_boss_id = owner_boss_id;
+        self
+    }
 }
 
 impl Resistances {
@@ -129,6 +199,8 @@ impl Resistances {
 pub struct StatusEffects {
     pub burn_timer: f32,
     pub burn_dps: f32,
+    #[serde(skip)]
+    pub burned_this_tick: bool,
 
     pub slow_timer: f32,
     pub slow_factor: f32,
